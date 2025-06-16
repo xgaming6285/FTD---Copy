@@ -41,6 +41,7 @@ import {
   FormControlLabel,
   Switch,
   Link,
+  Tooltip,
 } from "@mui/material";
 
 // MUI Icons
@@ -57,6 +58,7 @@ import {
   Visibility as VisibilityIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
+  Send as InjectIcon,
 } from "@mui/icons-material";
 
 // Project Components & Services
@@ -388,6 +390,8 @@ const LeadsPage = () => {
   });
   const [showFilters, setShowFilters] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
+  const [isInjecting, setIsInjecting] = useState(false);
+  const [injectionStatus, setInjectionStatus] = useState({ success: null, message: "" });
 
   // --- Derived State & Roles (Memoized) ---
   const isAdminOrManager = useMemo(
@@ -399,6 +403,7 @@ const LeadsPage = () => {
   const isAgent = useMemo(() => user?.role === ROLES.AGENT, [user?.role]);
   const canAssignLeads = useMemo(() => isAdminOrManager, [isAdminOrManager]);
   const canDeleteLeads = useMemo(() => user?.role === ROLES.ADMIN, [user?.role]);
+  const canInjectLeads = useMemo(() => user?.role === ROLES.ADMIN || user?.role === ROLES.AFFILIATE_MANAGER, [user?.role]);
   const numSelected = useMemo(() => selectedLeads.size, [selectedLeads]);
 
   // --- Forms ---
@@ -548,6 +553,24 @@ const LeadsPage = () => {
       setError(err.response?.data?.message || 'Failed to delete lead');
     }
   }, [fetchLeads, fetchLeadStats, setSuccess, setError]);
+
+  const handleInjectLead = async (leadId) => {
+    setIsInjecting(true);
+    setInjectionStatus({ success: null, message: "Starting injection..." });
+    try {
+      const res = await api.post(`/leads/${leadId}/inject`);
+      if (res.status === 200) {
+        setInjectionStatus({ success: true, message: "Injection process started successfully!" });
+      }
+    } catch (error) {
+      const message = error.response?.data?.message || "Failed to start injection.";
+      setInjectionStatus({ success: false, message });
+    } finally {
+      setIsInjecting(false);
+      // Hide the message after a few seconds
+      setTimeout(() => setInjectionStatus({ success: null, message: "" }), 5000);
+    }
+  };
 
   // --- Effects ---
   useEffect(() => {
@@ -748,6 +771,12 @@ const LeadsPage = () => {
 
       {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>{success}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
+
+      {injectionStatus.message && (
+        <Alert severity={injectionStatus.success === true ? "success" : (injectionStatus.success === false ? "error" : "info")} sx={{ mb: 2 }}>
+          {injectionStatus.message}
+        </Alert>
+      )}
 
       {isAdminOrManager && (
         <Card sx={{
@@ -1030,6 +1059,9 @@ const LeadsPage = () => {
                           lead={lead}
                           canAssignLeads={canAssignLeads}
                           canDeleteLeads={canDeleteLeads}
+                          canInjectLeads={canInjectLeads}
+                          isInjecting={isInjecting}
+                          onInjectLead={handleInjectLead}
                           isAdminOrManager={isAdminOrManager}
                           isLeadManager={isLeadManager}
                           userId={user?.id}
@@ -1072,6 +1104,9 @@ const LeadsPage = () => {
                     lead={lead}
                     canAssignLeads={canAssignLeads}
                     canDeleteLeads={canDeleteLeads}
+                    canInjectLeads={canInjectLeads}
+                    isInjecting={isInjecting}
+                    onInjectLead={handleInjectLead}
                     selectedLeads={selectedLeads}
                     expandedRows={expandedRows}
                     onSelectLead={handleSelectLead}
@@ -1159,7 +1194,7 @@ const LeadsPage = () => {
 };
 
 // --- Memoized Row Component for Desktop Table ---
-const LeadRow = React.memo(({ lead, canAssignLeads, isAdminOrManager, isLeadManager, userId, selectedLeads, expandedRows, onSelectLead, onUpdateStatus, onComment, onToggleExpansion, onFilterByOrder, onDeleteLead, canDeleteLeads, user, handleEditLead }) => {
+const LeadRow = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLeads, isInjecting, onInjectLead, isAdminOrManager, isLeadManager, userId, selectedLeads, expandedRows, onSelectLead, onUpdateStatus, onComment, onToggleExpansion, onFilterByOrder, onDeleteLead, user, handleEditLead }) => {
   const isOwner = !isLeadManager || lead.createdBy === userId;
 
   const handleRowClick = (event) => {
@@ -1210,6 +1245,13 @@ const LeadRow = React.memo(({ lead, canAssignLeads, isAdminOrManager, isLeadMana
               <DeleteIcon sx={{ fontSize: '1.25rem' }} />
             </IconButton>
           )}
+          {canInjectLeads && (
+            <Tooltip title="Inject Lead">
+              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onInjectLead(lead._id); }} disabled={isInjecting}>
+                <InjectIcon sx={{ fontSize: '1.25rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
           <IconButton size="small" onClick={(e) => { e.stopPropagation(); onToggleExpansion(lead._id); }}>
             {expandedRows.has(lead._id) ? <ExpandLessIcon sx={{ fontSize: '1.25rem' }} /> : <ExpandMoreIcon sx={{ fontSize: '1.25rem' }} />}
           </IconButton>
@@ -1220,7 +1262,7 @@ const LeadRow = React.memo(({ lead, canAssignLeads, isAdminOrManager, isLeadMana
 });
 
 // --- Memoized Card Component for Mobile View ---
-const LeadCard = React.memo(({ lead, canAssignLeads, selectedLeads, expandedRows, onSelectLead, onUpdateStatus, onComment, onToggleExpansion, onDeleteLead, canDeleteLeads, user, isLeadManager, handleEditLead }) => {
+const LeadCard = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLeads, isInjecting, onInjectLead, selectedLeads, expandedRows, onSelectLead, onUpdateStatus, onComment, onToggleExpansion, onDeleteLead, user, isLeadManager, handleEditLead }) => {
   const handleCardClick = (event) => {
     if (event.target.closest('button, input, select, [role="combobox"], .MuiSelect-select, .MuiMenuItem-root')) {
       return;
@@ -1312,6 +1354,13 @@ const LeadCard = React.memo(({ lead, canAssignLeads, selectedLeads, expandedRows
               >
                 <DeleteIcon />
               </IconButton>
+            )}
+            {canInjectLeads && (
+              <Tooltip title="Inject Lead">
+                <IconButton size="small" onClick={(e) => { e.stopPropagation(); onInjectLead(lead._id); }} disabled={isInjecting}>
+                  <InjectIcon />
+                </IconButton>
+              </Tooltip>
             )}
             {canAssignLeads && <Checkbox checked={selectedLeads.has(lead._id)} onChange={onSelectLead(lead._id)} size="small" />}
           </Stack>

@@ -6,6 +6,7 @@ const {
   isAgent,
   authorize,
   isLeadManager,
+  affiliateManager,
 } = require("../middleware/auth");
 const {
   getLeads,
@@ -20,6 +21,10 @@ const {
   createLead,
   deleteLead,
   importLeads,
+  injectLead,
+  getLeadsForManager,
+  getColdLeads,
+  updateLeadType,
 } = require("../controllers/leads");
 
 const router = express.Router();
@@ -314,6 +319,15 @@ router.post(
   "/import",
   [protect, authorize("admin", "affiliate_manager", "lead_manager")],
   importLeads
+);
+
+// @route   POST /api/leads/:id/inject
+// @desc    Inject a lead into the automation system
+// @access  Private (Admin, Affiliate Manager)
+router.post(
+  "/:id/inject",
+  [protect, authorize("admin", "affiliate_manager")],
+  injectLead
 );
 
 module.exports = router;

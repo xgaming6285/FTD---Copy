@@ -4,6 +4,7 @@ const Lead = require("../models/Lead");
 const User = require("../models/User");
 const csvParser = require("csv-parser");
 const { Readable } = require("stream");
+const { spawn } = require("child_process");
 
 // @desc    Get all leads with filtering and pagination
 // @route   GET /api/leads
@@ -620,10 +621,10 @@ exports.assignLeads = async (req, res, next) => {
         isAssigned: lead.isAssigned,
         assignedTo: lead.assignedTo
           ? {
-              id: lead.assignedTo._id,
-              fullName: lead.assignedTo.fullName,
-              fourDigitCode: lead.assignedTo.fourDigitCode,
-            }
+            id: lead.assignedTo._id,
+            fullName: lead.assignedTo.fullName,
+            fourDigitCode: lead.assignedTo.fourDigitCode,
+          }
           : null,
       }))
     );
@@ -1297,5 +1298,99 @@ exports.deleteLead = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+// @desc    Inject a lead into the automation script
+// @route   POST /api/v1/leads/:id/inject
+// @access  Private/Admin
+exports.injectLead = async (req, res) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+
+    if (!lead) {
+      return res.status(404).json({ success: false, message: "Lead not found" });
+    }
+
+    // Data to be passed to the Python script
+    const leadData = {
+      first_name: lead.firstName,
+      last_name: lead.lastName,
+      email: lead.newEmail || lead.email,
+      phone: lead.newPhone || lead.phone,
+      country_code: lead.prefix || "1", // Default to "1" if no prefix is set
+      password: `StrongPassword${Math.floor(Math.random() * 900) + 100}!`, // Generate a random strong password
+      api_token: process.env.DOLPHIN_API_TOKEN // Get API token from environment variable
+    };
+
+    console.log('Starting Python script with lead data:', leadData);
+
+    // Use path.join for cross-platform compatibility
+    const path = require('path');
+    const scriptPath = path.join(__dirname, '..', 'injector.py');
+
+    console.log('Python script path:', scriptPath);
+
+    // Check if the script exists
+    const fs = require('fs');
+    if (!fs.existsSync(scriptPath)) {
+      console.error('Python script not found at:', scriptPath);
+      return res.status(500).json({
+        success: false,
+        message: "Injection script not found",
+        details: `Script not found at ${scriptPath}`
+      });
+    }
+
+    const pythonProcess = spawn("python", [scriptPath, JSON.stringify(leadData)]);
+
+    let stdoutData = '';
+    let stderrData = '';
+
+    pythonProcess.stdout.on("data", (data) => {
+      stdoutData += data;
+      console.log(`Python Script Output: ${data}`);
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      stderrData += data;
+      console.error(`Python Script Error: ${data}`);
+    });
+
+    pythonProcess.on("error", (error) => {
+      console.error('Failed to start Python process:', error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to start injection process",
+        error: error.message
+      });
+    });
+
+    pythonProcess.on("close", (code) => {
+      console.log(`Python process exited with code ${code}`);
+      if (code === 0) {
+        res.status(200).json({
+          success: true,
+          message: "Injection process completed successfully.",
+          output: stdoutData
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: `Injection process failed with exit code ${code}`,
+          error: stderrData,
+          output: stdoutData
+        });
+      }
+    });
+
+  } catch (error) {
+    console.error('Server error during injection:', error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during injection.",
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
