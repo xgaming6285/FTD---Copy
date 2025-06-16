@@ -604,17 +604,47 @@ exports.createOrder = async (req, res, next) => {
 
     // Then update leads with the order ID
     if (pulledLeads.length > 0) {
-      await Lead.updateMany(
-        { _id: { $in: pulledLeads.map((l) => l._id) } },
-        {
-          $set: {
-            // Keep assignment tracking for audit purposes, but don't block reuse
-            assignedTo: req.user._id,
-            assignedAt: new Date(),
-            orderId: order._id,
-          },
-        }
-      );
+      // Get current state of leads to check existing assignments
+      const existingLeads = await Lead.find({ 
+        _id: { $in: pulledLeads.map((l) => l._id) }
+      }).select('_id assignedTo isAssigned assignedAt');
+
+      // Separate leads that are already assigned vs unassigned
+      const alreadyAssignedLeads = existingLeads.filter(lead => lead.isAssigned && lead.assignedTo);
+      const unassignedLeads = existingLeads.filter(lead => !lead.isAssigned || !lead.assignedTo);
+
+      console.log(`[ORDER-ASSIGNMENT] Processing ${pulledLeads.length} leads for order ${order._id}`);
+      console.log(`[ORDER-ASSIGNMENT] - ${alreadyAssignedLeads.length} leads already assigned to agents (preserving assignments)`);
+      console.log(`[ORDER-ASSIGNMENT] - ${unassignedLeads.length} leads unassigned (will assign to order creator: ${req.user.role})`);
+
+      // For already assigned leads, only update orderId (preserve agent assignment)
+      if (alreadyAssignedLeads.length > 0) {
+        await Lead.updateMany(
+          { _id: { $in: alreadyAssignedLeads.map(l => l._id) } },
+          {
+            $set: {
+              orderId: order._id,
+            },
+          }
+        );
+        console.log(`[ORDER-ASSIGNMENT] Successfully preserved agent assignments for ${alreadyAssignedLeads.length} leads`);
+      }
+
+      // For unassigned leads, assign to order creator and set orderId
+      if (unassignedLeads.length > 0) {
+        await Lead.updateMany(
+          { _id: { $in: unassignedLeads.map(l => l._id) } },
+          {
+            $set: {
+              assignedTo: req.user._id,
+              assignedAt: new Date(),
+              isAssigned: true,
+              orderId: order._id,
+            },
+          }
+        );
+        console.log(`[ORDER-ASSIGNMENT] Successfully assigned ${unassignedLeads.length} unassigned leads to order creator`);
+      }
 
       // Verify the update was successful
       const updatedLeads = await Lead.find({
