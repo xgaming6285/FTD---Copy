@@ -17,6 +17,7 @@ import DisclaimerModal from './components/common/DisclaimerModal.jsx';
 // Import pages
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx'; // NEW: Import the RegisterPage
+import LandingPage from './pages/LandingPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import OrdersPage from './pages/OrdersPage.jsx';
 import LeadsPage from './pages/LeadsPage.jsx';
@@ -103,6 +104,7 @@ function AppContent() {
           {/* Public routes */}
           <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
           <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+          <Route path="/landing" element={<LandingPage />} />
           <Route path="/disclaimer" element={<DisclaimerPage />} />
 
           {/* Protected routes with layout */}
