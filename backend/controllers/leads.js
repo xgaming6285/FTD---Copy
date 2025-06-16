@@ -1312,22 +1312,30 @@ exports.injectLead = async (req, res) => {
       return res.status(404).json({ success: false, message: "Lead not found" });
     }
 
-    // Data to be passed to the Python script
+    const landingPage = req.body.landingPage;
+    if (!landingPage) {
+      return res.status(400).json({
+        success: false,
+        message: "Landing page URL is required",
+      });
+    }
+
     const leadData = {
-      first_name: lead.firstName,
-      last_name: lead.lastName,
-      email: lead.newEmail || lead.email,
-      phone: lead.newPhone || lead.phone,
-      country_code: lead.prefix || "1", // Default to "1" if no prefix is set
-      password: `StrongPassword${Math.floor(Math.random() * 900) + 100}!`, // Generate a random strong password
-      api_token: process.env.DOLPHIN_API_TOKEN // Get API token from environment variable
+      firstName: lead.firstName,
+      lastName: lead.lastName,
+      email: lead.newEmail,
+      phone: lead.newPhone,
+      country: lead.country,
+      country_code: lead.prefix,
+      landingPage,
+      password: "TPvBwkO8", // This should be stored securely
     };
 
     console.log('Starting Python script with lead data:', leadData);
 
     // Use path.join for cross-platform compatibility
     const path = require('path');
-    const scriptPath = path.join(__dirname, '..', 'injector.py');
+    const scriptPath = path.join(__dirname, '..', '..', 'injector_playwright.py');
 
     console.log('Python script path:', scriptPath);
 

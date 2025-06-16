@@ -558,7 +558,8 @@ const LeadsPage = () => {
     setIsInjecting(true);
     setInjectionStatus({ success: null, message: "Starting injection..." });
     try {
-      const res = await api.post(`/leads/${leadId}/inject`);
+      const landingPageUrl = `${window.location.origin}/landing`;
+      const res = await api.post(`/leads/${leadId}/inject`, { landingPage: landingPageUrl });
       if (res.status === 200) {
         setInjectionStatus({ success: true, message: "Injection process started successfully!" });
       }
