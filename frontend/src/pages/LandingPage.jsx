@@ -29,6 +29,7 @@ import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import axios from "axios";
 import { motion } from "framer-motion";
+import api from "../services/api"; // Import the API service
 
 // Country codes for the prefix dropdown
 const countryCodes = [
@@ -112,7 +113,17 @@ const LandingPage = () => {
     setSubmitError("");
 
     try {
-      const response = await axios.post("/api/landing", data);
+      // Check if we're in injection mode (set by the injector script)
+      const isInjectionMode = window.localStorage.getItem('isInjectionMode') === 'true';
+      
+      if (isInjectionMode) {
+        // Skip API call in injection mode, just show success
+        setIsSubmitted(true);
+        reset();
+        return;
+      }
+
+      const response = await api.post("/landing", data);
       
       if (response.data.success) {
         setIsSubmitted(true);

@@ -27,7 +27,7 @@ app.set("trust proxy", 1);
 
 // Database connection
 mongoose.connect(
-  process.env.MONGODB_URI || "mongodb://localhost:27017/lead-management",
+  process.env.MONGODB_URI || "mongodb+srv://dani034406:Daniel6285@cluster0.g0vqepz.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0",
   {
     serverSelectionTimeoutMS: 10000,
     socketTimeoutMS: 60000,
