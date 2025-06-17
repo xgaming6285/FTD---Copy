@@ -29,7 +29,7 @@ import {
   Analytics as PerformanceIcon,
   AccountCircle as AccountIcon,
   Logout as LogoutIcon,
-  Book as ReferenceIcon
+  AttachMoney as PaymentIcon
 } from '@mui/icons-material';
 import { logout, selectUser } from '../store/slices/authSlice';
 import Footer from './Footer';
@@ -75,8 +75,7 @@ const MainLayout = () => {
   // Define navigation items based on user role
   const getNavigationItems = () => {
     const commonItems = [
-      { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-      { text: 'Reference', icon: <ReferenceIcon />, path: '/reference' }
+      { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
     ];
 
     if (user?.role === 'admin') {
@@ -98,7 +97,8 @@ const MainLayout = () => {
       return [
         ...commonItems,
         { text: 'My Leads', icon: <LeadsIcon />, path: '/leads' },
-        { text: 'Performance', icon: <PerformanceIcon />, path: '/performance' }
+        { text: 'Performance', icon: <PerformanceIcon />, path: '/performance' },
+        { text: 'Payment', icon: <PaymentIcon />, path: '/reference' }
       ];
     } else if (user?.role === 'lead_manager') {
       return [
