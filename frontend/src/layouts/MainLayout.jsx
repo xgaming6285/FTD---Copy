@@ -84,7 +84,9 @@ const MainLayout = () => {
         { text: 'Orders', icon: <OrdersIcon />, path: '/orders' },
         { text: 'Leads', icon: <LeadsIcon />, path: '/leads' },
         { text: 'Users', icon: <UsersIcon />, path: '/users' },
-        { text: 'Performance', icon: <PerformanceIcon />, path: '/performance' }
+        { text: 'Performance', icon: <PerformanceIcon />, path: '/performance' },
+        { text: 'Payment', icon: <PaymentIcon />, path: '/reference' }
+
       ];
     } else if (user?.role === 'affiliate_manager') {
       return [

@@ -22,7 +22,11 @@ import {
     Alert,
     Accordion,
     AccordionSummary,
-    AccordionDetails
+    AccordionDetails,
+    Select,
+    MenuItem,
+    FormControl,
+    InputLabel
 } from '@mui/material';
 import {
     Timer as TimerIcon,
@@ -46,6 +50,8 @@ const ReferencePage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [expanded, setExpanded] = useState(false);
+    const [selectedAgent, setSelectedAgent] = useState(null);
+    const [agents, setAgents] = useState([]);
 
     const handleAccordionChange = (panel) => (event, isExpanded) => {
         setExpanded(isExpanded ? panel : false);
@@ -88,24 +94,94 @@ const ReferencePage = () => {
         }
     ];
 
+    // Mock agents data
+    const mockAgents = [
+        {
+            id: "647",
+            fullName: "David Cooper",
+            metrics: {
+                incoming: 245,
+                unsuccessful: 12,
+                averageTime: 180,
+                totalTime: 43920,
+            },
+            stats: {
+                id: "647",
+                name: "David C",
+                incoming: 136,
+                failed: 0,
+                successful: 136,
+                totalTalkTime: "30:39:40",
+                totalTalkTimeSeconds: 110380,
+                ratePerSecond: RATE_PER_SECOND,
+                totalTalkPay: 306.86,
+                callCounts: {
+                    firstCalls: 15,
+                    secondCalls: 13,
+                    thirdCalls: 5,
+                    fourthCalls: 2,
+                    fifthCalls: 2,
+                    verifiedAccounts: 8
+                },
+                fines: 25.00
+            }
+        },
+        {
+            id: "648",
+            fullName: "Sarah Johnson",
+            metrics: {
+                incoming: 198,
+                unsuccessful: 8,
+                averageTime: 165,
+                totalTime: 32670,
+            },
+            stats: {
+                id: "648",
+                name: "Sarah J",
+                incoming: 120,
+                failed: 2,
+                successful: 118,
+                totalTalkTime: "25:45:30",
+                totalTalkTimeSeconds: 92730,
+                ratePerSecond: RATE_PER_SECOND,
+                totalTalkPay: 278.19,
+                callCounts: {
+                    firstCalls: 12,
+                    secondCalls: 10,
+                    thirdCalls: 4,
+                    fourthCalls: 3,
+                    fifthCalls: 1,
+                    verifiedAccounts: 6
+                },
+                fines: 0.00
+            }
+        }
+    ];
+
     useEffect(() => {
-        // Redirect non-agent users
-        if (user && user.role !== 'agent') {
+        // Redirect non-agent/non-admin users
+        if (user && user.role !== 'agent' && user.role !== 'admin') {
             navigate('/');
             return;
         }
 
-        // Fetch data only for agents
-        if (user?.role === 'agent') {
+        // Set agents data for admin
+        if (user?.role === 'admin') {
+            setAgents(mockAgents);
+            setSelectedAgent(mockAgents[0]);
+            setMetrics(mockAgents[0].metrics);
+            setLoading(false);
+        }
+        // Set current agent data for agent role
+        else if (user?.role === 'agent') {
             const fetchMockData = () => {
                 setTimeout(() => {
-                    const mockMetrics = {
+                    setMetrics({
                         incoming: 245,
                         unsuccessful: 12,
                         averageTime: 180,
                         totalTime: 43920,
-                    };
-                    setMetrics(mockMetrics);
+                    });
                     setLoading(false);
                 }, 1000);
             };
@@ -114,12 +190,18 @@ const ReferencePage = () => {
         }
     }, [user, navigate]);
 
-    // If user is not an agent, show access denied
-    if (user && user.role !== 'agent') {
+    const handleAgentChange = (event) => {
+        const selectedAgentData = agents.find(agent => agent.id === event.target.value);
+        setSelectedAgent(selectedAgentData);
+        setMetrics(selectedAgentData.metrics);
+    };
+
+    // If user is not an agent or admin, show access denied
+    if (user && user.role !== 'agent' && user.role !== 'admin') {
         return (
             <Box p={3}>
                 <Alert severity="error">
-                    Access Denied. This page is only available for agents.
+                    Access Denied. This page is only available for agents and administrators.
                 </Alert>
             </Box>
         );
@@ -223,8 +305,43 @@ const ReferencePage = () => {
         );
     }
 
+    // Get the current agent data based on role
+    const currentAgentData = user.role === 'admin' ? selectedAgent : {
+        fullName: user.fullName,
+        metrics: metrics,
+        stats: agentStats
+    };
+
     return (
         <Box p={3}>
+            {/* Admin Agent Selector */}
+            {user.role === 'admin' && (
+                <Box mb={4}>
+                    <FormControl fullWidth>
+                        <InputLabel id="agent-select-label">Select Agent</InputLabel>
+                        <Select
+                            labelId="agent-select-label"
+                            id="agent-select"
+                            value={selectedAgent?.id || ''}
+                            label="Select Agent"
+                            onChange={handleAgentChange}
+                            sx={{
+                                backgroundColor: 'white',
+                                '&:hover': {
+                                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                                },
+                            }}
+                        >
+                            {agents.map((agent) => (
+                                <MenuItem key={agent.id} value={agent.id}>
+                                    {agent.fullName}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Box>
+            )}
+
             {/* Agent Info Header */}
             <Box
                 sx={{
@@ -244,11 +361,11 @@ const ReferencePage = () => {
                         mr: 2
                     }}
                 >
-                    {user?.fullName?.charAt(0)?.toUpperCase()}
+                    {currentAgentData?.fullName?.charAt(0)?.toUpperCase()}
                 </Avatar>
                 <Box>
                     <Typography variant="h4" sx={{ fontWeight: 500 }}>
-                        {user?.fullName}
+                        {currentAgentData?.fullName}
                     </Typography>
                     <Typography variant="subtitle1" color="text.secondary">
                         Agent Performance Metrics
@@ -262,7 +379,7 @@ const ReferencePage = () => {
                 <Grid item xs={12} sm={6} md={3}>
                     <StatCard
                         title="Incoming Calls"
-                        value={metrics?.incoming || 0}
+                        value={currentAgentData?.metrics?.incoming || 0}
                         icon={<IncomingIcon color="primary" />}
                         color="primary"
                         subtitle="Total incoming requests"
@@ -271,7 +388,7 @@ const ReferencePage = () => {
                 <Grid item xs={12} sm={6} md={3}>
                     <StatCard
                         title="Unsuccessful Calls"
-                        value={metrics?.unsuccessful || 0}
+                        value={currentAgentData?.metrics?.unsuccessful || 0}
                         icon={<ErrorIcon color="error" />}
                         color="error"
                         subtitle="Failed requests"
@@ -280,7 +397,7 @@ const ReferencePage = () => {
                 <Grid item xs={12} sm={6} md={3}>
                     <StatCard
                         title="Average Time"
-                        value={metrics?.averageTime ? `${(metrics.averageTime / 60).toFixed(1)} min` : '0 min'}
+                        value={currentAgentData?.metrics?.averageTime ? `${(currentAgentData.metrics.averageTime / 60).toFixed(1)} min` : '0 min'}
                         icon={<TimerIcon color="info" />}
                         color="info"
                         subtitle="Average processing time"
@@ -289,7 +406,7 @@ const ReferencePage = () => {
                 <Grid item xs={12} sm={6} md={3}>
                     <StatCard
                         title="Total Time"
-                        value={metrics?.totalTime ? `${(metrics.totalTime / 3600).toFixed(1)} hrs` : '0 hrs'}
+                        value={currentAgentData?.metrics?.totalTime ? `${(currentAgentData.metrics.totalTime / 3600).toFixed(1)} hrs` : '0 hrs'}
                         icon={<TotalTimeIcon color="success" />}
                         color="success"
                         subtitle="Total processing time"
@@ -306,7 +423,7 @@ const ReferencePage = () => {
                         value={`${successRate.toFixed(1)}%`}
                         icon={<SuccessIcon color="success" />}
                         color="success"
-                        subtitle={`${agentStats.successful} / ${agentStats.incoming} calls`}
+                        subtitle={`${currentAgentData?.stats?.successful} / ${currentAgentData?.stats?.incoming} calls`}
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} md={4}>
@@ -315,7 +432,7 @@ const ReferencePage = () => {
                         value={`$${totalBonuses.toFixed(2)}`}
                         icon={<BonusIcon color="primary" />}
                         color="primary"
-                        subtitle={`${Object.values(agentStats.callCounts).reduce((a, b) => a + b, 0)} qualified calls`}
+                        subtitle={`${Object.values(currentAgentData?.stats?.callCounts).reduce((a, b) => a + b, 0)} qualified calls`}
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} md={4}>
@@ -324,7 +441,7 @@ const ReferencePage = () => {
                         value={`$${totalPayableAmount.toFixed(2)}`}
                         icon={<MoneyIcon color="info" />}
                         color="info"
-                        subtitle={agentStats.fines > 0 ? `Fines: -$${agentStats.fines.toFixed(2)}` : 'No fines'}
+                        subtitle={currentAgentData?.stats?.fines > 0 ? `Fines: -$${currentAgentData.stats.fines.toFixed(2)}` : 'No fines'}
                     />
                 </Grid>
             </Grid>
@@ -339,11 +456,11 @@ const ReferencePage = () => {
                                 Call Bonuses
                             </Typography>
                             <Box pl={2}>
-                                <Typography variant="body2">1st Calls ({agentStats.callCounts.firstCalls}): ${bonuses.firstCallBonus.toFixed(2)}</Typography>
-                                <Typography variant="body2">2nd Calls ({agentStats.callCounts.secondCalls}): ${bonuses.secondCallBonus.toFixed(2)}</Typography>
-                                <Typography variant="body2">3rd Calls ({agentStats.callCounts.thirdCalls}): ${bonuses.thirdCallBonus.toFixed(2)}</Typography>
-                                <Typography variant="body2">4th Calls ({agentStats.callCounts.fourthCalls}): ${bonuses.fourthCallBonus.toFixed(2)}</Typography>
-                                <Typography variant="body2">5th Calls ({agentStats.callCounts.fifthCalls}): ${bonuses.fifthCallBonus.toFixed(2)}</Typography>
+                                <Typography variant="body2">1st Calls ({currentAgentData?.stats?.callCounts.firstCalls}): ${bonuses.firstCallBonus.toFixed(2)}</Typography>
+                                <Typography variant="body2">2nd Calls ({currentAgentData?.stats?.callCounts.secondCalls}): ${bonuses.secondCallBonus.toFixed(2)}</Typography>
+                                <Typography variant="body2">3rd Calls ({currentAgentData?.stats?.callCounts.thirdCalls}): ${bonuses.thirdCallBonus.toFixed(2)}</Typography>
+                                <Typography variant="body2">4th Calls ({currentAgentData?.stats?.callCounts.fourthCalls}): ${bonuses.fourthCallBonus.toFixed(2)}</Typography>
+                                <Typography variant="body2">5th Calls ({currentAgentData?.stats?.callCounts.fifthCalls}): ${bonuses.fifthCallBonus.toFixed(2)}</Typography>
                             </Box>
                         </Grid>
                         <Grid item xs={12} md={6}>
@@ -352,7 +469,7 @@ const ReferencePage = () => {
                             </Typography>
                             <Box pl={2}>
                                 <Typography variant="body2">
-                                    Verified Accounts ({agentStats.callCounts.verifiedAccounts}): ${bonuses.verifiedAccBonus.toFixed(2)}
+                                    Verified Accounts ({currentAgentData?.stats?.callCounts.verifiedAccounts}): ${bonuses.verifiedAccBonus.toFixed(2)}
                                 </Typography>
                             </Box>
                             <Divider sx={{ my: 2 }} />
@@ -360,7 +477,7 @@ const ReferencePage = () => {
                                 Deductions
                             </Typography>
                             <Box pl={2}>
-                                <Typography variant="body2">Fines: -${agentStats.fines.toFixed(2)}</Typography>
+                                <Typography variant="body2">Fines: -${currentAgentData?.stats?.fines.toFixed(2)}</Typography>
                             </Box>
                         </Grid>
                     </Grid>
