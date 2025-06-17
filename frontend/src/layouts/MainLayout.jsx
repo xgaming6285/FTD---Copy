@@ -28,7 +28,8 @@ import {
   People as UsersIcon,
   Analytics as PerformanceIcon,
   AccountCircle as AccountIcon,
-  Logout as LogoutIcon
+  Logout as LogoutIcon,
+  Book as ReferenceIcon
 } from '@mui/icons-material';
 import { logout, selectUser } from '../store/slices/authSlice';
 import Footer from './Footer';
@@ -74,7 +75,8 @@ const MainLayout = () => {
   // Define navigation items based on user role
   const getNavigationItems = () => {
     const commonItems = [
-      { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' }
+      { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+      { text: 'Reference', icon: <ReferenceIcon />, path: '/reference' }
     ];
 
     if (user?.role === 'admin') {
