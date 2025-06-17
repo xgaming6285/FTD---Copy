@@ -1424,3 +1424,63 @@ exports.injectLead = async (req, res) => {
     });
   }
 };
+
+// @desc    Delete multiple leads with filtering
+// @route   DELETE /api/leads/bulk-delete
+// @access  Private (Admin only)
+exports.bulkDeleteLeads = async (req, res, next) => {
+  try {
+    // Only admin can delete leads
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete leads",
+      });
+    }
+
+    const {
+      leadType,
+      country,
+      gender,
+      status,
+      documentStatus,
+      isAssigned,
+      search,
+    } = req.body;
+
+    // Build filter object
+    const filter = {};
+    if (leadType) filter.leadType = leadType;
+    if (country) filter.country = new RegExp(country, "i");
+    if (gender) filter.gender = gender;
+    if (status) filter.status = status;
+    if (documentStatus) filter["documents.status"] = documentStatus;
+    if (isAssigned !== undefined && isAssigned !== "") {
+      filter.isAssigned = isAssigned === "true" || isAssigned === true;
+    }
+
+    // Add search functionality
+    if (search) {
+      filter.$or = [
+        { firstName: new RegExp(search, "i") },
+        { lastName: new RegExp(search, "i") },
+        { newEmail: new RegExp(search, "i") },
+        { oldEmail: new RegExp(search, "i") },
+        { newPhone: new RegExp(search, "i") },
+        { oldPhone: new RegExp(search, "i") }
+      ];
+    }
+
+    const result = await Lead.deleteMany(filter);
+
+    res.status(200).json({
+      success: true,
+      message: `${result.deletedCount} leads deleted successfully`,
+      data: {
+        deletedCount: result.deletedCount,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
