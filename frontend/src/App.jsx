@@ -16,7 +16,7 @@ import DisclaimerModal from './components/common/DisclaimerModal.jsx';
 
 // Import pages
 import LoginPage from './pages/LoginPage.jsx';
-import RegisterPage from './pages/RegisterPage.jsx'; // NEW: Import the RegisterPage
+import RegisterPage from './pages/RegisterPage.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import OrdersPage from './pages/OrdersPage.jsx';
@@ -26,6 +26,7 @@ import PerformancePage from './pages/PerformancePage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
 import DisclaimerPage from './pages/DisclaimerPage.jsx';
+import ReferencePage from './pages/ReferencePage.jsx';
 
 // Create theme
 const theme = createTheme({
@@ -118,6 +119,7 @@ function AppContent() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="reference" element={<ReferencePage />} />
             <Route path="orders" element={<OrdersPage />} />
             <Route path="leads" element={<LeadsPage />} />
             <Route path="users" element={<UsersPage />} />
