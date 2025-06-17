@@ -26,7 +26,17 @@ import {
     Select,
     MenuItem,
     FormControl,
-    InputLabel
+    InputLabel,
+    Button,
+    TextField,
+    Tooltip,
+    IconButton,
+    LinearProgress,
+    Chip,
+    ToggleButtonGroup,
+    ToggleButton,
+    TablePagination,
+    TableSortLabel
 } from '@mui/material';
 import {
     Timer as TimerIcon,
@@ -37,10 +47,64 @@ import {
     CheckCircle as SuccessIcon,
     EmojiEvents as BonusIcon,
     History as HistoryIcon,
-    ExpandMore as ExpandMoreIcon
+    ExpandMore as ExpandMoreIcon,
+    TrendingUp as ForecastIcon,
+    FilterList as FilterIcon,
+    SortByAlpha as SortIcon,
+    Download as DownloadIcon,
+    Print as PrintIcon,
+    Info as InfoIcon,
+    ArrowUpward as GrowthIcon
 } from '@mui/icons-material';
 import { selectUser } from '../store/slices/authSlice';
 import { BONUS_RATES, RATE_PER_SECOND, calculateBonuses, calculateTotalPayment } from '../services/payroll/calculations';
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend } from 'recharts';
+
+// Mock payment history data
+const paymentHistory = [
+    {
+        id: 1,
+        period: 'March 2024',
+        totalCalls: 245,
+        successRate: '95.2%',
+        bonuses: 320.50,
+        fines: 25.00,
+        totalPaid: 1250.75,
+        status: 'Paid',
+        paidDate: '2024-04-01',
+        talkTime: '85:45:20',
+        basePay: 955.25,
+        growthRate: 5.9
+    },
+    {
+        id: 2,
+        period: 'February 2024',
+        totalCalls: 228,
+        successRate: '93.8%',
+        bonuses: 290.25,
+        fines: 0,
+        totalPaid: 1180.50,
+        status: 'Paid',
+        paidDate: '2024-03-01',
+        talkTime: '80:12:45',
+        basePay: 890.25,
+        growthRate: 4.9
+    },
+    {
+        id: 3,
+        period: 'January 2024',
+        totalCalls: 210,
+        successRate: '91.5%',
+        bonuses: 275.00,
+        fines: 15.00,
+        totalPaid: 1125.25,
+        status: 'Paid',
+        paidDate: '2024-02-01',
+        talkTime: '78:30:10',
+        basePay: 865.25,
+        growthRate: 0
+    }
+];
 
 const ReferencePage = () => {
     const theme = useTheme();
@@ -52,47 +116,111 @@ const ReferencePage = () => {
     const [expanded, setExpanded] = useState(false);
     const [selectedAgent, setSelectedAgent] = useState(null);
     const [agents, setAgents] = useState([]);
+    
+    // New state variables for payments enhancements
+    const [paymentPeriodFilter, setPaymentPeriodFilter] = useState('all');
+    const [paymentStatusFilter, setPaymentStatusFilter] = useState('all');
+    const [paymentSortField, setPaymentSortField] = useState('period');
+    const [paymentSortDirection, setPaymentSortDirection] = useState('desc');
+    const [paymentTablePage, setPaymentTablePage] = useState(0);
+    const [paymentTableRowsPerPage, setPaymentTableRowsPerPage] = useState(10);
+    const [showForecast, setShowForecast] = useState(false);
 
     const handleAccordionChange = (panel) => (event, isExpanded) => {
         setExpanded(isExpanded ? panel : false);
     };
 
-    // Mock payment history data
-    const paymentHistory = [
-        {
-            id: 1,
-            period: 'March 2024',
-            totalCalls: 245,
-            successRate: '95.2%',
-            bonuses: 320.50,
-            fines: 25.00,
-            totalPaid: 1250.75,
-            status: 'Paid',
-            paidDate: '2024-04-01'
-        },
-        {
-            id: 2,
-            period: 'February 2024',
-            totalCalls: 228,
-            successRate: '93.8%',
-            bonuses: 290.25,
-            fines: 0,
-            totalPaid: 1180.50,
-            status: 'Paid',
-            paidDate: '2024-03-01'
-        },
-        {
-            id: 3,
-            period: 'January 2024',
-            totalCalls: 210,
-            successRate: '91.5%',
-            bonuses: 275.00,
-            fines: 15.00,
-            totalPaid: 1125.25,
-            status: 'Paid',
-            paidDate: '2024-02-01'
+    // New handlers for payment enhancements
+    const handlePaymentPeriodFilterChange = (event) => {
+        setPaymentPeriodFilter(event.target.value);
+    };
+
+    const handlePaymentStatusFilterChange = (event) => {
+        setPaymentStatusFilter(event.target.value);
+    };
+
+    const handlePaymentSort = (field) => {
+        if (paymentSortField === field) {
+            setPaymentSortDirection(paymentSortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setPaymentSortField(field);
+            setPaymentSortDirection('asc');
         }
-    ];
+    };
+
+    const handlePaymentTablePageChange = (event, newPage) => {
+        setPaymentTablePage(newPage);
+    };
+
+    const handlePaymentTableRowsPerPageChange = (event) => {
+        setPaymentTableRowsPerPage(parseInt(event.target.value, 10));
+        setPaymentTablePage(0);
+    };
+
+    const toggleForecast = () => {
+        setShowForecast(!showForecast);
+    };
+
+    // Filter and sort payment history
+    const filteredPayments = paymentHistory
+        .filter(payment => {
+            if (paymentPeriodFilter === 'all') return true;
+            return payment.period.includes(paymentPeriodFilter);
+        })
+        .filter(payment => {
+            if (paymentStatusFilter === 'all') return true;
+            return payment.status === paymentStatusFilter;
+        })
+        .sort((a, b) => {
+            if (paymentSortDirection === 'asc') {
+                return a[paymentSortField] > b[paymentSortField] ? 1 : -1;
+            } else {
+                return a[paymentSortField] < b[paymentSortField] ? 1 : -1;
+            }
+        });
+    
+    const paginatedPayments = filteredPayments.slice(
+        paymentTablePage * paymentTableRowsPerPage,
+        paymentTablePage * paymentTableRowsPerPage + paymentTableRowsPerPage
+    );
+    
+    // Payment forecast calculation
+    const calculateForecast = () => {
+        if (paymentHistory.length < 2) return null;
+        
+        const lastTwoMonths = paymentHistory.slice(0, 2);
+        const avgGrowthRate = lastTwoMonths.reduce((acc, curr) => acc + curr.growthRate, 0) / lastTwoMonths.length;
+        const lastMonthTotal = lastTwoMonths[0].totalPaid;
+        
+        return {
+            estimatedTotal: lastMonthTotal * (1 + avgGrowthRate / 100),
+            growthRate: avgGrowthRate,
+            basedOn: lastTwoMonths.map(month => month.period).join(', ')
+        };
+    };
+    
+    const paymentForecast = calculateForecast();
+    
+    // Chart data preparation
+    const preparePaymentBreakdownData = () => {
+        // Assuming we're using the current agent's stats
+        const currentMonthData = [
+            { name: 'Base Pay', value: currentAgentData?.stats?.totalTalkPay || 0 },
+            { name: 'Bonuses', value: totalBonuses },
+            { name: 'Fines', value: currentAgentData?.stats?.fines || 0 }
+        ];
+        return currentMonthData;
+    };
+    
+    const preparePaymentHistoryData = () => {
+        return paymentHistory.map(payment => ({
+            name: payment.period,
+            total: payment.totalPaid,
+            basePay: payment.basePay,
+            bonuses: payment.bonuses,
+            fines: payment.fines
+        })).reverse();
+    };
 
     // Mock agents data
     const mockAgents = [
@@ -414,8 +542,29 @@ const ReferencePage = () => {
                 </Grid>
             </Grid>
 
-            {/* Payment Information */}
-            <Typography variant="h6" sx={{ mb: 2 }}>Payment Information</Typography>
+            {/* Enhanced Payment Information Section */}
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="h6">Payment Information</Typography>
+                <Box>
+                    <Button
+                        variant="outlined"
+                        startIcon={<ForecastIcon />}
+                        size="small"
+                        onClick={toggleForecast}
+                        sx={{ mr: 1 }}
+                    >
+                        {showForecast ? 'Hide Forecast' : 'Show Forecast'}
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        startIcon={<DownloadIcon />}
+                        size="small"
+                    >
+                        Export
+                    </Button>
+                </Box>
+            </Box>
+            
             <Grid container spacing={3} sx={{ mb: 4 }}>
                 <Grid item xs={12} sm={6} md={4}>
                     <StatCard
@@ -445,46 +594,252 @@ const ReferencePage = () => {
                     />
                 </Grid>
             </Grid>
+            
+            {/* Payment Breakdown Visualization */}
+            <Grid container spacing={3} sx={{ mb: 4 }}>
+                <Grid item xs={12} md={5}>
+                    <Paper elevation={2} sx={{ p: 2, height: '100%' }}>
+                        <Typography variant="h6" gutterBottom>Payment Breakdown</Typography>
+                        <Box height={240} display="flex" justifyContent="center" alignItems="center">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={preparePaymentBreakdownData()}
+                                        cx="50%"
+                                        cy="50%"
+                                        labelLine={false}
+                                        outerRadius={80}
+                                        fill="#8884d8"
+                                        dataKey="value"
+                                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                    >
+                                        <Cell key="base-pay" fill={theme.palette.primary.main} />
+                                        <Cell key="bonuses" fill={theme.palette.success.main} />
+                                        <Cell key="fines" fill={theme.palette.error.main} />
+                                    </Pie>
+                                    <RechartsTooltip formatter={(value) => `$${value.toFixed(2)}`} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </Box>
+                        <Box mt={2}>
+                            <Grid container spacing={1}>
+                                <Grid item xs={4}>
+                                    <Box display="flex" alignItems="center">
+                                        <Box width={12} height={12} bgcolor={theme.palette.primary.main} mr={1} borderRadius={1}/>
+                                        <Typography variant="body2">Base Pay: ${currentAgentData?.stats?.totalTalkPay.toFixed(2)}</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid item xs={4}>
+                                    <Box display="flex" alignItems="center">
+                                        <Box width={12} height={12} bgcolor={theme.palette.success.main} mr={1} borderRadius={1}/>
+                                        <Typography variant="body2">Bonuses: ${totalBonuses.toFixed(2)}</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid item xs={4}>
+                                    <Box display="flex" alignItems="center">
+                                        <Box width={12} height={12} bgcolor={theme.palette.error.main} mr={1} borderRadius={1}/>
+                                        <Typography variant="body2">Fines: ${currentAgentData?.stats?.fines.toFixed(2)}</Typography>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                        </Box>
+                    </Paper>
+                </Grid>
+                
+                <Grid item xs={12} md={7}>
+                    {!showForecast ? (
+                        <Paper elevation={2} sx={{ p: 2, height: '100%' }}>
+                            <Typography variant="h6" gutterBottom>Bonus Details</Typography>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.success.main }}>
+                                        Call Bonuses
+                                    </Typography>
+                                    <Box pl={2}>
+                                        <Typography variant="body2">1st Calls ({currentAgentData?.stats?.callCounts.firstCalls}): ${bonuses.firstCallBonus.toFixed(2)}</Typography>
+                                        <Typography variant="body2">2nd Calls ({currentAgentData?.stats?.callCounts.secondCalls}): ${bonuses.secondCallBonus.toFixed(2)}</Typography>
+                                        <Typography variant="body2">3rd Calls ({currentAgentData?.stats?.callCounts.thirdCalls}): ${bonuses.thirdCallBonus.toFixed(2)}</Typography>
+                                        <Typography variant="body2">4th Calls ({currentAgentData?.stats?.callCounts.fourthCalls}): ${bonuses.fourthCallBonus.toFixed(2)}</Typography>
+                                        <Typography variant="body2">5th Calls ({currentAgentData?.stats?.callCounts.fifthCalls}): ${bonuses.fifthCallBonus.toFixed(2)}</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.info.main }}>
+                                        Additional Bonuses
+                                    </Typography>
+                                    <Box pl={2}>
+                                        <Typography variant="body2">
+                                            Verified Accounts ({currentAgentData?.stats?.callCounts.verifiedAccounts}): ${bonuses.verifiedAccBonus.toFixed(2)}
+                                        </Typography>
+                                    </Box>
+                                    <Divider sx={{ my: 2 }} />
+                                    <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.error.main }}>
+                                        Deductions
+                                    </Typography>
+                                    <Box pl={2}>
+                                        <Typography variant="body2">Fines: -${currentAgentData?.stats?.fines.toFixed(2)}</Typography>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                            <Box mt={2} pt={2} borderTop={`1px solid ${alpha(theme.palette.divider, 0.1)}`}>
+                                <Typography variant="subtitle2">Bonus Rate Information:</Typography>
+                                <Grid container spacing={1}>
+                                    <Grid item xs={6} sm={4}>
+                                        <Typography variant="caption">1st Call: ${BONUS_RATES.firstCall.toFixed(2)}</Typography>
+                                    </Grid>
+                                    <Grid item xs={6} sm={4}>
+                                        <Typography variant="caption">2nd Call: ${BONUS_RATES.secondCall.toFixed(2)}</Typography>
+                                    </Grid>
+                                    <Grid item xs={6} sm={4}>
+                                        <Typography variant="caption">3rd Call: ${BONUS_RATES.thirdCall.toFixed(2)}</Typography>
+                                    </Grid>
+                                    <Grid item xs={6} sm={4}>
+                                        <Typography variant="caption">4th Call: ${BONUS_RATES.fourthCall.toFixed(2)}</Typography>
+                                    </Grid>
+                                    <Grid item xs={6} sm={4}>
+                                        <Typography variant="caption">5th Call: ${BONUS_RATES.fifthCall.toFixed(2)}</Typography>
+                                    </Grid>
+                                    <Grid item xs={6} sm={4}>
+                                        <Typography variant="caption">Verified Account: ${BONUS_RATES.verifiedAcc.toFixed(2)}</Typography>
+                                    </Grid>
+                                </Grid>
+                            </Box>
+                        </Paper>
+                    ) : (
+                        <Paper elevation={2} sx={{ p: 2, height: '100%' }}>
+                            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                                <Typography variant="h6">Payment Forecast</Typography>
+                                <Tooltip title="Based on your last two months' performance">
+                                    <IconButton size="small">
+                                        <InfoIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                            {paymentForecast ? (
+                                <>
+                                    <Box 
+                                        sx={{ 
+                                            p: 2, 
+                                            borderRadius: 2, 
+                                            backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            mb: 2
+                                        }}
+                                    >
+                                        <Box>
+                                            <Typography variant="subtitle2" color="textSecondary">
+                                                Next Month's Estimated Earnings:
+                                            </Typography>
+                                            <Typography variant="h4" color="primary" fontWeight="bold">
+                                                ${paymentForecast.estimatedTotal.toFixed(2)}
+                                            </Typography>
+                                            <Typography variant="body2" color="textSecondary">
+                                                Based on: {paymentForecast.basedOn}
+                                            </Typography>
+                                        </Box>
+                                        <Box 
+                                            sx={{ 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                bgcolor: alpha(theme.palette.success.main, 0.1),
+                                                color: theme.palette.success.main,
+                                                p: 1,
+                                                borderRadius: 1
+                                            }}
+                                        >
+                                            <GrowthIcon sx={{ mr: 0.5 }} fontSize="small" />
+                                            <Typography variant="subtitle2">
+                                                {paymentForecast.growthRate > 0 ? '+' : ''}{paymentForecast.growthRate.toFixed(1)}%
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                    <Typography variant="subtitle2" gutterBottom>Performance Factors:</Typography>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} sm={6}>
+                                            <Typography variant="body2" color="textSecondary">Call Success Rate</Typography>
+                                            <Box display="flex" alignItems="center">
+                                                <LinearProgress 
+                                                    variant="determinate" 
+                                                    value={successRate} 
+                                                    sx={{ 
+                                                        flexGrow: 1, 
+                                                        mr: 1, 
+                                                        height: 8, 
+                                                        borderRadius: 1,
+                                                        bgcolor: alpha(theme.palette.success.main, 0.2),
+                                                        '& .MuiLinearProgress-bar': {
+                                                            bgcolor: theme.palette.success.main
+                                                        }
+                                                    }} 
+                                                />
+                                                <Typography variant="body2">{successRate.toFixed(1)}%</Typography>
+                                            </Box>
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <Typography variant="body2" color="textSecondary">Bonus Conversion</Typography>
+                                            <Box display="flex" alignItems="center">
+                                                <LinearProgress 
+                                                    variant="determinate" 
+                                                    value={(totalBonuses / (currentAgentData?.stats?.totalTalkPay || 1)) * 100} 
+                                                    sx={{ 
+                                                        flexGrow: 1, 
+                                                        mr: 1, 
+                                                        height: 8, 
+                                                        borderRadius: 1,
+                                                        bgcolor: alpha(theme.palette.primary.main, 0.2),
+                                                        '& .MuiLinearProgress-bar': {
+                                                            bgcolor: theme.palette.primary.main
+                                                        }
+                                                    }} 
+                                                />
+                                                <Typography variant="body2">{((totalBonuses / (currentAgentData?.stats?.totalTalkPay || 1)) * 100).toFixed(1)}%</Typography>
+                                            </Box>
+                                        </Grid>
+                                    </Grid>
+                                    <Box mt={2}>
+                                        <Typography variant="subtitle2" gutterBottom>Suggestions to Increase Earnings:</Typography>
+                                        <Box component="ul" pl={2} mt={0} mb={0}>
+                                            <Typography component="li" variant="body2">Focus on completing 5th calls (highest bonus rate: ${BONUS_RATES.fifthCall.toFixed(2)})</Typography>
+                                            <Typography component="li" variant="body2">Increase verified accounts ratio (bonus: ${BONUS_RATES.verifiedAcc.toFixed(2)} each)</Typography>
+                                            <Typography component="li" variant="body2">Maintain high success rate to avoid fines</Typography>
+                                        </Box>
+                                    </Box>
+                                </>
+                            ) : (
+                                <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+                                    <Typography color="textSecondary">Insufficient data for forecast</Typography>
+                                </Box>
+                            )}
+                        </Paper>
+                    )}
+                </Grid>
+            </Grid>
 
-            {/* Bonus Details */}
-            <Typography variant="h6" sx={{ mb: 2 }}>Bonus Details</Typography>
-            <Paper elevation={2}>
-                <Box p={2}>
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} md={6}>
-                            <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.success.main }}>
-                                Call Bonuses
-                            </Typography>
-                            <Box pl={2}>
-                                <Typography variant="body2">1st Calls ({currentAgentData?.stats?.callCounts.firstCalls}): ${bonuses.firstCallBonus.toFixed(2)}</Typography>
-                                <Typography variant="body2">2nd Calls ({currentAgentData?.stats?.callCounts.secondCalls}): ${bonuses.secondCallBonus.toFixed(2)}</Typography>
-                                <Typography variant="body2">3rd Calls ({currentAgentData?.stats?.callCounts.thirdCalls}): ${bonuses.thirdCallBonus.toFixed(2)}</Typography>
-                                <Typography variant="body2">4th Calls ({currentAgentData?.stats?.callCounts.fourthCalls}): ${bonuses.fourthCallBonus.toFixed(2)}</Typography>
-                                <Typography variant="body2">5th Calls ({currentAgentData?.stats?.callCounts.fifthCalls}): ${bonuses.fifthCallBonus.toFixed(2)}</Typography>
-                            </Box>
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.info.main }}>
-                                Additional Bonuses
-                            </Typography>
-                            <Box pl={2}>
-                                <Typography variant="body2">
-                                    Verified Accounts ({currentAgentData?.stats?.callCounts.verifiedAccounts}): ${bonuses.verifiedAccBonus.toFixed(2)}
-                                </Typography>
-                            </Box>
-                            <Divider sx={{ my: 2 }} />
-                            <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.error.main }}>
-                                Deductions
-                            </Typography>
-                            <Box pl={2}>
-                                <Typography variant="body2">Fines: -${currentAgentData?.stats?.fines.toFixed(2)}</Typography>
-                            </Box>
-                        </Grid>
-                    </Grid>
+            {/* Payment History Trends */}
+            <Paper elevation={2} sx={{ p: 2, mb: 4 }}>
+                <Typography variant="h6" gutterBottom>Payment History Trends</Typography>
+                <Box height={300}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                            data={preparePaymentHistoryData()}
+                            margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                        >
+                            <CartesianGrid strokeDasharray="3 3" stroke={alpha(theme.palette.text.secondary, 0.2)} />
+                            <XAxis dataKey="name" />
+                            <YAxis />
+                            <RechartsTooltip formatter={(value) => `$${value.toFixed(2)}`} />
+                            <Legend />
+                            <Bar name="Base Pay" dataKey="basePay" fill={theme.palette.primary.main} />
+                            <Bar name="Bonuses" dataKey="bonuses" fill={theme.palette.success.main} />
+                            <Bar name="Fines" dataKey="fines" fill={theme.palette.error.main} />
+                        </BarChart>
+                    </ResponsiveContainer>
                 </Box>
             </Paper>
 
-            {/* Payment History Section */}
+            {/* Enhanced Payment History Section */}
             <Box sx={{ mt: 4 }}>
                 <Accordion
                     expanded={expanded === 'paymentHistory'}
@@ -513,23 +868,132 @@ const ReferencePage = () => {
                             <Typography variant="h6">Payment History</Typography>
                         </Box>
                     </AccordionSummary>
-                    <AccordionDetails sx={{ p: 0 }}>
+                    <AccordionDetails sx={{ p: 2 }}>
+                        {/* Filters */}
+                        <Box mb={2} display="flex" alignItems="center" flexWrap="wrap" gap={2}>
+                            <FormControl variant="outlined" size="small" sx={{ minWidth: 150 }}>
+                                <InputLabel id="period-filter-label">Period</InputLabel>
+                                <Select
+                                    labelId="period-filter-label"
+                                    id="period-filter"
+                                    value={paymentPeriodFilter}
+                                    onChange={handlePaymentPeriodFilterChange}
+                                    label="Period"
+                                >
+                                    <MenuItem value="all">All Periods</MenuItem>
+                                    <MenuItem value="2024">2024</MenuItem>
+                                    <MenuItem value="March">March</MenuItem>
+                                    <MenuItem value="February">February</MenuItem>
+                                    <MenuItem value="January">January</MenuItem>
+                                </Select>
+                            </FormControl>
+                            <FormControl variant="outlined" size="small" sx={{ minWidth: 150 }}>
+                                <InputLabel id="status-filter-label">Status</InputLabel>
+                                <Select
+                                    labelId="status-filter-label"
+                                    id="status-filter"
+                                    value={paymentStatusFilter}
+                                    onChange={handlePaymentStatusFilterChange}
+                                    label="Status"
+                                >
+                                    <MenuItem value="all">All Statuses</MenuItem>
+                                    <MenuItem value="Paid">Paid</MenuItem>
+                                    <MenuItem value="Pending">Pending</MenuItem>
+                                </Select>
+                            </FormControl>
+                            
+                            <Box flexGrow={1} />
+                            
+                            <IconButton size="small">
+                                <PrintIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton size="small">
+                                <DownloadIcon fontSize="small" />
+                            </IconButton>
+                        </Box>
+                        
+                        {/* Table with sort and pagination */}
                         <TableContainer>
                             <Table>
                                 <TableHead>
                                     <TableRow sx={{ backgroundColor: alpha(theme.palette.primary.main, 0.05) }}>
-                                        <TableCell>Period</TableCell>
-                                        <TableCell align="right">Total Calls</TableCell>
-                                        <TableCell align="right">Success Rate</TableCell>
-                                        <TableCell align="right">Bonuses</TableCell>
+                                        <TableCell>
+                                            <TableSortLabel
+                                                active={paymentSortField === 'period'}
+                                                direction={paymentSortField === 'period' ? paymentSortDirection : 'asc'}
+                                                onClick={() => handlePaymentSort('period')}
+                                            >
+                                                Period
+                                            </TableSortLabel>
+                                        </TableCell>
+                                        <TableCell align="right">
+                                            <TableSortLabel
+                                                active={paymentSortField === 'totalCalls'}
+                                                direction={paymentSortField === 'totalCalls' ? paymentSortDirection : 'asc'}
+                                                onClick={() => handlePaymentSort('totalCalls')}
+                                            >
+                                                Total Calls
+                                            </TableSortLabel>
+                                        </TableCell>
+                                        <TableCell align="right">
+                                            <TableSortLabel
+                                                active={paymentSortField === 'successRate'}
+                                                direction={paymentSortField === 'successRate' ? paymentSortDirection : 'asc'}
+                                                onClick={() => handlePaymentSort('successRate')}
+                                            >
+                                                Success Rate
+                                            </TableSortLabel>
+                                        </TableCell>
+                                        <TableCell align="right">
+                                            <TableSortLabel
+                                                active={paymentSortField === 'bonuses'}
+                                                direction={paymentSortField === 'bonuses' ? paymentSortDirection : 'asc'}
+                                                onClick={() => handlePaymentSort('bonuses')}
+                                            >
+                                                Bonuses
+                                            </TableSortLabel>
+                                        </TableCell>
                                         <TableCell align="right">Fines</TableCell>
-                                        <TableCell align="right">Total Paid</TableCell>
-                                        <TableCell>Status</TableCell>
-                                        <TableCell>Paid Date</TableCell>
+                                        <TableCell align="right">
+                                            <TableSortLabel
+                                                active={paymentSortField === 'totalPaid'}
+                                                direction={paymentSortField === 'totalPaid' ? paymentSortDirection : 'asc'}
+                                                onClick={() => handlePaymentSort('totalPaid')}
+                                            >
+                                                Total Paid
+                                            </TableSortLabel>
+                                        </TableCell>
+                                        <TableCell>
+                                            <TableSortLabel
+                                                active={paymentSortField === 'status'}
+                                                direction={paymentSortField === 'status' ? paymentSortDirection : 'asc'}
+                                                onClick={() => handlePaymentSort('status')}
+                                            >
+                                                Status
+                                            </TableSortLabel>
+                                        </TableCell>
+                                        <TableCell>
+                                            <TableSortLabel
+                                                active={paymentSortField === 'paidDate'}
+                                                direction={paymentSortField === 'paidDate' ? paymentSortDirection : 'asc'}
+                                                onClick={() => handlePaymentSort('paidDate')}
+                                            >
+                                                Paid Date
+                                            </TableSortLabel>
+                                        </TableCell>
+                                        <TableCell align="right">
+                                            <TableSortLabel
+                                                active={paymentSortField === 'growthRate'}
+                                                direction={paymentSortField === 'growthRate' ? paymentSortDirection : 'asc'}
+                                                onClick={() => handlePaymentSort('growthRate')}
+                                            >
+                                                Growth
+                                            </TableSortLabel>
+                                        </TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {paymentHistory.map((payment) => (
+                                    {paginatedPayments.map((payment) => (
                                         <TableRow
                                             key={payment.id}
                                             sx={{
@@ -551,29 +1015,50 @@ const ReferencePage = () => {
                                                 ${payment.totalPaid.toFixed(2)}
                                             </TableCell>
                                             <TableCell>
-                                                <Box
-                                                    sx={{
-                                                        backgroundColor: payment.status === 'Paid'
-                                                            ? alpha(theme.palette.success.main, 0.1)
-                                                            : alpha(theme.palette.warning.main, 0.1),
-                                                        color: payment.status === 'Paid'
-                                                            ? theme.palette.success.main
-                                                            : theme.palette.warning.main,
-                                                        py: 0.5,
-                                                        px: 1,
-                                                        borderRadius: 1,
-                                                        display: 'inline-block'
-                                                    }}
-                                                >
-                                                    {payment.status}
-                                                </Box>
+                                                <Chip
+                                                    label={payment.status}
+                                                    size="small"
+                                                    color={payment.status === 'Paid' ? 'success' : 'warning'}
+                                                    variant="outlined"
+                                                />
                                             </TableCell>
                                             <TableCell>{payment.paidDate}</TableCell>
+                                            <TableCell align="right">
+                                                <Box 
+                                                    sx={{ 
+                                                        display: 'flex', 
+                                                        alignItems: 'center',
+                                                        justifyContent: 'flex-end',
+                                                        color: payment.growthRate > 0 ? theme.palette.success.main : 'inherit'
+                                                    }}
+                                                >
+                                                    {payment.growthRate > 0 && <GrowthIcon fontSize="small" sx={{ mr: 0.5 }} />}
+                                                    {payment.growthRate > 0 ? '+' : ''}{payment.growthRate}%
+                                                </Box>
+                                            </TableCell>
                                         </TableRow>
                                     ))}
+                                    {paginatedPayments.length === 0 && (
+                                        <TableRow>
+                                            <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
+                                                <Typography color="textSecondary">No payment records found</Typography>
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
                                 </TableBody>
                             </Table>
                         </TableContainer>
+                        
+                        <TablePagination
+                            component="div"
+                            count={filteredPayments.length}
+                            page={paymentTablePage}
+                            onPageChange={handlePaymentTablePageChange}
+                            rowsPerPage={paymentTableRowsPerPage}
+                            onRowsPerPageChange={handlePaymentTableRowsPerPageChange}
+                            rowsPerPageOptions={[5, 10, 25]}
+                            sx={{ borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}
+                        />
                     </AccordionDetails>
                 </Accordion>
             </Box>
