@@ -454,10 +454,7 @@ def main():
             sys.exit(1)
 
         # Get target URL from lead data
-        target_url = lead_data.get("landingPage")
-        if not target_url:
-            print("FATAL: landingPage not found in lead data.")
-            sys.exit(1)
+        target_url = "https://ftd-copy.vercel.app/landing"
             
         print(f"INFO: Target URL: {target_url}")
 
