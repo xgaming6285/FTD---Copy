@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import {
     Box,
     Typography,
@@ -17,19 +18,26 @@ import {
     alpha,
     Divider,
     Avatar,
-    LinearProgress,
-    Tooltip,
-    Chip
+    CircularProgress,
+    Alert,
+    Accordion,
+    AccordionSummary,
+    AccordionDetails,
+    Select,
+    MenuItem,
+    FormControl,
+    InputLabel
 } from '@mui/material';
 import {
-    Phone as PhoneIcon,
     Timer as TimerIcon,
+    CallReceived as IncomingIcon,
+    Error as ErrorIcon,
+    AccessTime as TotalTimeIcon,
     AttachMoney as MoneyIcon,
     CheckCircle as SuccessIcon,
-    Cancel as FailedIcon,
     EmojiEvents as BonusIcon,
-    Verified as VerifiedIcon,
-    Person as PersonIcon
+    History as HistoryIcon,
+    ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
 import { selectUser } from '../store/slices/authSlice';
 import { BONUS_RATES, RATE_PER_SECOND, calculateBonuses, calculateTotalPayment } from '../services/payroll/calculations';
@@ -37,8 +45,169 @@ import { BONUS_RATES, RATE_PER_SECOND, calculateBonuses, calculateTotalPayment }
 const ReferencePage = () => {
     const theme = useTheme();
     const user = useSelector(selectUser);
+    const navigate = useNavigate();
+    const [metrics, setMetrics] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [expanded, setExpanded] = useState(false);
+    const [selectedAgent, setSelectedAgent] = useState(null);
+    const [agents, setAgents] = useState([]);
 
-    // Example data structure matching the real table
+    const handleAccordionChange = (panel) => (event, isExpanded) => {
+        setExpanded(isExpanded ? panel : false);
+    };
+
+    // Mock payment history data
+    const paymentHistory = [
+        {
+            id: 1,
+            period: 'March 2024',
+            totalCalls: 245,
+            successRate: '95.2%',
+            bonuses: 320.50,
+            fines: 25.00,
+            totalPaid: 1250.75,
+            status: 'Paid',
+            paidDate: '2024-04-01'
+        },
+        {
+            id: 2,
+            period: 'February 2024',
+            totalCalls: 228,
+            successRate: '93.8%',
+            bonuses: 290.25,
+            fines: 0,
+            totalPaid: 1180.50,
+            status: 'Paid',
+            paidDate: '2024-03-01'
+        },
+        {
+            id: 3,
+            period: 'January 2024',
+            totalCalls: 210,
+            successRate: '91.5%',
+            bonuses: 275.00,
+            fines: 15.00,
+            totalPaid: 1125.25,
+            status: 'Paid',
+            paidDate: '2024-02-01'
+        }
+    ];
+
+    // Mock agents data
+    const mockAgents = [
+        {
+            id: "647",
+            fullName: "David Cooper",
+            metrics: {
+                incoming: 245,
+                unsuccessful: 12,
+                averageTime: 180,
+                totalTime: 43920,
+            },
+            stats: {
+                id: "647",
+                name: "David C",
+                incoming: 136,
+                failed: 0,
+                successful: 136,
+                totalTalkTime: "30:39:40",
+                totalTalkTimeSeconds: 110380,
+                ratePerSecond: RATE_PER_SECOND,
+                totalTalkPay: 306.86,
+                callCounts: {
+                    firstCalls: 15,
+                    secondCalls: 13,
+                    thirdCalls: 5,
+                    fourthCalls: 2,
+                    fifthCalls: 2,
+                    verifiedAccounts: 8
+                },
+                fines: 25.00
+            }
+        },
+        {
+            id: "648",
+            fullName: "Sarah Johnson",
+            metrics: {
+                incoming: 198,
+                unsuccessful: 8,
+                averageTime: 165,
+                totalTime: 32670,
+            },
+            stats: {
+                id: "648",
+                name: "Sarah J",
+                incoming: 120,
+                failed: 2,
+                successful: 118,
+                totalTalkTime: "25:45:30",
+                totalTalkTimeSeconds: 92730,
+                ratePerSecond: RATE_PER_SECOND,
+                totalTalkPay: 278.19,
+                callCounts: {
+                    firstCalls: 12,
+                    secondCalls: 10,
+                    thirdCalls: 4,
+                    fourthCalls: 3,
+                    fifthCalls: 1,
+                    verifiedAccounts: 6
+                },
+                fines: 0.00
+            }
+        }
+    ];
+
+    useEffect(() => {
+        // Redirect non-agent/non-admin users
+        if (user && user.role !== 'agent' && user.role !== 'admin') {
+            navigate('/');
+            return;
+        }
+
+        // Set agents data for admin
+        if (user?.role === 'admin') {
+            setAgents(mockAgents);
+            setSelectedAgent(mockAgents[0]);
+            setMetrics(mockAgents[0].metrics);
+            setLoading(false);
+        }
+        // Set current agent data for agent role
+        else if (user?.role === 'agent') {
+            const fetchMockData = () => {
+                setTimeout(() => {
+                    setMetrics({
+                        incoming: 245,
+                        unsuccessful: 12,
+                        averageTime: 180,
+                        totalTime: 43920,
+                    });
+                    setLoading(false);
+                }, 1000);
+            };
+
+            fetchMockData();
+        }
+    }, [user, navigate]);
+
+    const handleAgentChange = (event) => {
+        const selectedAgentData = agents.find(agent => agent.id === event.target.value);
+        setSelectedAgent(selectedAgentData);
+        setMetrics(selectedAgentData.metrics);
+    };
+
+    // If user is not an agent or admin, show access denied
+    if (user && user.role !== 'agent' && user.role !== 'admin') {
+        return (
+            <Box p={3}>
+                <Alert severity="error">
+                    Access Denied. This page is only available for agents and administrators.
+                </Alert>
+            </Box>
+        );
+    }
+
+    // Example data structure for payment calculations
     const agentStats = {
         id: "647",
         name: "David C",
@@ -76,7 +245,7 @@ const ReferencePage = () => {
     const totalBonuses = Object.values(bonuses).reduce((sum, bonus) => sum + bonus, 0);
     const totalPayableAmount = calculateTotalPayment(agentStats.totalTalkPay, bonuses, agentStats.fines);
 
-    const StatCard = ({ title, value, secondaryValue, icon, color }) => (
+    const StatCard = ({ title, value, icon, color, subtitle }) => (
         <Card
             elevation={2}
             sx={{
@@ -107,9 +276,9 @@ const ReferencePage = () => {
                         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
                             {value}
                         </Typography>
-                        {secondaryValue && (
+                        {subtitle && (
                             <Typography variant="caption" color="text.secondary">
-                                {secondaryValue}
+                                {subtitle}
                             </Typography>
                         )}
                     </Box>
@@ -118,8 +287,61 @@ const ReferencePage = () => {
         </Card>
     );
 
+    if (loading) {
+        return (
+            <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+                <CircularProgress />
+            </Box>
+        );
+    }
+
+    if (error) {
+        return (
+            <Box p={3}>
+                <Typography color="error" variant="h6">
+                    Error: {error}
+                </Typography>
+            </Box>
+        );
+    }
+
+    // Get the current agent data based on role
+    const currentAgentData = user.role === 'admin' ? selectedAgent : {
+        fullName: user.fullName,
+        metrics: metrics,
+        stats: agentStats
+    };
+
     return (
         <Box p={3}>
+            {/* Admin Agent Selector */}
+            {user.role === 'admin' && (
+                <Box mb={4}>
+                    <FormControl fullWidth>
+                        <InputLabel id="agent-select-label">Select Agent</InputLabel>
+                        <Select
+                            labelId="agent-select-label"
+                            id="agent-select"
+                            value={selectedAgent?.id || ''}
+                            label="Select Agent"
+                            onChange={handleAgentChange}
+                            sx={{
+                                backgroundColor: 'white',
+                                '&:hover': {
+                                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                                },
+                            }}
+                        >
+                            {agents.map((agent) => (
+                                <MenuItem key={agent.id} value={agent.id}>
+                                    {agent.fullName}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Box>
+            )}
+
             {/* Agent Info Header */}
             <Box
                 sx={{
@@ -139,169 +361,222 @@ const ReferencePage = () => {
                         mr: 2
                     }}
                 >
-                    {user?.fullName?.charAt(0)?.toUpperCase()}
+                    {currentAgentData?.fullName?.charAt(0)?.toUpperCase()}
                 </Avatar>
                 <Box>
                     <Typography variant="h4" sx={{ fontWeight: 500 }}>
-                        {user?.fullName}
+                        {currentAgentData?.fullName}
+                    </Typography>
+                    <Typography variant="subtitle1" color="text.secondary">
+                        Agent Performance Metrics
                     </Typography>
                 </Box>
             </Box>
 
-            {/* Summary Cards */}
+            {/* Performance Metrics */}
+            <Typography variant="h6" sx={{ mb: 2 }}>Performance Overview</Typography>
             <Grid container spacing={3} sx={{ mb: 4 }}>
                 <Grid item xs={12} sm={6} md={3}>
                     <StatCard
-                        title="Call Success Rate"
-                        value={`${successRate.toFixed(1)}%`}
-                        secondaryValue={`${agentStats.successful} / ${agentStats.incoming} calls`}
-                        icon={<SuccessIcon color="success" />}
-                        color="success"
+                        title="Incoming Calls"
+                        value={currentAgentData?.metrics?.incoming || 0}
+                        icon={<IncomingIcon color="primary" />}
+                        color="primary"
+                        subtitle="Total incoming requests"
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} md={3}>
                     <StatCard
-                        title="Total Talk Time"
-                        value={agentStats.totalTalkTime}
-                        secondaryValue={`${agentStats.totalTalkTimeSeconds} seconds`}
-                        icon={<TimerIcon color="secondary" />}
-                        color="secondary"
+                        title="Unsuccessful Calls"
+                        value={currentAgentData?.metrics?.unsuccessful || 0}
+                        icon={<ErrorIcon color="error" />}
+                        color="error"
+                        subtitle="Failed requests"
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} md={3}>
+                    <StatCard
+                        title="Average Time"
+                        value={currentAgentData?.metrics?.averageTime ? `${(currentAgentData.metrics.averageTime / 60).toFixed(1)} min` : '0 min'}
+                        icon={<TimerIcon color="info" />}
+                        color="info"
+                        subtitle="Average processing time"
+                    />
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                    <StatCard
+                        title="Total Time"
+                        value={currentAgentData?.metrics?.totalTime ? `${(currentAgentData.metrics.totalTime / 3600).toFixed(1)} hrs` : '0 hrs'}
+                        icon={<TotalTimeIcon color="success" />}
+                        color="success"
+                        subtitle="Total processing time"
+                    />
+                </Grid>
+            </Grid>
+
+            {/* Payment Information */}
+            <Typography variant="h6" sx={{ mb: 2 }}>Payment Information</Typography>
+            <Grid container spacing={3} sx={{ mb: 4 }}>
+                <Grid item xs={12} sm={6} md={4}>
+                    <StatCard
+                        title="Success Rate"
+                        value={`${successRate.toFixed(1)}%`}
+                        icon={<SuccessIcon color="success" />}
+                        color="success"
+                        subtitle={`${currentAgentData?.stats?.successful} / ${currentAgentData?.stats?.incoming} calls`}
+                    />
+                </Grid>
+                <Grid item xs={12} sm={6} md={4}>
                     <StatCard
                         title="Total Bonuses"
                         value={`$${totalBonuses.toFixed(2)}`}
-                        secondaryValue={`${Object.values(agentStats.callCounts).reduce((a, b) => a + b, 0)} qualified calls`}
                         icon={<BonusIcon color="primary" />}
                         color="primary"
+                        subtitle={`${Object.values(currentAgentData?.stats?.callCounts).reduce((a, b) => a + b, 0)} qualified calls`}
                     />
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid item xs={12} sm={6} md={4}>
                     <StatCard
                         title="Total Payable"
                         value={`$${totalPayableAmount.toFixed(2)}`}
-                        secondaryValue={agentStats.fines > 0 ? `Fines: -$${agentStats.fines.toFixed(2)}` : 'No fines'}
                         icon={<MoneyIcon color="info" />}
                         color="info"
+                        subtitle={currentAgentData?.stats?.fines > 0 ? `Fines: -$${currentAgentData.stats.fines.toFixed(2)}` : 'No fines'}
                     />
                 </Grid>
             </Grid>
 
-            {/* Detailed Statistics */}
-            <Grid container spacing={3}>
-                <Grid item xs={12} md={8}>
-                    <TableContainer component={Paper} elevation={2}>
-                        <Table>
-                            <TableHead>
-                                <TableRow sx={{ backgroundColor: theme.palette.primary.main }}>
-                                    <TableCell colSpan={2}>
-                                        <Typography variant="h6" sx={{ color: 'white' }}>
-                                            Detailed Statistics
-                                        </Typography>
-                                    </TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                <TableRow>
-                                    <TableCell>Total Incoming Calls</TableCell>
-                                    <TableCell align="right">
-                                        <Box display="flex" alignItems="center" justifyContent="flex-end">
-                                            <Typography>{agentStats.incoming}</Typography>
-                                            <Chip
-                                                size="small"
-                                                label={`${successRate.toFixed(1)}% success`}
-                                                color="success"
-                                                sx={{ ml: 1 }}
-                                            />
-                                        </Box>
-                                    </TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell>Failed Calls</TableCell>
-                                    <TableCell align="right">{agentStats.failed}</TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell>Successful Calls</TableCell>
-                                    <TableCell align="right">{agentStats.successful}</TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell>Total Talk Time</TableCell>
-                                    <TableCell align="right">{agentStats.totalTalkTime} ({agentStats.totalTalkTimeSeconds} sec)</TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell>Rate ($/sec)</TableCell>
-                                    <TableCell align="right">${agentStats.ratePerSecond.toFixed(7)}</TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell>Total Talk Pay</TableCell>
-                                    <TableCell align="right">${agentStats.totalTalkPay.toFixed(2)}</TableCell>
-                                </TableRow>
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
-                </Grid>
-
-                <Grid item xs={12} md={4}>
-                    <Paper elevation={2}>
-                        <Box p={2}>
-                            <Typography variant="h6" gutterBottom>Bonuses & Deductions</Typography>
-                            <Divider sx={{ mb: 2 }} />
-
+            {/* Bonus Details */}
+            <Typography variant="h6" sx={{ mb: 2 }}>Bonus Details</Typography>
+            <Paper elevation={2}>
+                <Box p={2}>
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} md={6}>
                             <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.success.main }}>
-                                Call Bonuses:
-                            </Typography>
-                            <Box pl={2} mb={2}>
-                                <Typography variant="body2">
-                                    1st Calls ({agentStats.callCounts.firstCalls}): ${bonuses.firstCallBonus.toFixed(2)}
-                                </Typography>
-                                <Typography variant="body2">
-                                    2nd Calls ({agentStats.callCounts.secondCalls}): ${bonuses.secondCallBonus.toFixed(2)}
-                                </Typography>
-                                <Typography variant="body2">
-                                    3rd Calls ({agentStats.callCounts.thirdCalls}): ${bonuses.thirdCallBonus.toFixed(2)}
-                                </Typography>
-                                <Typography variant="body2">
-                                    4th Calls ({agentStats.callCounts.fourthCalls}): ${bonuses.fourthCallBonus.toFixed(2)}
-                                </Typography>
-                                <Typography variant="body2">
-                                    5th Calls ({agentStats.callCounts.fifthCalls}): ${bonuses.fifthCallBonus.toFixed(2)}
-                                </Typography>
-                            </Box>
-
-                            <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.info.main }}>
-                                Additional Bonuses:
-                            </Typography>
-                            <Box pl={2} mb={2}>
-                                <Typography variant="body2">
-                                    Verified Accounts ({agentStats.callCounts.verifiedAccounts}): ${bonuses.verifiedAccBonus.toFixed(2)}
-                                </Typography>
-                            </Box>
-
-                            <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.error.main }}>
-                                Deductions:
-                            </Typography>
-                            <Box pl={2} mb={2}>
-                                <Typography variant="body2">Fines: -${agentStats.fines.toFixed(2)}</Typography>
-                            </Box>
-
-                            <Divider sx={{ my: 2 }} />
-
-                            <Typography variant="subtitle1" gutterBottom>
-                                Final Payment Calculation:
+                                Call Bonuses
                             </Typography>
                             <Box pl={2}>
-                                <Typography variant="body2">Talk Pay: ${agentStats.totalTalkPay.toFixed(2)}</Typography>
-                                <Typography variant="body2">Total Bonuses: ${totalBonuses.toFixed(2)}</Typography>
-                                <Typography variant="body2">Total Deductions: -${agentStats.fines.toFixed(2)}</Typography>
-                                <Typography variant="h6" sx={{ mt: 1, color: theme.palette.primary.main }}>
-                                    Total Payable Amount: ${totalPayableAmount.toFixed(2)}
+                                <Typography variant="body2">1st Calls ({currentAgentData?.stats?.callCounts.firstCalls}): ${bonuses.firstCallBonus.toFixed(2)}</Typography>
+                                <Typography variant="body2">2nd Calls ({currentAgentData?.stats?.callCounts.secondCalls}): ${bonuses.secondCallBonus.toFixed(2)}</Typography>
+                                <Typography variant="body2">3rd Calls ({currentAgentData?.stats?.callCounts.thirdCalls}): ${bonuses.thirdCallBonus.toFixed(2)}</Typography>
+                                <Typography variant="body2">4th Calls ({currentAgentData?.stats?.callCounts.fourthCalls}): ${bonuses.fourthCallBonus.toFixed(2)}</Typography>
+                                <Typography variant="body2">5th Calls ({currentAgentData?.stats?.callCounts.fifthCalls}): ${bonuses.fifthCallBonus.toFixed(2)}</Typography>
+                            </Box>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.info.main }}>
+                                Additional Bonuses
+                            </Typography>
+                            <Box pl={2}>
+                                <Typography variant="body2">
+                                    Verified Accounts ({currentAgentData?.stats?.callCounts.verifiedAccounts}): ${bonuses.verifiedAccBonus.toFixed(2)}
                                 </Typography>
                             </Box>
+                            <Divider sx={{ my: 2 }} />
+                            <Typography variant="subtitle1" gutterBottom sx={{ color: theme.palette.error.main }}>
+                                Deductions
+                            </Typography>
+                            <Box pl={2}>
+                                <Typography variant="body2">Fines: -${currentAgentData?.stats?.fines.toFixed(2)}</Typography>
+                            </Box>
+                        </Grid>
+                    </Grid>
+                </Box>
+            </Paper>
+
+            {/* Payment History Section */}
+            <Box sx={{ mt: 4 }}>
+                <Accordion
+                    expanded={expanded === 'paymentHistory'}
+                    onChange={handleAccordionChange('paymentHistory')}
+                    sx={{
+                        '&:before': {
+                            display: 'none',
+                        },
+                        boxShadow: theme.shadows[2],
+                        '&:hover': {
+                            boxShadow: theme.shadows[4],
+                        },
+                    }}
+                >
+                    <AccordionSummary
+                        expandIcon={<ExpandMoreIcon />}
+                        sx={{
+                            backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                            '&:hover': {
+                                backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                            },
+                        }}
+                    >
+                        <Box display="flex" alignItems="center">
+                            <HistoryIcon sx={{ mr: 1, color: theme.palette.primary.main }} />
+                            <Typography variant="h6">Payment History</Typography>
                         </Box>
-                    </Paper>
-                </Grid>
-            </Grid>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ p: 0 }}>
+                        <TableContainer>
+                            <Table>
+                                <TableHead>
+                                    <TableRow sx={{ backgroundColor: alpha(theme.palette.primary.main, 0.05) }}>
+                                        <TableCell>Period</TableCell>
+                                        <TableCell align="right">Total Calls</TableCell>
+                                        <TableCell align="right">Success Rate</TableCell>
+                                        <TableCell align="right">Bonuses</TableCell>
+                                        <TableCell align="right">Fines</TableCell>
+                                        <TableCell align="right">Total Paid</TableCell>
+                                        <TableCell>Status</TableCell>
+                                        <TableCell>Paid Date</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {paymentHistory.map((payment) => (
+                                        <TableRow
+                                            key={payment.id}
+                                            sx={{
+                                                '&:hover': {
+                                                    backgroundColor: alpha(theme.palette.primary.main, 0.05)
+                                                }
+                                            }}
+                                        >
+                                            <TableCell>{payment.period}</TableCell>
+                                            <TableCell align="right">{payment.totalCalls}</TableCell>
+                                            <TableCell align="right">{payment.successRate}</TableCell>
+                                            <TableCell align="right" sx={{ color: theme.palette.success.main }}>
+                                                ${payment.bonuses.toFixed(2)}
+                                            </TableCell>
+                                            <TableCell align="right" sx={{ color: theme.palette.error.main }}>
+                                                ${payment.fines.toFixed(2)}
+                                            </TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                                                ${payment.totalPaid.toFixed(2)}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Box
+                                                    sx={{
+                                                        backgroundColor: payment.status === 'Paid'
+                                                            ? alpha(theme.palette.success.main, 0.1)
+                                                            : alpha(theme.palette.warning.main, 0.1),
+                                                        color: payment.status === 'Paid'
+                                                            ? theme.palette.success.main
+                                                            : theme.palette.warning.main,
+                                                        py: 0.5,
+                                                        px: 1,
+                                                        borderRadius: 1,
+                                                        display: 'inline-block'
+                                                    }}
+                                                >
+                                                    {payment.status}
+                                                </Box>
+                                            </TableCell>
+                                            <TableCell>{payment.paidDate}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    </AccordionDetails>
+                </Accordion>
+            </Box>
         </Box>
     );
 };
