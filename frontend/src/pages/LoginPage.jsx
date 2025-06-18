@@ -62,11 +62,7 @@ const LoginPage = () => {
 
   const onSubmit = async (data) => {
     try {
-      const result = await dispatch(login(data)).unwrap();
-
-      if (result.token) {
-        localStorage.setItem('token', result.token);
-      }
+      await dispatch(login(data)).unwrap();
 
       // Navigate to dashboard or intended page
       const from = location.state?.from?.pathname || '/dashboard';

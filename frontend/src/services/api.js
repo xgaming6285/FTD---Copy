@@ -29,7 +29,7 @@ api.interceptors.request.use(
     console.log('API Request:', {
       fullUrl: `${config.baseURL}${config.url}`,
       method: config.method,
-      headers: config.headers
+      hasToken: !!token
     });
 
     if (token) {
@@ -64,6 +64,15 @@ api.interceptors.response.use(
       data: error.response?.data,
       message: error.message
     });
+
+    // Handle 401 errors by logging out the user
+    if (error.response?.status === 401) {
+      const state = store.getState();
+      if (state.auth.isAuthenticated) {
+        console.log('401 Unauthorized - logging out user');
+        store.dispatch(logout());
+      }
+    }
 
     if (!error.response) {
       error.message = 'Network error. Please check your connection.';

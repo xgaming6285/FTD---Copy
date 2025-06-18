@@ -6,7 +6,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline, CircularProgress, Box } from '@mui/material';
 import { Toaster } from 'react-hot-toast';
 import { store, persistor } from './store/store';
-import { selectUser, selectIsAuthenticated, acceptEula } from './store/slices/authSlice.js';
+import { selectUser, selectIsAuthenticated, selectAuth, acceptEula, getMe } from './store/slices/authSlice.js';
 
 // Import components
 import ProtectedRoute from './components/common/ProtectedRoute.jsx';
@@ -27,6 +27,7 @@ import ProfilePage from './pages/ProfilePage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
 import DisclaimerPage from './pages/DisclaimerPage.jsx';
 import ReferencePage from './pages/ReferencePage.jsx';
+import ClientNetworksPage from './pages/Admin/ClientNetworksPage.jsx';
 
 // Create theme
 const theme = createTheme({
@@ -83,8 +84,28 @@ const theme = createTheme({
 function AppContent() {
   const dispatch = useDispatch();
   const [disclaimerOpen, setDisclaimerOpen] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const user = useSelector(selectUser);
   const isAuthenticated = useSelector(selectIsAuthenticated);
+  const { token, isLoading } = useSelector(selectAuth);
+
+  // Initialize authentication on app startup
+  useEffect(() => {
+    const initializeAuth = async () => {
+      // If we have a token but no user data, validate the token
+      if (token && !user && !isLoading) {
+        try {
+          await dispatch(getMe()).unwrap();
+        } catch (error) {
+          console.log('Token validation failed:', error);
+          // Token is invalid, user will be logged out automatically by getMe.rejected
+        }
+      }
+      setIsInitializing(false);
+    };
+
+    initializeAuth();
+  }, [dispatch, token, user, isLoading]);
 
   useEffect(() => {
     if (isAuthenticated && user && !user.eulaAccepted) {
@@ -97,6 +118,20 @@ function AppContent() {
   const handleAgree = () => {
     dispatch(acceptEula());
   };
+
+  // Show loading screen while initializing authentication
+  if (isInitializing) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="100vh"
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <>
@@ -125,6 +160,13 @@ function AppContent() {
             <Route path="users" element={<UsersPage />} />
             <Route path="performance" element={<PerformancePage />} />
             <Route path="profile" element={<ProfilePage />} />
+
+            {/* Admin Specific Routes */}
+            <Route path="admin/client-networks" element={
+              <ProtectedRoute roles={['admin']}>
+                <ClientNetworksPage />
+              </ProtectedRoute>
+            } />
           </Route>
 
           {/* 404 page */}

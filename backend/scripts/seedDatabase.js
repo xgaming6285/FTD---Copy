@@ -7,7 +7,31 @@ const User = require("../models/User");
 const Lead = require("../models/Lead");
 const Order = require("../models/Order");
 const AgentPerformance = require("../models/AgentPerformance");
-const connectDB = require("../config/db");
+
+// Database connection with fallback
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(
+      process.env.MONGODB_URI || "mongodb+srv://dani034406:Daniel6285@cluster0.g0vqepz.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0",
+      {
+        serverSelectionTimeoutMS: 10000,
+        socketTimeoutMS: 60000,
+        family: 4,
+        maxPoolSize: 50,
+        minPoolSize: 10,
+        heartbeatFrequencyMS: 10000,
+        maxIdleTimeMS: 30000,
+        compressors: "zlib",
+      }
+    );
+
+    console.log('Connected to MongoDB');
+    return conn;
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    process.exit(1);
+  }
+};
 
 // Create default admin
 const createDefaultAdmin = async () => {
@@ -26,6 +50,7 @@ const createDefaultAdmin = async () => {
         canManageLeads: true 
       },
       isActive: true,
+      status: "approved",
     });
 
     console.log("✅ Admin user created successfully");
@@ -53,6 +78,7 @@ const createSampleUsers = async () => {
         role: "affiliate_manager",
         permissions: { canCreateOrders: true },
         isActive: true,
+        status: "approved",
       },
       {
         email: "agent1@leadmanagement.com",
@@ -62,6 +88,7 @@ const createSampleUsers = async () => {
         fourDigitCode: "1234",
         permissions: { canCreateOrders: false },
         isActive: true,
+        status: "approved",
       },
       {
         email: "agent2@leadmanagement.com",
@@ -71,6 +98,7 @@ const createSampleUsers = async () => {
         fourDigitCode: "5678",
         permissions: { canCreateOrders: false },
         isActive: true,
+        status: "approved",
       },
     ];
 

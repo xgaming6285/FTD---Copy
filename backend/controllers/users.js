@@ -787,3 +787,73 @@ exports.acceptEula = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Assign client networks to a user
+// @route   PUT /api/users/:id/assign-networks
+// @access  Private (Admin)
+exports.assignClientNetworks = async (req, res, next) => {
+    try {
+        const { networks } = req.body; // Expecting an array of network IDs
+        const userId = req.params.id;
+
+        if (!Array.isArray(networks)) {
+            return res.status(400).json({ success: false, message: 'Please provide an array of network IDs.' });
+        }
+
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: `User not found with id of ${userId}` });
+        }
+        
+        if (user.role !== 'affiliate_manager') {
+            return res.status(400).json({ success: false, message: 'Can only assign networks to affiliate managers.' });
+        }
+
+        // Overwrite existing assigned networks
+        user.clientNetworks = networks;
+        await user.save({ validateModifiedOnly: true });
+
+        res.status(200).json({
+            success: true,
+            data: user.clientNetworks
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Assign client brokers to a user
+// @route   PUT /api/users/:id/assign-brokers
+// @access  Private (Admin)
+exports.assignClientBrokers = async (req, res, next) => {
+    try {
+        const { brokers } = req.body; // Expecting an array of broker IDs
+        const userId = req.params.id;
+
+        if (!Array.isArray(brokers)) {
+            return res.status(400).json({ success: false, message: 'Please provide an array of broker IDs.' });
+        }
+
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: `User not found with id of ${userId}` });
+        }
+
+        if (user.role !== 'affiliate_manager') {
+            return res.status(400).json({ success: false, message: 'Can only assign brokers to affiliate managers.' });
+        }
+
+        // Overwrite existing assigned brokers
+        user.clientBrokers = brokers;
+        await user.save({ validateModifiedOnly: true });
+
+        res.status(200).json({
+            success: true,
+            data: user.clientBrokers
+        });
+    } catch (error) {
+        next(error);
+    }
+};

@@ -25,6 +25,14 @@ const userSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  clientNetworks: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ClientNetwork'
+  }],
+  clientBrokers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ClientBroker'
+  }],
   role: {
     type: String,
     enum: ['admin', 'affiliate_manager', 'agent', 'pending_approval', 'lead_manager'], // Added 'lead_manager' role

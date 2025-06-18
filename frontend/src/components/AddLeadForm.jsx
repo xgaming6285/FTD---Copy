@@ -21,6 +21,7 @@ import api from '../services/api';
 import { getSortedCountries } from '../constants/countries';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
 // Validation schema for adding a lead
 const addLeadSchema = yup.object({
@@ -50,6 +51,7 @@ const addLeadSchema = yup.object({
     'socialMedia.instagram': yup.string().nullable().url('Invalid Instagram URL'),
     'socialMedia.telegram': yup.string().nullable(),
     'socialMedia.whatsapp': yup.string().nullable(),
+    deviceFingerprint: yup.string(),
     documents: yup.array().of(
         yup.object().shape({
             url: yup.string().required('Document URL is required').url('Invalid document URL'),
@@ -88,6 +90,7 @@ const AddLeadForm = ({ onLeadAdded }) => {
             clientNetwork: '',
             dob: null,
             address: '',
+            deviceFingerprint: '',
             socialMedia: {
                 facebook: '',
                 twitter: '',
@@ -110,8 +113,16 @@ const AddLeadForm = ({ onLeadAdded }) => {
         console.log("Form data before submission:", data);
 
         try {
+            // Get device fingerprint
+            const fp = await FingerprintJS.load();
+            const result = await fp.get();
+            const visitorId = result.visitorId;
+
             // Prepare data for submission
-            const submitData = { ...data };
+            const submitData = { 
+                ...data,
+                deviceFingerprint: visitorId 
+            };
             
             // Handle documents field correctly for FTD leads
             if (data.leadType === 'ftd') {

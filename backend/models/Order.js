@@ -9,8 +9,30 @@ const orderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["fulfilled", "partial", "pending", "cancelled"],
+      enum: ["fulfilled", "partial", "pending", "cancelled", "injecting", "injection_complete"],
       default: "pending",
+    },
+    clientNetwork: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ClientNetwork",
+      required: true
+    },
+    injectionType: {
+      type: String,
+      enum: ['manual', 'auto'],
+      default: 'manual'
+    },
+    autoInjectionSettings: {
+      type: {
+        type: String,
+        enum: ['bulk', 'scheduled']
+      },
+      startTime: Date, // For scheduled
+      endTime: Date // For scheduled
+    },
+    ftdSkipped: {
+      type: Boolean,
+      default: false
     },
     requests: {
       ftd: { type: Number, default: 0 },
@@ -47,16 +69,14 @@ const orderSchema = new mongoose.Schema(
     },
 
     // Exclusion filters used when creating this order
-    excludeClients: {
-      type: [String],
-      default: undefined,
-    },
     excludeBrokers: {
-      type: [String],
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'ClientBroker',
       default: undefined,
     },
     excludeNetworks: {
-      type: [String],
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'ClientNetwork',
       default: undefined,
     },
 
@@ -67,6 +87,20 @@ const orderSchema = new mongoose.Schema(
       cold: { type: Number, default: 0 },
       live: { type: Number, default: 0 },
     },
+
+    unfulfilled: {
+      ftd: { type: Number, default: 0 },
+      filler: { type: Number, default: 0 },
+      cold: { type: Number, default: 0 },
+      live: { type: Number, default: 0 },
+    },
+
+    logs: [{
+      message: String,
+      type: { type: String, enum: ['info', 'warning', 'error'] },
+      lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' },
+      timestamp: { type: Date, default: Date.now }
+    }],
 
     // Completion tracking
     completedAt: Date,

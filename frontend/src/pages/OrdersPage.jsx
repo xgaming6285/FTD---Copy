@@ -31,6 +31,9 @@ import {
   CircularProgress,
   useMediaQuery,
   useTheme,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -48,12 +51,31 @@ import { selectUser } from '../store/slices/authSlice';
 import { getSortedCountries } from '../constants/countries';
 import AssignClientInfoDialog from '../components/AssignClientInfoDialog';
 import LeadDetailCard from '../components/LeadDetailCard';
+import OrderTableRow from '../components/OrderTableRow';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 
 // --- Best Practice: Define constants and schemas outside the component ---
 // This prevents them from being recreated on every render.
 
 // Validation schema for order creation
 const orderSchema = yup.object({
+  clientNetwork: yup.string().required('Client Network is required'),
+  injectionType: yup.string().oneOf(['manual', 'auto']).required(),
+  autoInjectionType: yup.string().when('injectionType', {
+    is: 'auto',
+    then: (schema) => schema.oneOf(['bulk', 'scheduled']).required('Auto injection type is required'),
+    otherwise: (schema) => schema.notRequired(),
+  }),
+  startTime: yup.date().nullable().when('autoInjectionType', {
+    is: 'scheduled',
+    then: (schema) => schema.required('Start time is required for scheduled injection').min(new Date(), 'Start time must be in the future'),
+  }),
+  endTime: yup.date().nullable().when('autoInjectionType', {
+    is: 'scheduled',
+    then: (schema) => schema.required('End time is required for scheduled injection').min(yup.ref('startTime'), 'End time must be after start time'),
+  }),
   ftd: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
   filler: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
   cold: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
@@ -65,6 +87,15 @@ const orderSchema = yup.object({
   excludeClients: yup.array().of(yup.string()).default([]),
   excludeBrokers: yup.array().of(yup.string()).default([]),
   excludeNetworks: yup.array().of(yup.string()).default([]),
+  clientBroker: yup.object({
+    id: yup.string(),
+    name: yup.string(),
+  }).nullable(),
+  newClientBroker: yup.string().when('clientBroker', {
+    is: (val) => val && val.id === 'add_new',
+    then: (schema) => schema.required('New broker name is required'),
+    otherwise: (schema) => schema.notRequired(),
+  }),
 }).test('at-least-one', 'At least one lead type must be requested', (value) => {
   return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
 });
@@ -129,6 +160,7 @@ const OrdersPage = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedOrderForClient, setSelectedOrderForClient] = useState(null);
   const [isAssigningClient, setIsAssigningClient] = useState(false);
+  const [injectingOrder, setInjectingOrder] = useState(null);
 
   // Exclusion options state
   const [exclusionOptions, setExclusionOptions] = useState({
@@ -150,6 +182,9 @@ const OrdersPage = () => {
   });
   const debouncedFilters = useDebounce(filters, 500); // Debounce filter state
   const [showFilters, setShowFilters] = useState(false);
+  const [clientNetworks, setClientNetworks] = useState([]);
+  const [clientBrokers, setClientBrokers] = useState([]);
+  const [loadingBrokers, setLoadingBrokers] = useState(false);
 
   // --- Bug Fix: Use an object to store data for each expanded row individually ---
   const [expandedRowData, setExpandedRowData] = useState({});
@@ -161,11 +196,52 @@ const OrdersPage = () => {
     control,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: yupResolver(orderSchema),
-    defaultValues: orderSchema.getDefault(),
+    defaultValues: {
+      ...orderSchema.getDefault(),
+      clientNetwork: '',
+      injectionType: 'manual',
+      autoInjectionType: 'bulk',
+      clientBroker: null,
+      newClientBroker: '',
+    },
   });
+
+  const injectionType = watch('injectionType');
+  const autoInjectionType = watch('autoInjectionType');
+  const selectedClientNetwork = watch('clientNetwork');
+
+  // Fetch client brokers when a client network is selected
+  useEffect(() => {
+    const fetchBrokers = async () => {
+      if (selectedClientNetwork) {
+        setLoadingBrokers(true);
+        setClientBrokers([]); // Clear previous brokers
+        setValue('clientBroker', null); // Reset broker selection
+        try {
+          const response = await api.get(`/client-networks/${selectedClientNetwork}/brokers`);
+          if (response.data.success) {
+            setClientBrokers(response.data.data);
+          }
+        } catch (err) {
+          setNotification({
+            message: 'Failed to fetch client brokers for the selected network.',
+            severity: 'error',
+          });
+        } finally {
+          setLoadingBrokers(false);
+        }
+      } else {
+        setClientBrokers([]); // Clear brokers if no network is selected
+      }
+    };
+
+    fetchBrokers();
+  }, [selectedClientNetwork, setValue]);
 
   // --- Optimization: `useCallback` to memoize functions ---
   const fetchOrders = useCallback(async () => {
@@ -202,6 +278,25 @@ const OrdersPage = () => {
     fetchOrders();
   }, [fetchOrders]);
 
+  useEffect(() => {
+    const fetchClientNetworks = async () => {
+      try {
+        const response = await api.get('/client-networks');
+        if (response.data.success) {
+          setClientNetworks(response.data.data);
+        }
+      } catch (err) {
+        setNotification({
+          message: 'Failed to fetch client networks',
+          severity: 'error',
+        });
+      }
+    };
+    if (user.role === 'admin' || user.role === 'affiliate_manager') {
+       fetchClientNetworks();
+    }
+  }, [user.role]);
+
   // Effect for auto-clearing notifications
   useEffect(() => {
     if (notification.message) {
@@ -217,12 +312,25 @@ const OrdersPage = () => {
     setLoadingExclusionOptions(true);
     try {
       const response = await api.get('/orders/exclusion-options');
-      setExclusionOptions(response.data.data);
+      const data = response.data.data;
+      
+      // Ensure the response has the expected structure
+      setExclusionOptions({
+        clients: data.clients || [],
+        brokers: data.brokers || [],
+        networks: data.networks || [],
+      });
     } catch (err) {
       console.error('Failed to fetch exclusion options:', err);
       setNotification({
         message: 'Failed to load exclusion options',
         severity: 'warning',
+      });
+      // Reset to default structure on error
+      setExclusionOptions({
+        clients: [],
+        brokers: [],
+        networks: [],
       });
     } finally {
       setLoadingExclusionOptions(false);
@@ -231,7 +339,6 @@ const OrdersPage = () => {
 
   const onSubmitOrder = useCallback(async (data) => {
     try {
-      // Security Best Practice: The backend MUST validate the user's role before processing the creation.
       const orderData = {
         requests: {
           ftd: data.ftd || 0,
@@ -243,16 +350,27 @@ const OrdersPage = () => {
         notes: data.notes,
         country: data.country || null,
         gender: data.gender || null,
-        excludeClients: data.excludeClients || [],
         excludeBrokers: data.excludeBrokers || [],
         excludeNetworks: data.excludeNetworks || [],
+        clientNetwork: data.clientNetwork,
+        injectionType: data.injectionType,
+        clientBroker: data.clientBroker?.id === 'add_new' 
+          ? { name: data.newClientBroker } 
+          : data.clientBroker 
+            ? { id: data.clientBroker.id } 
+            : undefined,
+        autoInjectionSettings: data.injectionType === 'auto' ? {
+          type: data.autoInjectionType,
+          startTime: data.autoInjectionType === 'scheduled' ? data.startTime : null,
+          endTime: data.autoInjectionType === 'scheduled' ? data.endTime : null,
+        } : undefined,
       };
 
       await api.post('/orders', orderData);
-      setNotification({ message: 'Order created successfully!', severity: 'success' });
+      setNotification({ message: 'Order created successfully', severity: 'success' });
       setCreateDialogOpen(false);
       reset();
-      fetchOrders(); // Refresh the list
+      fetchOrders(); // Refresh the orders list
     } catch (err) {
       setNotification({
         message: err.response?.data?.message || 'Failed to create order',
@@ -433,8 +551,290 @@ const OrdersPage = () => {
     </Typography>
   );
 
+  const handleInjectOrder = useCallback(async (orderId) => {
+    setInjectingOrder(orderId);
+    setNotification({ message: 'Starting injection process...', severity: 'info' });
+    try {
+      const response = await api.post(`/orders/${orderId}/inject`);
+      setNotification({ message: response.data.message || 'Injection process started successfully.', severity: 'success' });
+      fetchOrders(); // Refresh orders to show updated status
+    } catch (err) {
+      setNotification({
+        message: err.response?.data?.message || 'Failed to start injection.',
+        severity: 'error',
+      });
+    } finally {
+      setInjectingOrder(null);
+    }
+  }, [fetchOrders]);
+
+  const renderCreateOrderDialog = () => (
+    <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
+      <DialogTitle>Create New Order</DialogTitle>
+      <form onSubmit={handleSubmit(onSubmitOrder)}>
+        <DialogContent>
+          <Grid container spacing={3} sx={{ pt: 1 }}>
+             <Grid item xs={12}>
+              <FormControl fullWidth error={!!errors.clientNetwork}>
+                <InputLabel id="client-network-label">Client Network</InputLabel>
+                <Controller
+                  name="clientNetwork"
+                  control={control}
+                  render={({ field }) => (
+                    <Select {...field} labelId="client-network-label" label="Client Network">
+                      {clientNetworks.map((network) => (
+                        <MenuItem key={network._id} value={network._id}>
+                          {network.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  )}
+                />
+                {errors.clientNetwork && <Typography color="error" variant="caption">{errors.clientNetwork.message}</Typography>}
+              </FormControl>
+            </Grid>
+
+            {selectedClientNetwork && (
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth error={!!errors.clientBroker}>
+                  <InputLabel id="client-broker-label">Client Broker</InputLabel>
+                  <Controller
+                    name="clientBroker"
+                    control={control}
+                    render={({ field }) => (
+                      <Select {...field} labelId="client-broker-label" label="Client Broker" disabled={loadingBrokers}>
+                        {loadingBrokers && <MenuItem value=""><em>Loading brokers...</em></MenuItem>}
+                        {!loadingBrokers && clientBrokers.map((broker) => (
+                          <MenuItem key={broker._id} value={{ id: broker._id, name: broker.name }}>
+                            {broker.name}
+                          </MenuItem>
+                        ))}
+                        {!loadingBrokers && (user.role === 'admin' || user.role === 'affiliate_manager') && (
+                          <MenuItem value={{ id: 'add_new', name: 'Add New Broker' }}>
+                            <em>+ Add New Broker</em>
+                          </MenuItem>
+                        )}
+                      </Select>
+                    )}
+                  />
+                  {errors.clientBroker && <Typography color="error" variant="caption">{errors.clientBroker.message}</Typography>}
+                </FormControl>
+              </Grid>
+            )}
+
+            {watch('clientBroker')?.id === 'add_new' && (
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="newClientBroker"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} label="New Client Broker Name" fullWidth error={!!errors.newClientBroker} helperText={errors.newClientBroker?.message} />
+                  )}
+                />
+              </Grid>
+            )}
+
+            <Grid item xs={12}>
+              <FormControl component="fieldset">
+                <Controller
+                  name="injectionType"
+                  control={control}
+                  render={({ field }) => (
+                    <RadioGroup row {...field}>
+                      <FormControlLabel value="manual" control={<Radio />} label="Manual Injection" />
+                      <FormControlLabel value="auto" control={<Radio />} label="Auto Injection" />
+                    </RadioGroup>
+                  )}
+                />
+              </FormControl>
+            </Grid>
+
+            {injectionType === 'auto' && (
+              <>
+                <Grid item xs={12}>
+                   <FormControl component="fieldset">
+                      <Controller
+                        name="autoInjectionType"
+                        control={control}
+                        render={({ field }) => (
+                          <RadioGroup row {...field}>
+                            <FormControlLabel value="bulk" control={<Radio />} label="Bulk" />
+                            <FormControlLabel value="scheduled" control={<Radio />} label="Scheduled" />
+                          </RadioGroup>
+                        )}
+                      />
+                   </FormControl>
+                </Grid>
+                {autoInjectionType === 'scheduled' && (
+                  <LocalizationProvider dateAdapter={AdapterDayjs}>
+                    <Grid item xs={12} sm={6}>
+                      <Controller
+                        name="startTime"
+                        control={control}
+                        render={({ field, fieldState }) => (
+                            <DateTimePicker
+                                {...field}
+                                label="Start Time"
+                                slotProps={{
+                                    textField: {
+                                        fullWidth: true,
+                                        error: !!fieldState.error,
+                                        helperText: fieldState.error?.message,
+                                    },
+                                }}
+                            />
+                        )}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                       <Controller
+                        name="endTime"
+                        control={control}
+                        render={({ field, fieldState }) => (
+                           <DateTimePicker
+                                {...field}
+                                label="End Time"
+                                slotProps={{
+                                    textField: {
+                                        fullWidth: true,
+                                        error: !!fieldState.error,
+                                        helperText: fieldState.error?.message,
+                                    },
+                                }}
+                            />
+                        )}
+                      />
+                    </Grid>
+                  </LocalizationProvider>
+                )}
+              </>
+            )}
+
+            <Grid item xs={12}><Typography variant="h6" sx={{mt: 2}}>Lead Requests</Typography></Grid>
+            <Grid item xs={6} sm={3}><Controller name="ftd" control={control} render={({ field }) => <TextField {...field} fullWidth label="FTD" type="number" error={!!errors.ftd} helperText={errors.ftd?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
+            <Grid item xs={6} sm={3}><Controller name="filler" control={control} render={({ field }) => <TextField {...field} fullWidth label="Filler" type="number" error={!!errors.filler} helperText={errors.filler?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
+            <Grid item xs={6} sm={3}><Controller name="cold" control={control} render={({ field }) => <TextField {...field} fullWidth label="Cold" type="number" error={!!errors.cold} helperText={errors.cold?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
+            <Grid item xs={6} sm={3}><Controller name="live" control={control} render={({ field }) => <TextField {...field} fullWidth label="Live" type="number" error={!!errors.live} helperText={errors.live?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
+
+            <Grid item xs={12}><Typography variant="h6" sx={{mt: 2}}>Order Details</Typography></Grid>
+            <Grid item xs={12}>
+              <Controller name="priority" control={control} render={({ field }) => (
+                <FormControl fullWidth size="small" error={!!errors.priority}>
+                  <InputLabel>Priority</InputLabel>
+                  <Select {...field} label="Priority"><MenuItem value="low">Low</MenuItem><MenuItem value="medium">Medium</MenuItem><MenuItem value="high">High</MenuItem></Select>
+                </FormControl>
+              )}/>
+            </Grid>
+            <Grid item xs={12}>
+              <Controller name="gender" control={control} render={({ field }) => (
+                <FormControl fullWidth size="small" error={!!errors.gender}>
+                  <InputLabel>Gender (Optional)</InputLabel>
+                  <Select {...field} label="Gender (Optional)"><MenuItem value="">All</MenuItem><MenuItem value="male">Male</MenuItem><MenuItem value="female">Female</MenuItem><MenuItem value="not_defined">Not Defined</MenuItem></Select>
+                </FormControl>
+              )}/>
+            </Grid>
+            <Grid item xs={12}>
+              <Controller name="country" control={control} render={({ field }) => (
+                <FormControl fullWidth size="small" error={!!errors.country}>
+                  <InputLabel>Country Filter (Optional)</InputLabel>
+                  <Select
+                    {...field}
+                    label="Country Filter (Optional)"
+                    value={field.value || ''}
+                  >
+                    <MenuItem value="">All Countries</MenuItem>
+                    {getSortedCountries().map((country) => (
+                      <MenuItem key={country.code} value={country.name}>
+                        {country.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  {errors.country?.message && (
+                    <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+                      {errors.country.message}
+                    </Typography>
+                  )}
+                  {!errors.country?.message && (
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
+                      Leave empty for all countries
+                    </Typography>
+                  )}
+                </FormControl>
+              )}/>
+            </Grid>
+            <Grid item xs={12}>
+              <Controller name="notes" control={control} render={({ field }) => <TextField {...field} fullWidth label="Notes" multiline rows={3} error={!!errors.notes} helperText={errors.notes?.message} size="small" />}/>
+            </Grid>
+
+            <Grid item xs={12}>
+              <Typography variant="h6" sx={{mt: 2}}>Exclusion Filters</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{mb: 1}}>
+                Prevent leads already assigned to these groups from being included in this order.
+              </Typography>
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Controller
+                name="excludeClients"
+                control={control}
+                render={({ field }) => (
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Exclude Clients</InputLabel>
+                    <Select {...field} multiple label="Exclude Clients" disabled={loadingExclusionOptions}>
+                      {(exclusionOptions.clients || []).map(client => (
+                        <MenuItem key={client} value={client}>{client}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
+              />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Controller
+                name="excludeBrokers"
+                control={control}
+                render={({ field }) => (
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Exclude Brokers</InputLabel>
+                    <Select {...field} multiple label="Exclude Brokers" disabled={loadingExclusionOptions}>
+                      {(exclusionOptions.brokers || []).map(broker => (
+                        <MenuItem key={broker} value={broker}>{broker}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
+              />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Controller
+                name="excludeNetworks"
+                control={control}
+                render={({ field }) => (
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Exclude Networks</InputLabel>
+                    <Select {...field} multiple label="Exclude Networks" disabled={loadingExclusionOptions}>
+                      {(exclusionOptions.networks || []).map(network => (
+                        <MenuItem key={network} value={network}>{network}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
+              />
+            </Grid>
+          </Grid>
+          {errors[''] && <Alert severity="error" sx={{ mt: 2 }}>{errors['']?.message}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+          <Button type="submit" variant="contained" disabled={isSubmitting}>
+            {isSubmitting ? <CircularProgress size={24} /> : 'Create'}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  );
+
   return (
-    <Box sx={{ p: isSmallScreen ? 2 : 3 }}>
+    <Box sx={{ p: isSmallScreen ? 1 : 3 }}>
       <Box
         display="flex"
         justifyContent="space-between"
@@ -545,142 +945,18 @@ const OrdersPage = () => {
                   <TableCell colSpan={8} align="center">No orders found</TableCell>
                 </TableRow>
               ) : (
-                orders.map((order) => {
-                  const isExpanded = !!expandedRowData[order._id];
-                  const expandedDetails = expandedRowData[order._id];
-
-                  return (
-                    <React.Fragment key={order._id}>
-                      <TableRow hover>
-                        <TableCell>{order._id.slice(-8)}</TableCell>
-                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{order.requester?.fullName}</TableCell>
-                        <TableCell>{`${order.requests?.ftd || 0}/${order.requests?.filler || 0}/${order.requests?.cold || 0}/${order.requests?.live || 0}`}</TableCell>
-                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{`${order.fulfilled?.ftd || 0}/${order.fulfilled?.filler || 0}/${order.fulfilled?.cold || 0}/${order.fulfilled?.live || 0}`}</TableCell>
-                        <TableCell><Chip label={order.status} color={getStatusColor(order.status)} size="small" /></TableCell>
-                        <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}><Chip label={order.priority} color={getPriorityColor(order.priority)} size="small" /></TableCell>
-                        <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{new Date(order.createdAt).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <IconButton size="small" onClick={() => handleViewOrder(order._id)} title="View Order"><ViewIcon fontSize="small" /></IconButton>
-                          <IconButton size="small" onClick={() => handleExportLeads(order._id)} title="Export Leads as CSV"><DownloadIcon fontSize="small" /></IconButton>
-                          {order.leads && order.leads.length > 0 && (
-                            <IconButton size="small" onClick={() => handleOpenAssignClientDialog(order._id)} title="Assign Client Info to All Leads"><AssignmentIcon fontSize="small" /></IconButton>
-                          )}
-                          <IconButton size="small" onClick={() => toggleRowExpansion(order._id)} title={isExpanded ? "Collapse" : "Expand"}>
-                            {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                          </IconButton>
-                        </TableCell>
-                      </TableRow>
-                      {/* Expanded Row with details */}
-                      <TableRow>
-                        <TableCell sx={{ p: 0, borderBottom: 'none' }} colSpan={8}>
-                          <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                            <Box sx={{ p: 2, bgcolor: 'action.hover' }}>
-                              <Typography variant="h6" gutterBottom>Order Details</Typography>
-                              {expandedDetails ? (
-                                <Grid container spacing={2}>
-                                  <Grid item xs={12} md={6}>
-                                    <Typography variant="body2"><strong>Notes:</strong> {expandedDetails.notes || 'N/A'}</Typography>
-                                    <Typography variant="body2"><strong>Country Filter:</strong> {expandedDetails.countryFilter || 'Any'}</Typography>
-                                    <Typography variant="body2"><strong>Gender Filter:</strong> {expandedDetails.genderFilter || 'Any'}</Typography>
-                                  </Grid>
-                                  <Grid item xs={12} md={6}>
-                                      <Typography variant="body2"><strong>Assigned Leads:</strong> {expandedDetails.leads?.length || 0}</Typography>
-                                      {/* Information hidden on small screens now visible here */}
-                                      <Box sx={{ display: { sm: 'none' } }}>
-                                          <Typography variant="body2"><strong>Priority:</strong> {expandedDetails.priority}</Typography>
-                                          <Typography variant="body2"><strong>Created:</strong> {new Date(expandedDetails.createdAt).toLocaleString()}</Typography>
-                                          <Typography variant="body2"><strong>Fulfilled:</strong> {`${expandedDetails.fulfilled?.ftd || 0}/${expandedDetails.fulfilled?.filler || 0}/${expandedDetails.fulfilled?.cold || 0}/${expandedDetails.fulfilled?.live || 0}`}</Typography>
-                                      </Box>
-                                  </Grid>
-                                  {expandedDetails.leads && expandedDetails.leads.length > 0 && (
-                                    <Grid item xs={12}>
-                                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                                        <Typography variant="subtitle2">Assigned Leads</Typography>
-                                        <Button
-                                          size="small"
-                                          startIcon={<DownloadIcon />}
-                                          onClick={() => handleExportLeads(order._id)}
-                                          variant="outlined"
-                                          sx={{ mr: 1 }}
-                                        >
-                                          Export CSV
-                                        </Button>
-                                        <Button
-                                          size="small"
-                                          onClick={() => expandAllLeads(expandedDetails.leads)}
-                                          variant="outlined"
-                                          sx={{ mr: 1 }}
-                                        >
-                                          Expand All
-                                        </Button>
-                                        <Button
-                                          size="small"
-                                          onClick={() => collapseAllLeads(expandedDetails.leads)}
-                                          variant="outlined"
-                                        >
-                                          Collapse All
-                                        </Button>
-                                      </Box>
-                                      <TableContainer component={Paper} elevation={2}>
-                                        <Table size="small">
-                                          <TableHead>
-                                            <TableRow>
-                                              <TableCell>Type</TableCell>
-                                              <TableCell>Name</TableCell>
-                                              <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Country</TableCell>
-                                              <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Email</TableCell>
-                                              <TableCell>Actions</TableCell>
-                                            </TableRow>
-                                          </TableHead>
-                                          <TableBody>
-                                            {expandedDetails.leads.map((lead) => (
-                                              <React.Fragment key={lead._id}>
-                                                <TableRow>
-                                                  <TableCell><Chip label={lead.leadType?.toUpperCase()} size="small" /></TableCell>
-                                                  <TableCell>{lead.firstName} {lead.lastName}</TableCell>
-                                                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{lead.country}</TableCell>
-                                                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{lead.newEmail}</TableCell>
-                                                  <TableCell>
-                                                    <IconButton
-                                                      size="small"
-                                                      onClick={() => toggleLeadExpansion(lead._id)}
-                                                      aria-label={expandedLeads[lead._id] ? 'collapse' : 'expand'}
-                                                    >
-                                                      {expandedLeads[lead._id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                                                    </IconButton>
-                                                  </TableCell>
-                                                </TableRow>
-                                                {expandedLeads[lead._id] && (
-                                                  <TableRow>
-                                                    <TableCell colSpan={5} sx={{ py: 0, border: 0 }}>
-                                                      <Collapse in={expandedLeads[lead._id]} timeout="auto" unmountOnExit>
-                                                        <Box sx={{ p: 2 }}>
-                                                          <LeadDetailCard lead={lead} />
-                                                        </Box>
-                                                      </Collapse>
-                                                    </TableCell>
-                                                  </TableRow>
-                                                )}
-                                              </React.Fragment>
-                                            ))}
-                                          </TableBody>
-                                        </Table>
-                                      </TableContainer>
-                                    </Grid>
-                                  )}
-                                </Grid>
-                              ) : (
-                                <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-                                  <CircularProgress />
-                                </Box>
-                              )}
-                            </Box>
-                          </Collapse>
-                        </TableCell>
-                      </TableRow>
-                    </React.Fragment>
-                  );
-                })
+                orders.map((order) => (
+                  <OrderTableRow
+                    key={order._id}
+                    order={order}
+                    user={user}
+                    injectingOrder={injectingOrder}
+                    onInject={handleInjectOrder}
+                    onView={handleViewOrder}
+                    onExport={handleExportLeads}
+                    onNotification={setNotification}
+                  />
+                ))
               )}
             </TableBody>
           </Table>
@@ -697,195 +973,7 @@ const OrdersPage = () => {
       </Paper>
 
       {/* Create Order Dialog */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Create New Order</DialogTitle>
-        <form onSubmit={handleSubmit(onSubmitOrder)}>
-          <DialogContent>
-            <Grid container spacing={2}>
-              <Grid item xs={6} sm={3}><Controller name="ftd" control={control} render={({ field }) => <TextField {...field} fullWidth label="FTD" type="number" error={!!errors.ftd} helperText={errors.ftd?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
-              <Grid item xs={6} sm={3}><Controller name="filler" control={control} render={({ field }) => <TextField {...field} fullWidth label="Filler" type="number" error={!!errors.filler} helperText={errors.filler?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
-              <Grid item xs={6} sm={3}><Controller name="cold" control={control} render={({ field }) => <TextField {...field} fullWidth label="Cold" type="number" error={!!errors.cold} helperText={errors.cold?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
-              <Grid item xs={6} sm={3}><Controller name="live" control={control} render={({ field }) => <TextField {...field} fullWidth label="Live" type="number" error={!!errors.live} helperText={errors.live?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
-              <Grid item xs={12} sm={6}>
-                <Controller name="priority" control={control} render={({ field }) => (
-                  <FormControl fullWidth size="small" error={!!errors.priority}>
-                    <InputLabel>Priority</InputLabel>
-                    <Select {...field} label="Priority"><MenuItem value="low">Low</MenuItem><MenuItem value="medium">Medium</MenuItem><MenuItem value="high">High</MenuItem></Select>
-                  </FormControl>
-                )}/>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <Controller name="gender" control={control} render={({ field }) => (
-                  <FormControl fullWidth size="small" error={!!errors.gender}>
-                    <InputLabel>Gender (Optional)</InputLabel>
-                    <Select {...field} label="Gender (Optional)"><MenuItem value="">All</MenuItem><MenuItem value="male">Male</MenuItem><MenuItem value="female">Female</MenuItem><MenuItem value="not_defined">Not Defined</MenuItem></Select>
-                  </FormControl>
-                )}/>
-              </Grid>
-              <Grid item xs={12}>
-                <Controller name="country" control={control} render={({ field }) => (
-                  <FormControl fullWidth size="small" error={!!errors.country}>
-                    <InputLabel>Country Filter (Optional)</InputLabel>
-                    <Select
-                      {...field}
-                      label="Country Filter (Optional)"
-                      value={field.value || ''}
-                    >
-                      <MenuItem value="">All Countries</MenuItem>
-                      {getSortedCountries().map((country) => (
-                        <MenuItem key={country.code} value={country.name}>
-                          {country.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    {errors.country?.message && (
-                      <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                        {errors.country.message}
-                      </Typography>
-                    )}
-                    {!errors.country?.message && (
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
-                        Leave empty for all countries
-                      </Typography>
-                    )}
-                  </FormControl>
-                )}/>
-              </Grid>
-              <Grid item xs={12}>
-                <Controller name="notes" control={control} render={({ field }) => <TextField {...field} fullWidth label="Notes" multiline rows={3} error={!!errors.notes} helperText={errors.notes?.message} size="small" />}/>
-              </Grid>
-
-              {/* Exclusion Filters Section */}
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
-                  Exclusion Filters (Optional)
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Exclude leads that have been previously assigned to these destinations. This prevents sending the same lead to the same client/broker/network twice.
-                </Typography>
-              </Grid>
-
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="excludeClients"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl fullWidth size="small" error={!!errors.excludeClients}>
-                      <InputLabel>Exclude Clients</InputLabel>
-                      <Select
-                        {...field}
-                        multiple
-                        label="Exclude Clients"
-                        value={field.value || []}
-                        renderValue={(selected) => (
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {selected.map((value) => (
-                              <Chip key={value} label={value} size="small" />
-                            ))}
-                          </Box>
-                        )}
-                        disabled={loadingExclusionOptions}
-                      >
-                        {exclusionOptions.clients.map((client) => (
-                          <MenuItem key={client} value={client}>
-                            {client}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      {errors.excludeClients && (
-                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                          {errors.excludeClients.message}
-                        </Typography>
-                      )}
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="excludeBrokers"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl fullWidth size="small" error={!!errors.excludeBrokers}>
-                      <InputLabel>Exclude Brokers</InputLabel>
-                      <Select
-                        {...field}
-                        multiple
-                        label="Exclude Brokers"
-                        value={field.value || []}
-                        renderValue={(selected) => (
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {selected.map((value) => (
-                              <Chip key={value} label={value} size="small" />
-                            ))}
-                          </Box>
-                        )}
-                        disabled={loadingExclusionOptions}
-                      >
-                        {exclusionOptions.brokers.map((broker) => (
-                          <MenuItem key={broker} value={broker}>
-                            {broker}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      {errors.excludeBrokers && (
-                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                          {errors.excludeBrokers.message}
-                        </Typography>
-                      )}
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="excludeNetworks"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl fullWidth size="small" error={!!errors.excludeNetworks}>
-                      <InputLabel>Exclude Networks</InputLabel>
-                      <Select
-                        {...field}
-                        multiple
-                        label="Exclude Networks"
-                        value={field.value || []}
-                        renderValue={(selected) => (
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {selected.map((value) => (
-                              <Chip key={value} label={value} size="small" />
-                            ))}
-                          </Box>
-                        )}
-                        disabled={loadingExclusionOptions}
-                      >
-                        {exclusionOptions.networks.map((network) => (
-                          <MenuItem key={network} value={network}>
-                            {network}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      {errors.excludeNetworks && (
-                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                          {errors.excludeNetworks.message}
-                        </Typography>
-                      )}
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-            </Grid>
-            {errors[''] && <Alert severity="error" sx={{ mt: 2 }}>{errors['']?.message}</Alert>}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-            <Button type="submit" variant="contained" disabled={isSubmitting}>
-              {isSubmitting ? <CircularProgress size={24} /> : 'Create Order'}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
+      {renderCreateOrderDialog()}
 
       {/* View Order Dialog */}
       <Dialog open={viewDialogOpen} onClose={() => setViewDialogOpen(false)} maxWidth="md" fullWidth>

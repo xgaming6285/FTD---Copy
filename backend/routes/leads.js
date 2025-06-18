@@ -12,6 +12,7 @@ const {
   getLeads,
   getAssignedLeads,
   getLeadById,
+  getLeadHistory,
   addComment,
   updateLeadStatus,
   getLeadStats,
@@ -27,6 +28,8 @@ const {
   updateLeadType,
   bulkDeleteLeads,
 } = require("../controllers/leads");
+const advancedResults = require('../middleware/advancedResults');
+const Lead = require('../models/Lead');
 
 const router = express.Router();
 
@@ -38,48 +41,13 @@ router.get(
   [
     protect,
     authorize("admin", "affiliate_manager", "lead_manager"),
-    query("page")
-      .optional()
-      .isInt({ min: 1 })
-      .withMessage("Page must be a positive integer"),
-    query("limit")
-      .optional()
-      .isInt({ min: 1, max: 100 })
-      .withMessage("Limit must be between 1 and 100"),
-    query("leadType")
-      .optional()
-      .isIn(["ftd", "filler", "cold", "live"])
-      .withMessage("Lead type must be ftd, filler, cold, or live"),
-    query("country")
-      .optional()
-      .trim()
-      .isLength({ min: 2 })
-      .withMessage("Country must be at least 2 characters"),
-    query("isAssigned")
-      .optional()
-      .isBoolean()
-      .withMessage("isAssigned must be a boolean"),
-    query("documentStatus")
-      .optional()
-      .isIn(["good", "ok", "pending"])
-      .withMessage("Document status must be good, ok, or pending"),
-    query("status")
-      .optional()
-      .isIn(["active", "contacted", "converted", "inactive"])
-      .withMessage("Status must be active, contacted, converted, or inactive"),
-    query("order")
-      .optional()
-      .isIn(["newest", "oldest", "name_asc", "name_desc"])
-      .withMessage("Order must be newest, oldest, name_asc, or name_desc"),
-    query("orderId")
-      .optional()
-      .isMongoId()
-      .withMessage("Invalid order ID format"),
-    query("assignedToMe")
-      .optional()
-      .isBoolean()
-      .withMessage("assignedToMe must be a boolean"),
   ],
+  advancedResults(Lead, [
+    { path: 'assignedTo', select: 'fullName email fourDigitCode' },
+    { path: 'orderId', select: 'status priority createdAt' },
+    { path: 'assignments.clientNetwork', select: 'name' },
+    { path: 'assignments.clientBroker', select: 'name' }
+  ]),
   getLeads
 );
 
@@ -127,6 +95,15 @@ router.get(
   "/:id",
   [protect, authorize("admin", "affiliate_manager", "agent")],
   getLeadById
+);
+
+// @route   GET /api/leads/:id/history
+// @desc    Get lead assignment history
+// @access  Private (Admin, Affiliate Manager)
+router.get(
+  "/:id/history",
+  [protect, authorize("admin", "affiliate_manager")],
+  getLeadHistory
 );
 
 // @route   PUT /api/leads/:id/comment

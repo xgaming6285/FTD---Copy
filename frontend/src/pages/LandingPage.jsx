@@ -30,6 +30,7 @@ import * as yup from "yup";
 import axios from "axios";
 import { motion } from "framer-motion";
 import api from "../services/api"; // Import the API service
+import FingerprintJS from "@fingerprintjs/fingerprintjs";
 
 // Country codes for the prefix dropdown
 const countryCodes = [
@@ -113,6 +114,16 @@ const LandingPage = () => {
     setSubmitError("");
 
     try {
+      // Generate device fingerprint
+      const fp = await FingerprintJS.load();
+      const result = await fp.get();
+      const visitorId = result.visitorId;
+
+      const submissionData = {
+        ...data,
+        deviceFingerprint: visitorId,
+      };
+
       // Check if we're in injection mode (set by the injector script)
       const isInjectionMode = window.localStorage.getItem('isInjectionMode') === 'true';
       
@@ -123,7 +134,7 @@ const LandingPage = () => {
         return;
       }
 
-      const response = await api.post("/landing", data);
+      const response = await api.post("/landing", submissionData);
       
       if (response.data.success) {
         setIsSubmitted(true);

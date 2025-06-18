@@ -11,181 +11,7 @@ const express = require("express");
 // @route   GET /api/leads
 // @access  Private (Admin, Affiliate Manager)
 exports.getLeads = async (req, res, next) => {
-  try {
-    const {
-      leadType,
-      isAssigned,
-      country,
-      gender,
-      status,
-      documentStatus,
-      page = 1,
-      limit = 10,
-      search,
-      includeConverted = "true",
-      order = "newest",
-      orderId,
-      assignedToMe,
-    } = req.query;
-
-    // Build filter object
-    const filter = {};
-    if (leadType) filter.leadType = leadType;
-    if (isAssigned !== undefined && isAssigned !== "")
-      filter.isAssigned = isAssigned === "true";
-    if (country) filter.country = new RegExp(country, "i");
-    if (gender) filter.gender = gender;
-    if (orderId) filter.orderId = new mongoose.Types.ObjectId(orderId);
-
-    // Determine sort order based on order parameter
-    let sortOrder = { createdAt: -1 };
-    switch (order) {
-      case "oldest":
-        sortOrder = { createdAt: 1 };
-        break;
-      case "name_asc":
-        sortOrder = { firstName: 1, lastName: 1 };
-        break;
-      case "name_desc":
-        sortOrder = { firstName: -1, lastName: -1 };
-        break;
-      default:
-        sortOrder = { createdAt: -1 };
-    }
-
-    // Role-based filtering
-    if (req.user.role === "affiliate_manager") {
-      if (assignedToMe === "true") {
-        filter.assignedTo = req.user.id;
-        filter.isAssigned = true;
-      }
-    } else if (req.user.role === "lead_manager") {
-      filter.createdBy = req.user.id;
-    }
-
-    // Only apply status filter if includeConverted is false or if status is specifically requested
-    if (status) {
-      filter.status = status;
-    } else if (includeConverted !== "true") {
-      filter.status = { $ne: "converted" };
-    }
-
-    if (documentStatus) filter["documents.status"] = documentStatus;
-
-    // Add search functionality - use text index for better performance when possible
-    if (search) {
-      // If search is a simple term, use text index for better performance
-      if (
-        search.length > 3 &&
-        !search.includes(":") &&
-        !search.includes("?") &&
-        !search.includes("*") &&
-        !search.includes("(") &&
-        !search.includes(")")
-      ) {
-        filter.$text = { $search: search };
-      } else {
-        // Fallback to regex for complex search patterns
-        filter.$or = [
-          { firstName: new RegExp(search, "i") },
-          { lastName: new RegExp(search, "i") },
-          { newEmail: new RegExp(search, "i") },
-          { newPhone: new RegExp(search, "i") },
-          { client: new RegExp(search, "i") },
-          { clientBroker: new RegExp(search, "i") },
-          { clientNetwork: new RegExp(search, "i") },
-        ];
-      }
-    }
-
-    // Calculate pagination
-    const skip = (page - 1) * limit;
-    const limitNum = parseInt(limit);
-
-    // Use aggregation for better performance with large datasets
-    const aggregationPipeline = [
-      { $match: filter },
-      { $sort: sortOrder },
-      { $skip: skip },
-      { $limit: limitNum },
-      // Populate with efficient lookups
-      {
-        $lookup: {
-          from: "users",
-          localField: "assignedTo",
-          foreignField: "_id",
-          as: "assignedToUser",
-        },
-      },
-      {
-        $lookup: {
-          from: "orders",
-          localField: "orderId",
-          foreignField: "_id",
-          as: "orderDetails",
-        },
-      },
-      // Unwind arrays to normalize the data structure
-      {
-        $addFields: {
-          assignedTo: { $arrayElemAt: ["$assignedToUser", 0] },
-          order: { $arrayElemAt: ["$orderDetails", 0] },
-        },
-      },
-      // Project only needed fields
-      {
-        $project: {
-          _id: 1,
-          firstName: 1,
-          lastName: 1,
-          prefix: 1,
-          newEmail: 1,
-          newPhone: 1,
-          oldEmail: 1,
-          oldPhone: 1,
-          country: 1,
-          leadType: 1,
-          isAssigned: 1,
-          assignedAt: 1,
-          status: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          gender: 1,
-          client: 1,
-          clientBroker: 1,
-          clientNetwork: 1,
-          documents: 1,
-          "assignedTo._id": 1,
-          "assignedTo.fullName": 1,
-          "assignedTo.fourDigitCode": 1,
-          "order._id": 1,
-          "order.status": 1,
-          "order.priority": 1,
-          "order.createdAt": 1,
-        },
-      },
-    ];
-
-    // Execute aggregation pipeline
-    const leads = await Lead.aggregate(aggregationPipeline);
-
-    // Get total count for pagination (using countDocuments with the same filter)
-    const total = await Lead.countDocuments(filter);
-
-    res.status(200).json({
-      success: true,
-      data: leads,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / limit),
-        totalLeads: total,
-        hasNextPage: page * limit < total,
-        hasPrevPage: page > 1,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
+  res.status(200).json(res.advancedResults);
 };
 
 // @desc    Get assigned leads for agent
@@ -1483,4 +1309,37 @@ exports.bulkDeleteLeads = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+// @desc    Get lead assignment history
+// @route   GET /api/leads/:id/history
+// @access  Private (Admin, Affiliate Manager)
+exports.getLeadHistory = async (req, res, next) => {
+    try {
+        const lead = await Lead.findById(req.params.id)
+            .select('assignments')
+            .populate({
+                path: 'assignments',
+                populate: [
+                    { path: 'clientNetwork', select: 'name' },
+                    { path: 'clientBroker', select: 'name' },
+                    { path: 'order', select: 'createdAt' }
+                ]
+            });
+
+        if (!lead) {
+            return res.status(404).json({
+                success: false,
+                message: "Lead not found",
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            count: lead.assignments.length,
+            data: lead.assignments,
+        });
+    } catch (error) {
+        next(error);
+    }
 };

@@ -16,10 +16,6 @@ export const login = createAsyncThunk(
   async ({ email, password }, { rejectWithValue }) => {
     try {
       const response = await api.post('/auth/login', { email, password });
-      // On successful login, save the token to localStorage
-      if (response.data.data.token) {
-        localStorage.setItem('token', response.data.data.token);
-      }
       return response.data.data;
     } catch (error) {
       return rejectWithValue(
@@ -111,6 +107,7 @@ const authSlice = createSlice({
       state.token = null;
       state.isAuthenticated = false;
       state.error = null;
+      // Clear localStorage as a backup (Redux Persist should handle this)
       localStorage.removeItem('token');
     },
     clearError: (state) => {
@@ -172,6 +169,8 @@ const authSlice = createSlice({
         state.user = null;
         state.token = null;
         state.isAuthenticated = false;
+        // Clear localStorage when token validation fails
+        localStorage.removeItem('token');
       })
       // Update Profile
       .addCase(updateProfile.pending, (state) => {
@@ -223,6 +222,7 @@ export const { logout, clearError, setCredentials } = authSlice.actions;
 // Selectors
 export const selectAuth = (state) => state.auth;
 export const selectUser = (state) => state.auth.user;
+export const selectToken = (state) => state.auth.token;
 export const selectIsAuthenticated = (state) => state.auth.isAuthenticated;
 export const selectAuthLoading = (state) => state.auth.isLoading;
 export const selectAuthError = (state) => state.auth.error;

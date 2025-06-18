@@ -43,6 +43,9 @@ import {
   Link,
   Tooltip,
   DialogContentText,
+  Snackbar,
+  useTheme,
+  useMediaQuery,
 } from "@mui/material";
 
 // MUI Icons
@@ -70,6 +73,7 @@ import {
   Instagram as InstagramIcon,
   Telegram as TelegramIcon,
   WhatsApp as WhatsAppIcon,
+  RocketLaunch as RocketLaunchIcon,
 } from "@mui/icons-material";
 
 // Project Components & Services
@@ -94,6 +98,7 @@ const LEAD_STATUSES = {
   CONTACTED: "contacted",
   CONVERTED: "converted",
   INACTIVE: "inactive",
+  SLEEP: "sleep",
 };
 
 const LEAD_TYPES = {
@@ -125,6 +130,8 @@ const getStatusColor = (status) => {
       return "info";
     case LEAD_STATUSES.INACTIVE:
       return "error";
+    case LEAD_STATUSES.SLEEP:
+      return "warning";
     default:
       return "default";
   }
@@ -162,198 +169,20 @@ const getDocumentStatusColor = (status) => {
 // --- Sub-components ---
 
 // Memoized component for lead details to avoid re-renders
-const LeadDetails = React.memo(({ lead }) => (
-  <Box sx={{
-    animation: 'fadeIn 0.3s ease-in-out',
-    '@keyframes fadeIn': {
-      '0%': {
-        opacity: 0,
-        transform: 'translateY(-10px)',
+const LeadDetails = React.memo(({ lead, onStartOrderInjection }) => {
+  const user = useSelector(selectUser);
+  const canInjectOrder = user && ['admin', 'affiliate_manager'].includes(user.role);
+
+  return (
+    <Box sx={{
+      animation: 'fadeIn 0.3s ease-in-out',
+      '@keyframes fadeIn': {
+        '0%': { opacity: 0, transform: 'translateY(-10px)' },
+        '100%': { opacity: 1, transform: 'translateY(0)' },
       },
-      '100%': {
-        opacity: 1,
-        transform: 'translateY(0)',
-      },
-    },
-  }}>
-    <Grid container spacing={3}>
-      {/* Basic Information Card */}
-      <Grid item xs={12} md={4}>
-        <Paper elevation={0} sx={{
-          p: 2,
-          bgcolor: 'background.paper',
-          borderRadius: 1,
-          border: '1px solid',
-          borderColor: 'divider',
-          height: '100%',
-          transition: 'all 0.2s ease-in-out',
-          '&:hover': {
-            boxShadow: theme => theme.shadows[4],
-            transform: 'translateY(-4px)',
-          },
-        }}>
-          <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <PersonAddIcon fontSize="small" />
-            Basic Information
-          </Typography>
-          <Stack spacing={2}>
-            <Box>
-              <Typography variant="caption" color="text.secondary">Full Name</Typography>
-              <Typography variant="body1" fontWeight="medium">
-                {lead.fullName || `${lead.firstName} ${lead.lastName || ""}`.trim()}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary">Lead ID</Typography>
-              <Typography variant="body2" fontFamily="monospace">
-                {lead._id}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary">Created</Typography>
-              <Typography variant="body2">
-                {new Date(lead.createdAt).toLocaleString()}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary">Last Updated</Typography>
-              <Typography variant="body2">
-                {new Date(lead.updatedAt).toLocaleString()}
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={1}>
-              <Chip 
-                label={lead.leadType?.toUpperCase() || 'UNKNOWN'} 
-                color={getLeadTypeColor(lead.leadType)} 
-                size="small"
-                sx={{ fontWeight: 'medium' }}
-              />
-              <Chip 
-                label={lead.status.charAt(0).toUpperCase() + lead.status.slice(1)} 
-                color={getStatusColor(lead.status)} 
-                size="small"
-                sx={{ fontWeight: 'medium' }}
-              />
-            </Stack>
-          </Stack>
-        </Paper>
-      </Grid>
-
-      {/* Contact Information Card */}
-      <Grid item xs={12} md={4}>
-        <Paper elevation={0} sx={{
-          p: 2,
-          bgcolor: 'background.paper',
-          borderRadius: 1,
-          border: '1px solid',
-          borderColor: 'divider',
-          height: '100%',
-          transition: 'all 0.2s ease-in-out',
-          '&:hover': {
-            boxShadow: theme => theme.shadows[4],
-            transform: 'translateY(-4px)',
-          },
-        }}>
-          <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <ContactsIcon fontSize="small" />
-            Contact Information
-          </Typography>
-          <Stack spacing={2}>
-            <Box>
-              <Typography variant="caption" color="text.secondary">Current Email</Typography>
-              <Typography variant="body2">{lead.newEmail}</Typography>
-              {lead.oldEmail && (
-                <Typography variant="caption" color="text.secondary" display="block">
-                  Previous: {lead.oldEmail}
-                </Typography>
-              )}
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary">Current Phone</Typography>
-              <Typography variant="body2">{lead.newPhone}</Typography>
-              {lead.oldPhone && (
-                <Typography variant="caption" color="text.secondary" display="block">
-                  Previous: {lead.oldPhone}
-                </Typography>
-              )}
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary">Address</Typography>
-              <Typography variant="body2">
-                {typeof lead.address === 'string' ? lead.address : 
-                  lead.address ? `${lead.address.street || ''}, ${lead.address.city || ''} ${lead.address.postalCode || ''}`.trim() : 'N/A'}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary">Country</Typography>
-              <Typography variant="body2">{lead.country || 'N/A'}</Typography>
-            </Box>
-          </Stack>
-        </Paper>
-      </Grid>
-
-      {/* Additional Details Card */}
-      <Grid item xs={12} md={4}>
-        <Paper elevation={0} sx={{
-          p: 2,
-          bgcolor: 'background.paper',
-          borderRadius: 1,
-          border: '1px solid',
-          borderColor: 'divider',
-          height: '100%',
-          transition: 'all 0.2s ease-in-out',
-          '&:hover': {
-            boxShadow: theme => theme.shadows[4],
-            transform: 'translateY(-4px)',
-          },
-        }}>
-          <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <InfoIcon fontSize="small" />
-            Additional Details
-          </Typography>
-          <Stack spacing={2}>
-            {lead.sin && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">SIN</Typography>
-                <Typography variant="body2" fontFamily="monospace">{lead.sin}</Typography>
-              </Box>
-            )}
-            {lead.dob && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">Date of Birth</Typography>
-                <Typography variant="body2">{new Date(lead.dob).toLocaleDateString()}</Typography>
-              </Box>
-            )}
-            <Box>
-              <Typography variant="caption" color="text.secondary">Gender</Typography>
-              <Typography variant="body2">
-                {lead.gender ? lead.gender.charAt(0).toUpperCase() + lead.gender.slice(1) : 'Not Specified'}
-              </Typography>
-            </Box>
-            {lead.client && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">Client</Typography>
-                <Typography variant="body2">{lead.client}</Typography>
-              </Box>
-            )}
-            {lead.clientBroker && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">Client Broker</Typography>
-                <Typography variant="body2">{lead.clientBroker}</Typography>
-              </Box>
-            )}
-            {lead.clientNetwork && (
-              <Box>
-                <Typography variant="caption" color="text.secondary">Client Network</Typography>
-                <Typography variant="body2">{lead.clientNetwork}</Typography>
-              </Box>
-            )}
-          </Stack>
-        </Paper>
-      </Grid>
-
-      {/* Assignment Information */}
-      {lead.assignedTo && (
+    }}>
+      <Grid container spacing={3}>
+        {/* Basic Information Card */}
         <Grid item xs={12} md={4}>
           <Paper elevation={0} sx={{
             p: 2,
@@ -361,6 +190,7 @@ const LeadDetails = React.memo(({ lead }) => (
             borderRadius: 1,
             border: '1px solid',
             borderColor: 'divider',
+            height: '100%',
             transition: 'all 0.2s ease-in-out',
             '&:hover': {
               boxShadow: theme => theme.shadows[4],
@@ -368,47 +198,61 @@ const LeadDetails = React.memo(({ lead }) => (
             },
           }}>
             <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <AssignmentIndIcon fontSize="small" />
-              Assignment Information
+              <PersonAddIcon fontSize="small" />
+              Basic Information
             </Typography>
             <Stack spacing={2}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Avatar sx={{ bgcolor: 'primary.main' }}>
-                  {lead.assignedTo.fullName?.charAt(0) || 'A'}
-                </Avatar>
-                <Box>
-                  <Typography variant="body1" fontWeight="medium">
-                    {lead.assignedTo.fullName}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Agent Code: {lead.assignedTo.fourDigitCode}
-                  </Typography>
-                </Box>
-              </Box>
-              <Typography variant="body2">
-                <Link href={`mailto:${lead.assignedTo.email}`} color="primary">
-                  {lead.assignedTo.email}
-                </Link>
-              </Typography>
-              {lead.assignedAt && (
-                <Typography variant="caption" color="text.secondary">
-                  Assigned on: {new Date(lead.assignedAt).toLocaleString()}
+              <Box>
+                <Typography variant="caption" color="text.secondary">Full Name</Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {lead.fullName || `${lead.firstName} ${lead.lastName || ""}`.trim()}
                 </Typography>
-              )}
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Lead ID</Typography>
+                <Typography variant="body2" fontFamily="monospace">
+                  {lead._id}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Created</Typography>
+                <Typography variant="body2">
+                  {new Date(lead.createdAt).toLocaleString()}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Last Updated</Typography>
+                <Typography variant="body2">
+                  {new Date(lead.updatedAt).toLocaleString()}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1}>
+                <Chip 
+                  label={lead.leadType?.toUpperCase() || 'UNKNOWN'} 
+                  color={getLeadTypeColor(lead.leadType)} 
+                  size="small"
+                  sx={{ fontWeight: 'medium' }}
+                />
+                <Chip 
+                  label={lead.status.charAt(0).toUpperCase() + lead.status.slice(1)} 
+                  color={getStatusColor(lead.status)} 
+                  size="small"
+                  sx={{ fontWeight: 'medium' }}
+                />
+              </Stack>
             </Stack>
           </Paper>
         </Grid>
-      )}
 
-      {/* Social Media Profiles */}
-      {lead.socialMedia && Object.values(lead.socialMedia).some(Boolean) && (
-        <Grid item xs={12} md={lead.assignedTo ? 8 : 12}>
+        {/* Contact Information Card */}
+        <Grid item xs={12} md={4}>
           <Paper elevation={0} sx={{
             p: 2,
             bgcolor: 'background.paper',
             borderRadius: 1,
             border: '1px solid',
             borderColor: 'divider',
+            height: '100%',
             transition: 'all 0.2s ease-in-out',
             '&:hover': {
               boxShadow: theme => theme.shadows[4],
@@ -416,141 +260,424 @@ const LeadDetails = React.memo(({ lead }) => (
             },
           }}>
             <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <ShareIcon fontSize="small" />
-              Social Media Profiles
+              <ContactsIcon fontSize="small" />
+              Contact Information
             </Typography>
-            <Grid container spacing={2}>
-              {lead.socialMedia.facebook && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Link
-                    href={lead.socialMedia.facebook}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      color: 'text.primary',
-                      textDecoration: 'none',
-                      p: 1,
-                      borderRadius: 1,
-                      '&:hover': {
-                        bgcolor: 'action.hover',
-                      },
-                    }}
-                  >
-                    <FacebookIcon color="primary" />
-                    Facebook Profile
-                  </Link>
-                </Grid>
-              )}
-              {lead.socialMedia.twitter && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Link
-                    href={lead.socialMedia.twitter}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      color: 'text.primary',
-                      textDecoration: 'none',
-                      p: 1,
-                      borderRadius: 1,
-                      '&:hover': {
-                        bgcolor: 'action.hover',
-                      },
-                    }}
-                  >
-                    <TwitterIcon color="info" />
-                    Twitter Profile
-                  </Link>
-                </Grid>
-              )}
-              {lead.socialMedia.linkedin && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Link
-                    href={lead.socialMedia.linkedin}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      color: 'text.primary',
-                      textDecoration: 'none',
-                      p: 1,
-                      borderRadius: 1,
-                      '&:hover': {
-                        bgcolor: 'action.hover',
-                      },
-                    }}
-                  >
-                    <LinkedInIcon color="primary" />
-                    LinkedIn Profile
-                  </Link>
-                </Grid>
-              )}
-              {lead.socialMedia.instagram && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Link
-                    href={lead.socialMedia.instagram}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      color: 'text.primary',
-                      textDecoration: 'none',
-                      p: 1,
-                      borderRadius: 1,
-                      '&:hover': {
-                        bgcolor: 'action.hover',
-                      },
-                    }}
-                  >
-                    <InstagramIcon color="secondary" />
-                    Instagram Profile
-                  </Link>
-                </Grid>
-              )}
-              {lead.socialMedia.telegram && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    p: 1,
-                    borderRadius: 1,
-                  }}>
-                    <TelegramIcon color="info" />
-                    <Typography variant="body2">{lead.socialMedia.telegram}</Typography>
-                  </Box>
-                </Grid>
-              )}
-              {lead.socialMedia.whatsapp && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    p: 1,
-                    borderRadius: 1,
-                  }}>
-                    <WhatsAppIcon color="success" />
-                    <Typography variant="body2">{lead.socialMedia.whatsapp}</Typography>
-                  </Box>
-                </Grid>
-              )}
-            </Grid>
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Current Email</Typography>
+                <Typography variant="body2">{lead.newEmail}</Typography>
+                {lead.oldEmail && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Previous: {lead.oldEmail}
+                  </Typography>
+                )}
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Current Phone</Typography>
+                <Typography variant="body2">{lead.newPhone}</Typography>
+                {lead.oldPhone && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Previous: {lead.oldPhone}
+                  </Typography>
+                )}
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Address</Typography>
+                <Typography variant="body2">
+                  {typeof lead.address === 'string' ? lead.address : 
+                    lead.address ? `${lead.address.street || ''}, ${lead.address.city || ''} ${lead.address.postalCode || ''}`.trim() : 'N/A'}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Country</Typography>
+                <Typography variant="body2">{lead.country || 'N/A'}</Typography>
+              </Box>
+            </Stack>
           </Paper>
         </Grid>
-      )}
 
-      {/* Documents Section with Preview */}
-      {lead.documents && lead.documents.length > 0 && (
+        {/* Additional Details Card */}
+        <Grid item xs={12} md={4}>
+          <Paper elevation={0} sx={{
+            p: 2,
+            bgcolor: 'background.paper',
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            height: '100%',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              boxShadow: theme => theme.shadows[4],
+              transform: 'translateY(-4px)',
+            },
+          }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <InfoIcon fontSize="small" />
+              Additional Details
+            </Typography>
+            <Stack spacing={2}>
+              {lead.sin && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">SIN</Typography>
+                  <Typography variant="body2" fontFamily="monospace">{lead.sin}</Typography>
+                </Box>
+              )}
+              {lead.dob && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Date of Birth</Typography>
+                  <Typography variant="body2">{new Date(lead.dob).toLocaleDateString()}</Typography>
+                </Box>
+              )}
+              <Box>
+                <Typography variant="caption" color="text.secondary">Gender</Typography>
+                <Typography variant="body2">
+                  {lead.gender ? lead.gender.charAt(0).toUpperCase() + lead.gender.slice(1) : 'Not Specified'}
+                </Typography>
+              </Box>
+              {lead.client && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Client</Typography>
+                  <Typography variant="body2">{lead.client}</Typography>
+                </Box>
+              )}
+              {lead.clientBroker && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Client Broker</Typography>
+                  <Typography variant="body2">{lead.clientBroker}</Typography>
+                </Box>
+              )}
+              {lead.clientNetwork && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Client Network</Typography>
+                  <Typography variant="body2">{lead.clientNetwork}</Typography>
+                </Box>
+              )}
+            </Stack>
+          </Paper>
+        </Grid>
+
+        {/* Assignment History Card */}
+        {lead.assignments && lead.assignments.length > 0 && (
+          <Grid item xs={12}>
+            <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold' }}>
+                Assignment History
+              </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Client Network</TableCell>
+                      <TableCell>Client Broker</TableCell>
+                      <TableCell>Order ID</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Assigned At</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {lead.assignments.map((assignment) => (
+                      <TableRow key={assignment._id}>
+                        <TableCell>{assignment.clientNetwork?.name || 'N/A'}</TableCell>
+                        <TableCell>{assignment.clientBroker?.name || 'N/A'}</TableCell>
+                        <TableCell>
+                          <Tooltip title="View Order Details">
+                            <Link component="button" variant="body2" onClick={() => console.log('Navigate to order', assignment.order)}>
+                              {assignment.order}
+                            </Link>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell>
+                          <Chip label={assignment.status} size="small" />
+                        </TableCell>
+                        <TableCell>{new Date(assignment.assignedAt).toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          </Grid>
+        )}
+
+        {lead.status === 'sleep' && (
+            <Grid item xs={12}>
+                <Alert severity="info">This lead is currently in "sleep" mode as there are no available client brokers to assign.</Alert>
+            </Grid>
+        )}
+
+        {/* Assignment Information */}
+        {lead.assignedTo && (
+          <Grid item xs={12} md={4}>
+            <Paper elevation={0} sx={{
+              p: 2,
+              bgcolor: 'background.paper',
+              borderRadius: 1,
+              border: '1px solid',
+              borderColor: 'divider',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: theme => theme.shadows[4],
+                transform: 'translateY(-4px)',
+              },
+            }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <AssignmentIndIcon fontSize="small" />
+                Assignment Information
+              </Typography>
+              <Stack spacing={2}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Avatar sx={{ bgcolor: 'primary.main' }}>
+                    {lead.assignedTo.fullName?.charAt(0) || 'A'}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="body1" fontWeight="medium">
+                      {lead.assignedTo.fullName}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Agent Code: {lead.assignedTo.fourDigitCode}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Typography variant="body2">
+                  <Link href={`mailto:${lead.assignedTo.email}`} color="primary">
+                    {lead.assignedTo.email}
+                  </Link>
+                </Typography>
+                {lead.assignedAt && (
+                  <Typography variant="caption" color="text.secondary">
+                    Assigned on: {new Date(lead.assignedAt).toLocaleString()}
+                  </Typography>
+                )}
+              </Stack>
+            </Paper>
+          </Grid>
+        )}
+
+        {/* Social Media Profiles */}
+        {lead.socialMedia && Object.values(lead.socialMedia).some(Boolean) && (
+          <Grid item xs={12} md={lead.assignedTo ? 8 : 12}>
+            <Paper elevation={0} sx={{
+              p: 2,
+              bgcolor: 'background.paper',
+              borderRadius: 1,
+              border: '1px solid',
+              borderColor: 'divider',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: theme => theme.shadows[4],
+                transform: 'translateY(-4px)',
+              },
+            }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <ShareIcon fontSize="small" />
+                Social Media Profiles
+              </Typography>
+              <Grid container spacing={2}>
+                {lead.socialMedia.facebook && (
+                  <Grid item xs={12} sm={6} md={4}>
+                    <Link
+                      href={lead.socialMedia.facebook}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        color: 'text.primary',
+                        textDecoration: 'none',
+                        p: 1,
+                        borderRadius: 1,
+                        '&:hover': {
+                          bgcolor: 'action.hover',
+                        },
+                      }}
+                    >
+                      <FacebookIcon color="primary" />
+                      Facebook Profile
+                    </Link>
+                  </Grid>
+                )}
+                {lead.socialMedia.twitter && (
+                  <Grid item xs={12} sm={6} md={4}>
+                    <Link
+                      href={lead.socialMedia.twitter}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        color: 'text.primary',
+                        textDecoration: 'none',
+                        p: 1,
+                        borderRadius: 1,
+                        '&:hover': {
+                          bgcolor: 'action.hover',
+                        },
+                      }}
+                    >
+                      <TwitterIcon color="info" />
+                      Twitter Profile
+                    </Link>
+                  </Grid>
+                )}
+                {lead.socialMedia.linkedin && (
+                  <Grid item xs={12} sm={6} md={4}>
+                    <Link
+                      href={lead.socialMedia.linkedin}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        color: 'text.primary',
+                        textDecoration: 'none',
+                        p: 1,
+                        borderRadius: 1,
+                        '&:hover': {
+                          bgcolor: 'action.hover',
+                        },
+                      }}
+                    >
+                      <LinkedInIcon color="primary" />
+                      LinkedIn Profile
+                    </Link>
+                  </Grid>
+                )}
+                {lead.socialMedia.instagram && (
+                  <Grid item xs={12} sm={6} md={4}>
+                    <Link
+                      href={lead.socialMedia.instagram}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        color: 'text.primary',
+                        textDecoration: 'none',
+                        p: 1,
+                        borderRadius: 1,
+                        '&:hover': {
+                          bgcolor: 'action.hover',
+                        },
+                      }}
+                    >
+                      <InstagramIcon color="secondary" />
+                      Instagram Profile
+                    </Link>
+                  </Grid>
+                )}
+                {lead.socialMedia.telegram && (
+                  <Grid item xs={12} sm={6} md={4}>
+                    <Box sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      p: 1,
+                      borderRadius: 1,
+                    }}>
+                      <TelegramIcon color="info" />
+                      <Typography variant="body2">{lead.socialMedia.telegram}</Typography>
+                    </Box>
+                  </Grid>
+                )}
+                {lead.socialMedia.whatsapp && (
+                  <Grid item xs={12} sm={6} md={4}>
+                    <Box sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      p: 1,
+                      borderRadius: 1,
+                    }}>
+                      <WhatsAppIcon color="success" />
+                      <Typography variant="body2">{lead.socialMedia.whatsapp}</Typography>
+                    </Box>
+                  </Grid>
+                )}
+              </Grid>
+            </Paper>
+          </Grid>
+        )}
+
+        {/* Documents Section with Preview */}
+        {lead.documents && lead.documents.length > 0 && (
+          <Grid item xs={12}>
+            <Paper elevation={0} sx={{
+              p: 2,
+              bgcolor: 'background.paper',
+              borderRadius: 1,
+              border: '1px solid',
+              borderColor: 'divider',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: theme => theme.shadows[4],
+                transform: 'translateY(-4px)',
+              },
+            }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <DescriptionIcon fontSize="small" />
+                Documents
+              </Typography>
+              <Grid container spacing={2}>
+                {lead.documents.map((doc, index) => (
+                  <Grid item xs={12} sm={6} md={4} key={index}>
+                    <Paper elevation={0} sx={{
+                      p: 1.5,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      '&:hover': {
+                        bgcolor: 'action.hover',
+                      },
+                    }}>
+                      {doc?.url && doc.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                        <Box sx={{ mb: 1 }}>
+                          <DocumentPreview
+                            url={doc.url}
+                            type={doc.description || `Document ${index + 1}`}
+                          />
+                        </Box>
+                      ) : (
+                        <Link
+                          href={doc?.url || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            color: 'primary.main',
+                            textDecoration: 'none',
+                            mb: 1,
+                          }}
+                        >
+                          <DescriptionIcon fontSize="small" />
+                          {doc?.description || 'View Document'}
+                        </Link>
+                      )}
+                      {doc?.description && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {doc.description}
+                        </Typography>
+                      )}
+                      {doc?.uploadedAt && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Uploaded: {new Date(doc.uploadedAt).toLocaleString()}
+                        </Typography>
+                      )}
+                    </Paper>
+                  </Grid>
+                ))}
+              </Grid>
+            </Paper>
+          </Grid>
+        )}
+
+        {/* Comments Section */}
         <Grid item xs={12}>
           <Paper elevation={0} sx={{
             p: 2,
@@ -565,127 +692,113 @@ const LeadDetails = React.memo(({ lead }) => (
             },
           }}>
             <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <DescriptionIcon fontSize="small" />
-              Documents
+              <CommentIcon fontSize="small" />
+              Comments & Activity
             </Typography>
-            <Grid container spacing={2}>
-              {lead.documents.map((doc, index) => (
-                <Grid item xs={12} sm={6} md={4} key={index}>
-                  <Paper elevation={0} sx={{
-                    p: 1.5,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                    '&:hover': {
-                      bgcolor: 'action.hover',
-                    },
-                  }}>
-                    {doc?.url && doc.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                      <Box sx={{ mb: 1 }}>
-                        <DocumentPreview
-                          url={doc.url}
-                          type={doc.description || `Document ${index + 1}`}
-                        />
+            <Box sx={{ maxHeight: 300, overflowY: 'auto', pr: 1 }}>
+              {lead.comments && lead.comments.length > 0 ? (
+                <Stack spacing={2}>
+                  {lead.comments.map((comment, index) => (
+                    <Paper
+                      key={index}
+                      elevation={0}
+                      sx={{
+                        p: 2,
+                        bgcolor: 'action.hover',
+                        borderRadius: 1,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <Avatar sx={{ width: 24, height: 24, fontSize: '0.875rem' }}>
+                          {comment.author?.fullName?.charAt(0) || 'U'}
+                        </Avatar>
+                        <Typography variant="subtitle2">
+                          {comment.author?.fullName || 'Unknown User'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          • {new Date(comment.createdAt).toLocaleString()}
+                        </Typography>
                       </Box>
-                    ) : (
-                      <Link
-                        href={doc?.url || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1,
-                          color: 'primary.main',
-                          textDecoration: 'none',
-                          mb: 1,
-                        }}
-                      >
-                        <DescriptionIcon fontSize="small" />
-                        {doc?.description || 'View Document'}
-                      </Link>
-                    )}
-                    {doc?.description && (
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        {doc.description}
-                      </Typography>
-                    )}
-                    {doc?.uploadedAt && (
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Uploaded: {new Date(doc.uploadedAt).toLocaleString()}
-                      </Typography>
-                    )}
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
+                      <Typography variant="body2">{comment.text}</Typography>
+                    </Paper>
+                  ))}
+                </Stack>
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 3, color: 'text.secondary' }}>
+                  <CommentIcon sx={{ fontSize: 40, opacity: 0.5, mb: 1 }} />
+                  <Typography variant="body2">No comments yet</Typography>
+                </Box>
+              )}
+            </Box>
           </Paper>
         </Grid>
-      )}
 
-      {/* Comments Section */}
-      <Grid item xs={12}>
-        <Paper elevation={0} sx={{
-          p: 2,
-          bgcolor: 'background.paper',
-          borderRadius: 1,
-          border: '1px solid',
-          borderColor: 'divider',
-          transition: 'all 0.2s ease-in-out',
-          '&:hover': {
-            boxShadow: theme => theme.shadows[4],
-            transform: 'translateY(-4px)',
-          },
-        }}>
-          <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <CommentIcon fontSize="small" />
-            Comments & Activity
-          </Typography>
-          <Box sx={{ maxHeight: 300, overflowY: 'auto', pr: 1 }}>
-            {lead.comments && lead.comments.length > 0 ? (
+        {/* Order Information Card */}
+        {lead.order && (
+          <Grid item xs={12} md={4}>
+            <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <AssignmentIcon fontSize="small" />
+                Order Information
+              </Typography>
               <Stack spacing={2}>
-                {lead.comments.map((comment, index) => (
-                  <Paper
-                    key={index}
-                    elevation={0}
-                    sx={{
-                      p: 2,
-                      bgcolor: 'action.hover',
-                      borderRadius: 1,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                    }}
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Order ID</Typography>
+                  <Typography variant="body2" fontFamily="monospace">{lead.order._id}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Order Status</Typography>
+                  <Chip label={lead.order.status} size="small" />
+                </Box>
+                {canInjectOrder && (
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    startIcon={<RocketLaunchIcon />}
+                    onClick={() => onStartOrderInjection(lead.order._id)}
                   >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                      <Avatar sx={{ width: 24, height: 24, fontSize: '0.875rem' }}>
-                        {comment.author?.fullName?.charAt(0) || 'U'}
-                      </Avatar>
-                      <Typography variant="subtitle2">
-                        {comment.author?.fullName || 'Unknown User'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        • {new Date(comment.createdAt).toLocaleString()}
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2">{comment.text}</Typography>
-                  </Paper>
-                ))}
+                    Start Order Injection
+                  </Button>
+                )}
               </Stack>
-            ) : (
-              <Box sx={{ textAlign: 'center', py: 3, color: 'text.secondary' }}>
-                <CommentIcon sx={{ fontSize: 40, opacity: 0.5, mb: 1 }} />
-                <Typography variant="body2">No comments yet</Typography>
+            </Paper>
+          </Grid>
+        )}
+
+        {/* Client & Network Information */}
+        <Grid item xs={12}>
+          <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <AssignmentIndIcon fontSize="small" />
+              Client & Network Information
+            </Typography>
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Client</Typography>
+                <Typography variant="body2">{lead.client}</Typography>
               </Box>
-            )}
-          </Box>
-        </Paper>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Client Broker</Typography>
+                <Typography variant="body2">{lead.clientBroker}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Client Network</Typography>
+                <Typography variant="body2">{lead.clientNetwork}</Typography>
+              </Box>
+            </Stack>
+          </Paper>
+        </Grid>
       </Grid>
-    </Grid>
-  </Box>
-));
+    </Box>
+  );
+});
 
 const LeadsPage = () => {
   const user = useSelector(selectUser);
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
 
   // --- State ---
   const [loading, setLoading] = useState(true);
@@ -736,6 +849,8 @@ const LeadsPage = () => {
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [isInjecting, setIsInjecting] = useState(false);
   const [injectionStatus, setInjectionStatus] = useState({ success: null, message: "" });
+  const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+  const [view, setView] = useState("table");
 
   // --- Derived State & Roles (Memoized) ---
   const isAdminOrManager = useMemo(
@@ -899,21 +1014,23 @@ const LeadsPage = () => {
   }, [fetchLeads, fetchLeadStats, setSuccess, setError]);
 
   const handleInjectLead = async (leadId) => {
-    setIsInjecting(true);
-    setInjectionStatus({ success: null, message: "Starting injection..." });
+    setNotification({ open: true, message: 'Injecting lead...', severity: 'info' });
     try {
-      const landingPageUrl = `${window.location.origin}/landing`;
-      const res = await api.post(`/leads/${leadId}/inject`, { landingPage: landingPageUrl });
-      if (res.status === 200) {
-        setInjectionStatus({ success: true, message: "Injection process started successfully!" });
-      }
-    } catch (error) {
-      const message = error.response?.data?.message || "Failed to start injection.";
-      setInjectionStatus({ success: false, message });
-    } finally {
-      setIsInjecting(false);
-      // Hide the message after a few seconds
-      setTimeout(() => setInjectionStatus({ success: null, message: "" }), 5000);
+      await api.post(`/leads/${leadId}/inject`);
+      setNotification({ open: true, message: 'Lead injection initiated successfully!', severity: 'success' });
+    } catch (err) {
+      setNotification({ open: true, message: err.response?.data?.message || 'Failed to inject lead', severity: 'error' });
+    }
+  };
+
+  const handleStartOrderInjection = async (orderId) => {
+    setNotification({ open: true, message: 'Starting order injection process...', severity: 'info' });
+    try {
+      await api.post(`/orders/${orderId}/inject`);
+      setNotification({ open: true, message: 'Order injection process started successfully!', severity: 'success' });
+      fetchLeads();
+    } catch (err) {
+      setNotification({ open: true, message: err.response?.data?.message || 'Failed to start order injection', severity: 'error' });
     }
   };
 
@@ -1153,6 +1270,12 @@ const LeadsPage = () => {
       {injectionStatus.message && (
         <Alert severity={injectionStatus.success === true ? "success" : (injectionStatus.success === false ? "error" : "info")} sx={{ mb: 2 }}>
           {injectionStatus.message}
+        </Alert>
+      )}
+
+      {notification.open && (
+        <Alert severity={notification.severity} sx={{ mb: 2 }} onClose={() => setNotification({ ...notification, open: false })}>
+          {notification.message}
         </Alert>
       )}
 
@@ -1467,7 +1590,7 @@ const LeadsPage = () => {
                         {expandedRows.has(lead._id) && (
                           <TableRow>
                             <TableCell colSpan={isAdminOrManager ? 12 : 11} sx={{ bgcolor: 'background.default', borderBottom: '2px solid', borderColor: 'divider', py: 3 }}>
-                              <LeadDetails lead={lead} />
+                              <LeadDetails lead={lead} onStartOrderInjection={handleStartOrderInjection} />
                             </TableCell>
                           </TableRow>
                         )}
@@ -1707,6 +1830,16 @@ const LeadsPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar open={notification.open} autoHideDuration={6000} onClose={() => setNotification({ ...notification, open: false })}>
+        <Alert onClose={() => setNotification({ ...notification, open: false })} severity={notification.severity} sx={{ width: '100%' }}>
+          {notification.message}
+        </Alert>
+      </Snackbar>
+
+      <Box sx={{ p: isSmallScreen ? 2 : 3 }}>
+        {/* ... existing code ... */}
+      </Box>
     </Box>
   );
 };
@@ -1900,7 +2033,7 @@ const LeadCard = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLe
         <Collapse in={expandedRows.has(lead._id)} sx={{ width: '100%' }}>
           <Grid item xs={12}>
             <Box sx={{ mt: 2, pb: 2, overflowX: 'hidden' }}>
-              <LeadDetails lead={lead} />
+              <LeadDetails lead={lead} onStartOrderInjection={handleStartOrderInjection} />
             </Box>
           </Grid>
         </Collapse>

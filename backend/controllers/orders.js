@@ -2,6 +2,10 @@ const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Lead = require("../models/Lead");
+const ClientBroker = require('../models/ClientBroker');
+const ClientNetwork = require('../models/ClientNetwork');
+const InjectionService = require('../services/injectionService');
+const asyncHandler = require('../middleware/async');
 
 /**
  * FILLER LEADS PHONE NUMBER REPETITION RULES
@@ -401,7 +405,7 @@ const getMaxRepetitionsForFillerCount = (count) => {
 // @desc    Create a new order and pull leads
 // @route   POST /api/orders
 // @access  Private (Admin, Manager with canCreateOrders permission)
-exports.createOrder = async (req, res, next) => {
+exports.createOrder = asyncHandler(async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -421,6 +425,11 @@ exports.createOrder = async (req, res, next) => {
       excludeClients = [],
       excludeBrokers = [],
       excludeNetworks = [],
+      clientNetwork,
+      clientBroker,
+      newClientBroker,
+      injectionType,
+      autoInjectionSettings,
     } = req.body;
 
     const { ftd = 0, filler = 0, cold = 0, live = 0 } = requests || {};
@@ -431,6 +440,26 @@ exports.createOrder = async (req, res, next) => {
         message: "At least one lead type must be requested",
       });
     }
+
+    // --- Handle Client Broker ---
+    let finalClientBrokerId = null;
+    if (clientBroker) {
+      if (clientBroker.id === 'add_new' && newClientBroker) {
+        // Create a new broker
+        if (!clientNetwork) {
+          return next(new ErrorResponse('Client network is required to create a new broker', 400));
+        }
+        const newBroker = await ClientBroker.create({
+          name: newClientBroker,
+          clientNetwork: clientNetwork,
+          createdBy: req.user.id,
+        });
+        finalClientBrokerId = newBroker._id;
+      } else if (clientBroker.id) {
+        finalClientBrokerId = clientBroker.id;
+      }
+    }
+    // --- End Handle Client Broker ---
 
     const pulledLeads = [];
     const fulfilled = { ftd: 0, filler: 0, cold: 0, live: 0 };
@@ -592,6 +621,10 @@ exports.createOrder = async (req, res, next) => {
       excludeClients: excludeClients.length > 0 ? excludeClients : undefined,
       excludeBrokers: excludeBrokers.length > 0 ? excludeBrokers : undefined,
       excludeNetworks: excludeNetworks.length > 0 ? excludeNetworks : undefined,
+      clientNetwork: clientNetwork,
+      clientBroker: finalClientBrokerId,
+      injectionType: injectionType,
+      autoInjectionSettings: autoInjectionSettings,
       // Set cancellation details if no leads available
       ...(orderStatus === "cancelled" && {
         cancelledAt: new Date(),
@@ -721,606 +754,364 @@ exports.createOrder = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
+});
 
-// @desc    Get orders (Admin sees all, Manager sees own)
-// @route   GET /api/orders
-// @access  Private (Admin, Manager)
-exports.getOrders = async (req, res, next) => {
-  try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errors.array(),
-      });
-    }
-
-    const {
-      page = 1,
-      limit = 10,
-      status,
-      priority,
-      startDate,
-      endDate,
-    } = req.query;
-
-    // Build query
-    let query = {};
-
-    // Role-based filtering
-    if (req.user.role !== "admin") {
-      query.requester = req.user._id;
-    }
-
-    // Apply filters
-    if (status) query.status = status;
-    if (priority) query.priority = priority;
-    if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
-    }
-
-    // Calculate pagination
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
-    const skip = (pageNum - 1) * limitNum;
-
-    // Get orders with pagination
-    const orders = await Order.find(query)
-      .populate("requester", "fullName email role")
-      .populate({
-        path: "leads",
-        select: "leadType firstName lastName country email phone orderId",
-        populate: [
-          {
-            path: "assignedTo",
-            select: "fullName email",
-          },
-          {
-            path: "comments.author",
-            select: "fullName",
-          },
-        ],
-      })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum);
-
-    // Get total count
-    const total = await Order.countDocuments(query);
+exports.startOrderInjection = asyncHandler(async (req, res, next) => {
+    const injectionService = new InjectionService(req.params.id, req.user._id);
+    await injectionService.startInjection();
 
     res.status(200).json({
-      success: true,
-      data: orders,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
-      },
+        success: true,
+        message: 'Order injection process started successfully.'
     });
-  } catch (error) {
-    next(error);
-  }
-};
+});
 
-// @desc    Get order by ID
-// @route   GET /api/orders/:id
-// @access  Private (Admin, Manager - own orders only)
-exports.getOrderById = async (req, res, next) => {
-  try {
+/**
+ * @desc    Manually inject a single FTD lead
+ * @route   POST /api/v1/orders/:orderId/leads/:leadId/inject
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.injectFtdLead = asyncHandler(async (req, res, next) => {
+    // This is for manual injection of a single FTD lead into a specific broker
+    const { orderId, leadId } = req.params;
+    const { clientBrokerId } = req.body;
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+        return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const lead = await Lead.findById(leadId);
+    if (!lead || lead.leadType !== 'ftd') {
+        return res.status(404).json({ success: false, message: 'FTD Lead not found' });
+    }
+    
+    const broker = await ClientBroker.findById(clientBrokerId);
+    if (!broker) {
+        return res.status(404).json({ success: false, message: 'Client Broker not found' });
+    }
+
+    // You might want additional checks here, e.g., if the broker belongs to the order's network
+    if (broker.clientNetwork.toString() !== order.clientNetwork.toString()) {
+        return res.status(400).json({ success: false, message: `Broker ${broker.name} does not belong to the order's network.` });
+    }
+
+    const injectionService = new InjectionService(orderId, req.user._id);
+    await injectionService.init();
+    await injectionService.injectLead(lead, broker);
+
+    res.status(200).json({ success: true, message: `FTD Lead ${leadId} processed for injection.`});
+});
+
+/**
+ * @desc    Assign a Client Broker to a lead assignment that is pending broker assignment
+ * @route   POST /api/v1/orders/:orderId/leads/:leadId/assign-broker
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.assignBrokerToLeadAssignment = asyncHandler(async (req, res, next) => {
+    const { orderId, leadId } = req.params;
+    const { clientBrokerId } = req.body;
+    
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+        return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+        return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+    
+    const clientBroker = await ClientBroker.findById(clientBrokerId);
+    if (!clientBroker) {
+        return res.status(404).json({ success: false, message: 'Client Broker not found' });
+    }
+
+    // Validation: Ensure the chosen broker belongs to the order's client network
+    if (clientBroker.clientNetwork.toString() !== order.clientNetwork.toString()) {
+        return res.status(400).json({ success: false, message: `Broker ${clientBroker.name} does not belong to the order's network.` });
+    }
+
+    // Find the assignment within the lead that corresponds to this order
+    const assignment = lead.assignments.find(a => a.order.equals(order._id));
+
+    if (!assignment) {
+        return res.status(404).json({ success: false, message: 'No assignment found for this lead in this order.' });
+    }
+
+    if (assignment.status !== 'pending_broker_assignment') {
+        return res.status(400).json({ success: false, message: `Assignment status is '${assignment.status}', not 'pending_broker_assignment'. Cannot re-assign broker.` });
+    }
+
+    // Update the assignment
+    assignment.clientBroker = clientBroker._id;
+    assignment.status = 'injected';
+    
+    // Increment the fulfilled count on the order
+    if (order.fulfilled[lead.leadType] < order.requests[lead.leadType]) {
+        order.fulfilled[lead.leadType]++;
+    }
+
+    order.logs.push({
+        message: `Broker ${clientBroker.name} was manually assigned to lead ${lead.fullName || lead._id}. Injection complete.`,
+        type: 'info',
+        lead: lead._id
+    });
+    
+    // Save both documents
+    await lead.save();
+    await order.save();
+    
+    res.status(200).json({
+        success: true,
+        message: `Broker successfully assigned to lead ${leadId}.`,
+        data: lead
+    });
+});
+
+/**
+ * @desc    Get all leads associated with a specific order
+ * @route   GET /api/v1/orders/:id/leads
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.getLeadsForOrder = asyncHandler(async (req, res, next) => {
+    const { id } = req.params;
+
+    // Validate order ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid order ID'
+        });
+    }
+
+    // Check if order exists
+    const order = await Order.findById(id);
+    if (!order) {
+        return res.status(404).json({
+            success: false,
+            message: 'Order not found'
+        });
+    }
+
+    // Get leads associated with this order
+    const leads = await Lead.find({ orderId: id })
+        .populate('assignedTo', 'fullName email fourDigitCode')
+        .populate('assignments.clientNetwork', 'name')
+        .populate('assignments.clientBroker', 'name')
+        .sort({ createdAt: -1 });
+
+    res.status(200).json({
+        success: true,
+        count: leads.length,
+        data: leads
+    });
+});
+
+/**
+ * @desc    Get all orders with pagination and filtering
+ * @route   GET /api/v1/orders
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.getOrders = asyncHandler(async (req, res, next) => {
+    res.status(200).json(res.advancedResults);
+});
+
+/**
+ * @desc    Get single order by ID
+ * @route   GET /api/v1/orders/:id
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.getOrderById = asyncHandler(async (req, res, next) => {
     const order = await Order.findById(req.params.id)
-      .populate("requester", "fullName email role")
-      .populate({
-        path: "leads",
-        populate: [
-          {
-            path: "assignedTo",
-            select: "fullName email",
-          },
-          {
-            path: "comments.author",
-            select: "fullName",
-          },
-        ],
-      });
+        .populate('requester', 'fullName email')
+        .populate('clientNetwork', 'name')
+        .populate('assignedTo', 'fullName email');
 
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
-    }
-
-    // Check permission (non-admin can only see their own orders)
-    if (
-      req.user.role !== "admin" &&
-      order.requester._id.toString() !== req.user._id.toString()
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to view this order",
-      });
+        return res.status(404).json({
+            success: false,
+            message: 'Order not found'
+        });
     }
 
     res.status(200).json({
-      success: true,
-      data: order,
+        success: true,
+        data: order
     });
-  } catch (error) {
-    next(error);
-  }
-};
+});
 
-// @desc    Update order details
-// @route   PUT /api/orders/:id
-// @access  Private (Admin, Manager - own orders only)
-exports.updateOrder = async (req, res, next) => {
-  try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errors.array(),
-      });
+/**
+ * @desc    Update order
+ * @route   PUT /api/v1/orders/:id
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.updateOrder = asyncHandler(async (req, res, next) => {
+    let order = await Order.findById(req.params.id);
+
+    if (!order) {
+        return res.status(404).json({
+            success: false,
+            message: 'Order not found'
+        });
     }
 
+    order = await Order.findByIdAndUpdate(req.params.id, req.body, {
+        new: true,
+        runValidators: true
+    });
+
+    res.status(200).json({
+        success: true,
+        data: order
+    });
+});
+
+/**
+ * @desc    Delete order
+ * @route   DELETE /api/v1/orders/:id
+ * @access  Private (Admin)
+ */
+exports.deleteOrder = asyncHandler(async (req, res, next) => {
     const order = await Order.findById(req.params.id);
 
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
-    }
-
-    // Check permission
-    if (
-      req.user.role !== "admin" &&
-      order.requester.toString() !== req.user._id.toString()
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to update this order",
-      });
-    }
-
-    const { priority, notes } = req.body;
-
-    if (priority) order.priority = priority;
-    if (notes !== undefined) order.notes = notes;
-
-    await order.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Order updated successfully",
-      data: order,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Cancel order
-// @route   DELETE /api/orders/:id
-// @access  Private (Admin, Manager - own orders only)
-exports.cancelOrder = async (req, res, next) => {
-  const session = await mongoose.startSession();
-
-  try {
-    const { reason } = req.body;
-
-    await session.withTransaction(async () => {
-      const order = await Order.findById(req.params.id).session(session);
-
-      if (!order) {
         return res.status(404).json({
-          success: false,
-          message: "Order not found",
+            success: false,
+            message: 'Order not found'
         });
-      }
+    }
 
-      // Check permission
-      if (
-        req.user.role !== "admin" &&
-        order.requester.toString() !== req.user._id.toString()
-      ) {
-        return res.status(403).json({
-          success: false,
-          message: "Not authorized to cancel this order",
-        });
-      }
+    await order.deleteOne();
 
-      if (order.status === "cancelled") {
-        return res.status(400).json({
-          success: false,
-          message: "Order is already cancelled",
-        });
-      }
-
-      // Unassign leads
-      await Lead.updateMany(
-        { _id: { $in: order.leads } },
-        {
-          $set: {
-            isAssigned: false,
-            assignedTo: null,
-            assignedAt: null,
-          },
-        },
-        { session }
-      );
-
-      // Update order
-      order.status = "cancelled";
-      order.cancelledAt = new Date();
-      order.cancellationReason = reason;
-
-      await order.save({ session });
-
-      res.status(200).json({
+    res.status(200).json({
         success: true,
-        message: "Order cancelled successfully",
-        data: order,
-      });
+        data: {}
     });
-  } catch (error) {
-    next(error);
-  } finally {
-    session.endSession();
-  }
-};
+});
 
-// @desc    Get order statistics
-// @route   GET /api/orders/stats
-// @access  Private (Admin, Manager)
-exports.getOrderStats = async (req, res, next) => {
-  try {
-    const { startDate, endDate } = req.query;
-
-    // Build match stage for aggregation
-    let matchStage = {};
-
-    // Role-based filtering
-    if (req.user.role !== "admin") {
-      matchStage.requester = new mongoose.Types.ObjectId(req.user._id);
-    }
-
-    // Date filtering
-    if (startDate || endDate) {
-      matchStage.createdAt = {};
-      if (startDate) matchStage.createdAt.$gte = new Date(startDate);
-      if (endDate) matchStage.createdAt.$lte = new Date(endDate);
-    }
-
+/**
+ * @desc    Get order statistics
+ * @route   GET /api/v1/orders/stats
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.getOrderStats = asyncHandler(async (req, res, next) => {
     const stats = await Order.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-          totalRequested: {
-            $sum: {
-              $add: [
-                "$requests.ftd",
-                "$requests.filler",
-                "$requests.cold",
-                "$requests.live",
-              ],
-            },
-          },
-          totalFulfilled: {
-            $sum: {
-              $add: [
-                "$fulfilled.ftd",
-                "$fulfilled.filler",
-                "$fulfilled.cold",
-                "$fulfilled.live",
-              ],
-            },
-          },
-        },
-      },
+        {
+            $group: {
+                _id: '$status',
+                count: { $sum: 1 },
+                totalRequested: { $sum: { $add: ['$requests.fresh', '$requests.filler', '$requests.ftd'] } },
+                totalFulfilled: { $sum: { $add: ['$fulfilled.fresh', '$fulfilled.filler', '$fulfilled.ftd'] } }
+            }
+        }
     ]);
 
     res.status(200).json({
-      success: true,
-      data: stats,
+        success: true,
+        data: stats
     });
-  } catch (error) {
-    next(error);
-  }
-};
+});
 
-// @desc    Export leads from order as CSV
-// @route   GET /api/orders/:id/export
-// @access  Private (Admin, Manager - own orders only)
-exports.exportOrderLeads = async (req, res, next) => {
-  try {
-    const orderId = req.params.id;
+/**
+ * @desc    Export order leads
+ * @route   GET /api/v1/orders/:id/export
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.exportOrderLeads = asyncHandler(async (req, res, next) => {
+    const order = await Order.findById(req.params.id);
 
-    // Validate ObjectId
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid order ID",
-      });
-    }
-
-    // Get order and check ownership
-    const order = await Order.findById(orderId);
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
+        return res.status(404).json({
+            success: false,
+            message: 'Order not found'
+        });
     }
 
-    // Check if user can access this order (Admin or owns the order)
-    if (
-      req.user.role !== "admin" &&
-      order.requester.toString() !== req.user.id
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied",
-      });
+    const leads = await Lead.find({ orderId: req.params.id });
+
+    res.status(200).json({
+        success: true,
+        data: leads,
+        message: 'Order leads exported successfully'
+    });
+});
+
+/**
+ * @desc    Get exclusion options
+ * @route   GET /api/v1/orders/exclusion-options
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.getExclusionOptions = asyncHandler(async (req, res, next) => {
+    try {
+        // Get unique client networks
+        const clientNetworks = await ClientNetwork.find({}, 'name').distinct('name');
+        
+        // Get unique client brokers
+        const clientBrokers = await ClientBroker.find({}, 'name').distinct('name');
+        
+        // For networks, we can use the same client networks data
+        // or create a separate collection if needed
+        const networks = clientNetworks;
+        
+        const exclusionOptions = {
+            clients: clientNetworks || [],
+            brokers: clientBrokers || [],
+            networks: networks || []
+        };
+
+        res.status(200).json({
+            success: true,
+            data: exclusionOptions
+        });
+    } catch (error) {
+        console.error('Error fetching exclusion options:', error);
+        res.status(200).json({
+            success: true,
+            data: {
+                clients: [],
+                brokers: [],
+                networks: []
+            }
+        });
     }
+});
 
-    // Get all leads for this order
-    const leads = await Lead.find({ orderId: orderId })
-      .populate("assignedTo", "fullName")
-      .populate("createdBy", "fullName")
-      .sort({ createdAt: -1 });
+/**
+ * @desc    Assign client info to order leads
+ * @route   PUT /api/v1/orders/:id/assign-client-info
+ * @access  Private (Admin, Affiliate Manager)
+ */
+exports.assignClientInfoToOrderLeads = asyncHandler(async (req, res, next) => {
+    const order = await Order.findById(req.params.id);
 
-    if (leads.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No leads found for this order",
-      });
-    }
-
-    // Generate CSV content
-    const csvHeaders = [
-      "Lead Type",
-      "First Name",
-      "Last Name",
-      "Email",
-      "Prefix",
-      "Phone",
-      "Country",
-      "Gender",
-      "Status",
-      "DOB",
-      "Address",
-      "Old Email",
-      "Old Phone",
-      "Client",
-      "Client Broker",
-      "Client Network",
-      "Facebook",
-      "Twitter",
-      "LinkedIn",
-      "Instagram",
-      "Telegram",
-      "WhatsApp",
-      "ID front",
-      "ID back",
-      "Selfie front",
-      "Selfie back",
-      "Assigned To",
-      "Created By",
-      "Created At",
-      "Assigned At",
-    ];
-
-    // Helper function to format dates for Excel compatibility
-    const formatDateForExcel = (date) => {
-      if (!date) return "";
-      const d = new Date(date);
-      if (isNaN(d.getTime())) return "";
-
-      // Format as DD/MM/YYYY which is more Excel-friendly
-      const day = d.getDate().toString().padStart(2, "0");
-      const month = (d.getMonth() + 1).toString().padStart(2, "0");
-      const year = d.getFullYear();
-
-      return `${day}/${month}/${year}`;
-    };
-
-    // Helper function to extract document URL by description
-    const getDocumentUrl = (documents, description) => {
-      if (!documents || !Array.isArray(documents)) return "";
-      const doc = documents.find(
-        (d) =>
-          d.description &&
-          d.description.toLowerCase().includes(description.toLowerCase())
-      );
-      return doc ? doc.url || "" : "";
-    };
-
-    // Convert leads to CSV rows
-    const csvRows = leads.map((lead) => [
-      lead.leadType || "",
-      lead.firstName || "",
-      lead.lastName || "",
-      lead.newEmail || "",
-      lead.prefix || "",
-      lead.newPhone || "",
-      lead.country || "",
-      lead.gender || "",
-      lead.status || "",
-      formatDateForExcel(lead.dob),
-      lead.address || "",
-      lead.oldEmail || "",
-      lead.oldPhone || "",
-      lead.client || "",
-      lead.clientBroker || "",
-      lead.clientNetwork || "",
-      lead.socialMedia?.facebook || "",
-      lead.socialMedia?.twitter || "",
-      lead.socialMedia?.linkedin || "",
-      lead.socialMedia?.instagram || "",
-      lead.socialMedia?.telegram || "",
-      lead.socialMedia?.whatsapp || "",
-      getDocumentUrl(lead.documents, "ID Front"),
-      getDocumentUrl(lead.documents, "ID Back"),
-      getDocumentUrl(lead.documents, "Selfie with ID Front"),
-      getDocumentUrl(lead.documents, "Selfie with ID Back"),
-      lead.assignedTo?.fullName || "",
-      lead.createdBy?.fullName || "",
-      formatDateForExcel(lead.createdAt),
-      formatDateForExcel(lead.assignedAt),
-    ]);
-
-    // Helper function to escape CSV values
-    const escapeCsvValue = (value) => {
-      if (value === null || value === undefined) return "";
-      const stringValue = String(value);
-      // If the value contains comma, double quote, or newline, wrap in quotes and escape quotes
-      if (
-        stringValue.includes(",") ||
-        stringValue.includes('"') ||
-        stringValue.includes("\n")
-      ) {
-        return `"${stringValue.replace(/"/g, '""')}"`;
-      }
-      return stringValue;
-    };
-
-    // Build CSV content
-    const csvContent = [
-      csvHeaders.map(escapeCsvValue).join(","),
-      ...csvRows.map((row) => row.map(escapeCsvValue).join(",")),
-    ].join("\n");
-
-    // Set response headers for file download
-    const filename = `order_${orderId}_leads_${
-      new Date().toISOString().split("T")[0]
-    }.csv`;
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.setHeader("Cache-Control", "no-cache");
-
-    // Send CSV content
-    res.status(200).send(csvContent);
-  } catch (error) {
-    console.error("Export error:", error);
-    next(error);
-  }
-};
-
-// @desc    Assign client, broker, and network info to all leads in order
-// @route   PUT /api/orders/:id/assign-client-info
-// @access  Private (Admin, Manager - own orders only)
-exports.assignClientInfoToOrderLeads = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errors.array(),
-      });
-    }
-
-    const orderId = req.params.id;
-    const { client, clientBroker, clientNetwork } = req.body;
-
-    // Validate ObjectId
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid order ID",
-      });
-    }
-
-    // Get order and check ownership
-    const order = await Order.findById(orderId);
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
+        return res.status(404).json({
+            success: false,
+            message: 'Order not found'
+        });
     }
 
-    // Check if user can access this order (Admin or owns the order)
-    if (
-      req.user.role !== "admin" &&
-      order.requester.toString() !== req.user.id
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied",
-      });
-    }
+    const { clientInfo } = req.body;
 
-    // Build update object with only provided fields
-    const updateData = {};
-    if (client !== undefined) updateData.client = client;
-    if (clientBroker !== undefined) updateData.clientBroker = clientBroker;
-    if (clientNetwork !== undefined) updateData.clientNetwork = clientNetwork;
-
-    // Update all leads in the order
-    const updateResult = await Lead.updateMany(
-      { orderId: orderId },
-      { $set: updateData }
+    // Update all leads associated with this order
+    await Lead.updateMany(
+        { orderId: req.params.id },
+        { $set: { clientInfo } }
     );
 
-    // Get updated leads count
-    const updatedLeadsCount = updateResult.modifiedCount;
-
     res.status(200).json({
-      success: true,
-      message: `Successfully updated client information for ${updatedLeadsCount} leads in the order`,
-      data: {
-        orderId: orderId,
-        updatedLeadsCount: updatedLeadsCount,
-        clientInfo: updateData,
-      },
+        success: true,
+        message: 'Client info assigned to order leads successfully'
     });
-  } catch (error) {
-    console.error("Assign client info error:", error);
-    next(error);
-  }
-};
-
-// @desc    Get unique client, broker, and network values for exclusion filters
-// @route   GET /api/orders/exclusion-options
-// @access  Private (Admin, Manager with canCreateOrders permission)
-exports.getExclusionOptions = async (req, res, next) => {
-  try {
-    // Get unique client values
-    const clients = await Lead.distinct("client", {
-      client: { $ne: null, $ne: "" },
-    });
-
-    // Get unique broker values
-    const brokers = await Lead.distinct("clientBroker", {
-      clientBroker: { $ne: null, $ne: "" },
-    });
-
-    // Get unique network values
-    const networks = await Lead.distinct("clientNetwork", {
-      clientNetwork: { $ne: null, $ne: "" },
-    });
-
-    res.status(200).json({
-      success: true,
-      data: {
-        clients: clients.sort(),
-        brokers: brokers.sort(),
-        networks: networks.sort(),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+});

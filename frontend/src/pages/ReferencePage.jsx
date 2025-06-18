@@ -87,6 +87,49 @@ const ReferencePage = () => {
         console.log('Current user:', user);
     }, [user]);
 
+    // Mock payment history data - replace with actual API call later
+    const paymentHistory = [
+        {
+            id: 1,
+            period: 'March 2024',
+            totalCalls: 136,
+            successRate: '100%',
+            bonuses: 150.00,
+            fines: 25.00,
+            totalPaid: 431.86,
+            basePay: 306.86,
+            status: 'Paid',
+            paidDate: '2024-04-01',
+            growthRate: 12.5
+        },
+        {
+            id: 2,
+            period: 'February 2024',
+            totalCalls: 120,
+            successRate: '95%',
+            bonuses: 125.00,
+            fines: 15.00,
+            totalPaid: 385.50,
+            basePay: 275.50,
+            status: 'Paid',
+            paidDate: '2024-03-01',
+            growthRate: 8.2
+        },
+        {
+            id: 3,
+            period: 'January 2024',
+            totalCalls: 105,
+            successRate: '92%',
+            bonuses: 100.00,
+            fines: 10.00,
+            totalPaid: 345.75,
+            basePay: 255.75,
+            status: 'Paid',
+            paidDate: '2024-02-01',
+            growthRate: 5.1
+        }
+    ];
+
     const handleAccordionChange = (panel) => (event, isExpanded) => {
         setExpanded(isExpanded ? panel : false);
     };

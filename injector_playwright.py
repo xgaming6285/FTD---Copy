@@ -192,7 +192,7 @@ class LeadInjector:
             # Get proxy configuration
             if not self.proxy_config:
                 print("ERROR: No proxy configuration available. Cannot proceed without proxy.")
-                return False
+                return None
             
             with sync_playwright() as p:
                 # Launch browser with configuration
@@ -248,169 +248,70 @@ class LeadInjector:
                             time.sleep(RETRY_DELAY)
                 
                 if not success:
-                    print("ERROR: Failed to navigate to target URL after multiple attempts")
-                    return False
-                
-                # Take a screenshot after page load
-                self._take_screenshot(page, "initial_page_load")
-                    
-                # Reduce break time for testing
-                print("INFO: Taking a short break...")
-                time.sleep(3)
-                print("\nINFO: Break finished, continuing with form filling...")
-                
-                # Check if the form is visible
-                form_visible = page.is_visible('form[id="landingForm"], form[data-testid="landingForm"]')
-                if not form_visible:
-                    print("WARNING: Form not immediately visible, trying to find it...")
-                    # Try to scroll to find the form
-                    page.evaluate("window.scrollTo(0, 0);")
-                    time.sleep(1)
-                    
-                    # Try to find the form by scrolling down
-                    for i in range(5):
-                        page.evaluate(f"window.scrollTo(0, {i * 200});")
-                        time.sleep(0.5)
-                        if page.is_visible('form[id="landingForm"], form[data-testid="landingForm"], #firstName'):
-                            print(f"INFO: Form found after scrolling {i * 200}px")
-                            form_visible = True
-                            break
-                    
-                    # Take another screenshot after scrolling
-                    self._take_screenshot(page, "after_scrolling")
-                    
-                    # If still not visible, try to adjust zoom
-                    if not form_visible:
-                        print("WARNING: Form still not visible, trying to adjust zoom...")
-                        page.evaluate("document.body.style.zoom = '80%'")
-                        time.sleep(1)
-                        self._take_screenshot(page, "after_zoom_adjustment")
-                
-                # Fill form fields with human-like behavior
-                print("INFO: Filling form fields...")
-                
-                try:
-                    # Debug info about the form fields
-                    for key, value in lead_data.items():
-                        print(f"DEBUG: {key}: {value}")
-                    
-                    # Wait for form fields and fill them - using proper selectors from LandingPage.jsx
-                    first_name = page.wait_for_selector('#firstName', timeout=30000)
-                    if not first_name:
-                        print("ERROR: Could not find firstName field")
-                        self._take_screenshot(page, "form_not_found")
-                        return False
-                        
-                    self._human_like_typing(first_name, lead_data["firstName"])
-                    
-                    last_name = page.wait_for_selector('#lastName', timeout=30000)
-                    self._human_like_typing(last_name, lead_data["lastName"])
-                    
-                    email = page.wait_for_selector('#email', timeout=30000)
-                    self._human_like_typing(email, lead_data["email"])
+                    print("ERROR: Failed to navigate to target URL after multiple retries.")
+                    return None
 
-                    # Determine phone prefix to use
-                    phone_code_from_lead = lead_data.get('country_code')
-                    country_name_from_lead = lead_data.get('country')
-                    phone_code_to_use = None
+                # Wait for form elements to be available
+                page.wait_for_selector('input[name="firstName"]', timeout=30000)
 
-                    # Prioritize country name to get phone code
-                    if country_name_from_lead and country_name_from_lead in COUNTRY_TO_PHONE_CODE:
-                        phone_code_to_use = COUNTRY_TO_PHONE_CODE[country_name_from_lead]
-                    elif phone_code_from_lead:
-                        # Fallback to the one from lead data
-                        phone_code_to_use = phone_code_from_lead
-                        print(f"WARNING: Country '{country_name_from_lead}' not in phone code mapping. Using provided country_code: {phone_code_to_use}")
+                # Fill the form
+                print("INFO: Filling the form...")
+                self._human_like_typing(page.locator('input[name="firstName"]'), lead_data["firstName"])
+                self._human_like_typing(page.locator('input[name="lastName"]'), lead_data["lastName"])
+                self._human_like_typing(page.locator('input[name="email"]'), lead_data["newEmail"])
 
-                    # Check if country_code exists and isn't empty
-                    if phone_code_to_use:
-                        # Format the country code with a plus sign if it doesn't have one
-                        code = str(phone_code_to_use)
-                        if not code.startswith('+'):
-                            code = f"+{code}"
-                            
-                        print(f"INFO: Selecting country code {code}")
-                        
-                        # Click the dropdown to open it
-                        page.click('#prefix')
-                        # Wait for dropdown to open
-                        time.sleep(1)
-                        # Find the correct country code option
-                        try:
-                            clean_code = code.replace('+', '')
-                            selector = f'[data-testid="prefix-option-{clean_code}"]'
-                            print(f"INFO: Using selector {selector}")
-                            page.click(selector)
-                        except Exception as e:
-                            print(f"WARNING: Could not select country code {code}: {str(e)}")
-                            # Use first option as fallback
-                            page.click('[data-testid="prefix-option-1"]')
+                # --- Handle Phone Number and Prefix Dropdown ---
+                # 1. Click the prefix dropdown to open it.
+                # The dropdown is a div with a role of 'button'. Let's find it by its associated label.
+                # In MUI, the select is not a native select. We need to click the div that opens the options.
+                page.locator('label:has-text("Country Code") + div').click()
 
-                    phone_number = lead_data['phone']
-                    phone = page.wait_for_selector('#phone', timeout=30000)
-                    self._human_like_typing(phone, phone_number)
-                    
-                    # Take a screenshot before submission
-                    self._take_screenshot(page, "before_submission")
-                    
-                    # Set injection mode flag
-                    page.evaluate("window.localStorage.setItem('isInjectionMode', 'true')")
-                    
-                    # Random delay before submission
-                    time.sleep(random.uniform(1, 2))
-                    
-                    # Submit form
-                    submit_button = page.wait_for_selector('#submitBtn', timeout=30000)
-                    submit_button.click()
-                    
-                    # Wait for success indication - the Thank You message appears when form is submitted
-                    try:
-                        # Wait for the success message to appear
-                        success_message = page.wait_for_selector('text="Thank You!"', timeout=30000)
-                        if success_message:
-                            print("SUCCESS: Form submitted successfully")
-                            self._take_screenshot(page, "success")
-                            
-                            # Verify proxy and device simulation
-                            verification_result = self._verify_proxy_and_device(page)
-                            if verification_result:
-                                print("INFO: Proxy and device verification completed")
-                            else:
-                                print("WARNING: Proxy and device verification failed")
-                            
-                            return True
-                        else:
-                            # Check for error message
-                            error_message = page.query_selector('.MuiAlert-message')
-                            if error_message:
-                                error_text = error_message.inner_text()
-                                print(f"WARNING: Submission error - {error_text}")
-                                self._take_screenshot(page, "error")
-                            else:
-                                print("WARNING: Could not verify successful submission")
-                                self._take_screenshot(page, "unknown_state")
-                            return False
-                    except Exception as e:
-                        print(f"WARNING: Could not verify successful submission - {str(e)}")
-                        self._take_screenshot(page, "verification_error")
-                        return False
-                    
-                except Exception as e:
-                    print(f"ERROR: Form interaction failed - {str(e)}")
-                    self._take_screenshot(page, "form_interaction_error")
-                    traceback.print_exc()
-                    return False
+                # 2. Wait for the options to appear. The options are in a popover.
+                page.wait_for_selector('ul[role="listbox"]', timeout=10000)
                 
+                # 3. Get the country code and select the right option.
+                country_code_from_lead = COUNTRY_TO_PHONE_CODE.get(lead_data.get("country"))
+                if country_code_from_lead:
+                    option_text = f"+{country_code_from_lead}"
+                    # Click the menu item that contains the country code text.
+                    page.locator(f'li[role="option"]:has-text("{option_text}")').click()
+                else:
+                    # Fallback: if no country code, just close the dropdown by pressing escape
+                    page.keyboard.press("Escape")
+                    print(f"WARNING: No phone prefix found for country: {lead_data.get('country')}. Skipping prefix selection.")
+                
+                # 4. Fill the phone number
+                phone_number = lead_data["newPhone"].lstrip(country_code_from_lead or '').lstrip('+')
+                self._human_like_typing(page.locator('input[name="phone"]'), phone_number)
+                # --- End Phone Number Handling ---
+
+                # Submit the form
+                print("INFO: Submitting the form...")
+                # The submit button in the landing page is the one with Send icon
+                page.locator('button[type="submit"]').click()
+
+                # Wait for the "Thank You!" message to confirm submission
+                page.wait_for_selector('h4:has-text("Thank You!")', timeout=30000)
+                
+                final_url = page.url
+                print(f"INFO: Injection successful. Landed on confirmation page. Final URL: {final_url}")
+                
+                # Take a final screenshot
+                self._take_screenshot(page, "injection_success")
+                
+                return final_url
+
         except Exception as e:
-            print(f"ERROR: Browser initialization failed - {str(e)}")
+            print(f"ERROR: An error occurred during lead injection: {str(e)}")
             traceback.print_exc()
-            return False
+            if browser:
+                self._take_screenshot(page, "injection_error")
+            return None
+        
         finally:
             if browser:
-                try:
-                    browser.close()
-                except:
-                    pass
+                browser.close()
+                print("INFO: Browser closed.")
 
 def get_proxy_config(country_name):
     """Get proxy configuration from 922proxy API."""
@@ -496,54 +397,46 @@ def get_proxy_config(country_name):
         return None
 
 def main():
-    """Main execution function."""
-    if len(sys.argv) < 2:
-        print("FATAL: No input JSON provided.")
+    """Main function to run the injector."""
+    if len(sys.argv) != 3:
+        print("ERROR: Usage: python injector_playwright.py <lead_data_json> <broker_data_json>")
         sys.exit(1)
 
     try:
-        lead_data_str = sys.argv[1]
-        lead_data = json.loads(lead_data_str)
-        print(f"INFO: Processing lead data for {lead_data.get('email', 'unknown')}")
+        lead_data = json.loads(sys.argv[1])
+        broker_data = json.loads(sys.argv[2])
         
-        country_name = lead_data.get("country")
-        if not country_name:
-            print("WARNING: Country not found in lead data, using default.")
-            country_name = "United States"
-            
-        # Try to get a proxy. If it fails, exit, as it's required.
-        proxy_config = get_proxy_config(country_name)
+        target_url = broker_data.get("targetUrl") # Assuming the broker data contains the target URL
+        if not target_url:
+            # As a fallback, let's construct a URL from the broker name if it's a domain
+            target_url = f'https://{broker_data["name"]}'
+
+        # Get proxy for the lead's country
+        proxy_config = get_proxy_config(lead_data.get("country"))
+        
         if not proxy_config:
-            print("FATAL: Could not obtain proxy configuration. Cannot proceed.")
+            print(f"ERROR: No proxy found for country: {lead_data.get('country')}")
             sys.exit(1)
 
-        # Get target URL from lead data
-        target_url = "https://ftd-copy.vercel.app/landing"
-            
-        print(f"INFO: Target URL: {target_url}")
-
-        # Initialize and run injector
         injector = LeadInjector(proxy_config)
-        success = injector.inject_lead(lead_data, target_url)
+        final_url = injector.inject_lead(lead_data, target_url)
 
-        if success:
-            print("INFO: Lead injection completed successfully")
-            return True
+        if final_url:
+            # Output the final URL as JSON for the Node.js service to capture
+            print(json.dumps({"success": True, "finalUrl": final_url}))
         else:
-            print("ERROR: Lead injection failed")
-            return False
+            print(json.dumps({"success": False, "message": "Injection failed."}))
 
     except json.JSONDecodeError:
-        print(f"FATAL: Invalid JSON provided")
+        print("ERROR: Invalid JSON provided for lead or broker data.")
+        traceback.print_exc()
         sys.exit(1)
     except Exception as e:
-        try:
-            error_msg = str(e)
-            print(f"FATAL: An error occurred during execution: {error_msg}")
-            traceback.print_exc()
-        except UnicodeEncodeError:
-            print(f"FATAL: An error occurred during execution (encoding error when displaying message)")
-        return False
+        print(f"ERROR: An unexpected error occurred in main: {str(e)}")
+        traceback.print_exc()
+        # Ensure we output a failure JSON
+        print(json.dumps({"success": False, "message": f"An unexpected error occurred: {str(e)}"}))
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 

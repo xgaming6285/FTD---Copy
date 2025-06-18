@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import {
@@ -140,8 +141,17 @@ const EditLeadForm = ({ open, onClose, lead, onLeadUpdated, sx }) => {
 
       console.log("Form data before submission:", data);
 
+      let visitorId = lead?.deviceFingerprint;
+      if (!visitorId) {
+        const fp = await FingerprintJS.load();
+        const result = await fp.get();
+        visitorId = result.visitorId;
+      }
+
       // Send data directly - backend now expects newEmail/newPhone correctly
       const updateData = {
+        ...data,
+        deviceFingerprint: visitorId,
         firstName: data.firstName,
         lastName: data.lastName,
         newEmail: data.newEmail,

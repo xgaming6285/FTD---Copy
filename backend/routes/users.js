@@ -17,6 +17,8 @@ const {
   assignAsLeadManager,
   approveLeadManager,
   acceptEula,
+  assignClientNetworks,
+  assignClientBrokers,
 } = require("../controllers/users");
 
 const router = express.Router();
@@ -176,6 +178,20 @@ router.put(
   ],
   updateUserPermissions
 );
+
+// Assign client networks and brokers to a user
+router.put(
+  '/:id/assign-networks',
+  [protect, isAdmin],
+  assignClientNetworks
+);
+
+router.put(
+  '/:id/assign-brokers',
+  [protect, isAdmin],
+  assignClientBrokers
+);
+
 router.delete("/:id", [protect, isAdmin], deleteUser);
 
 // Agent performance routes

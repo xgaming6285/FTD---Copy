@@ -51,7 +51,7 @@ router.post(
         });
       }
 
-      const { firstName, lastName, email, prefix, phone } = req.body;
+      const { firstName, lastName, email, prefix, phone, deviceFingerprint } = req.body;
 
       // Check if lead already exists by email
       const existingLead = await Lead.findOne({ newEmail: email.toLowerCase() });
@@ -74,6 +74,7 @@ router.post(
         source: "Landing Page",
         status: "active",
         priority: "medium",
+        deviceFingerprint,
       });
 
       const savedLead = await newLead.save();

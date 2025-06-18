@@ -1,5 +1,37 @@
 const mongoose = require("mongoose");
 
+const assignmentSchema = new mongoose.Schema({
+  clientNetwork: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ClientNetwork'
+  },
+  clientBroker: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ClientBroker'
+  },
+  assignedAt: {
+    type: Date,
+    default: Date.now
+  },
+  order: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Order'
+  },
+  status: {
+    type: String,
+    enum: ['injected', 'failed', 'pending', 'pending_broker_assignment'],
+    default: 'pending'
+  },
+  finalUrl: {
+    type: String,
+    trim: true
+  },
+  extractedDomain: {
+    type: String,
+    trim: true
+  }
+});
+
 const leadSchema = new mongoose.Schema(
   {
     // Common Fields
@@ -60,17 +92,12 @@ const leadSchema = new mongoose.Schema(
     assignedAt: {
       type: Date,
     },
-    client: {
+    assignments: [assignmentSchema],
+    deviceFingerprint: {
       type: String,
       trim: true,
-    },
-    clientBroker: {
-      type: String,
-      trim: true,
-    },
-    clientNetwork: {
-      type: String,
-      trim: true,
+      index: true,
+      sparse: true // Allows multiple null values
     },
     gender: {
       type: String,
@@ -153,7 +180,7 @@ const leadSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["active", "contacted", "converted", "inactive"],
+      enum: ["active", "contacted", "converted", "inactive", "sleep", "not_available_client_brokers"],
       default: "active",
     },
   },
@@ -170,9 +197,6 @@ leadSchema.index({ leadType: 1 });
 leadSchema.index({ country: 1 });
 leadSchema.index({ assignedTo: 1 });
 leadSchema.index({ createdAt: -1 });
-leadSchema.index({ client: 1 }, { sparse: true });
-leadSchema.index({ clientBroker: 1 }, { sparse: true });
-leadSchema.index({ clientNetwork: 1 }, { sparse: true });
 leadSchema.index({ newEmail: 1 }, { unique: true }); // Optimize lookup by email
 leadSchema.index({ status: 1 }); // Add index for status field
 leadSchema.index({ assignedAt: -1 }); // Add index for assignedAt for sorting
@@ -192,9 +216,6 @@ leadSchema.index(
     lastName: "text",
     newEmail: "text",
     newPhone: "text",
-    client: "text",
-    clientBroker: "text",
-    clientNetwork: "text",
   },
   {
     weights: {
@@ -202,9 +223,6 @@ leadSchema.index(
       lastName: 10,
       newEmail: 5,
       newPhone: 5,
-      client: 3,
-      clientBroker: 2,
-      clientNetwork: 1,
     },
     name: "lead_search_index",
   }
