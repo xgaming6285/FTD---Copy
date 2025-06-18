@@ -58,53 +58,9 @@ import {
 } from '@mui/icons-material';
 import { selectUser } from '../store/slices/authSlice';
 import { BONUS_RATES, RATE_PER_SECOND, calculateBonuses, calculateTotalPayment } from '../services/payroll/calculations';
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend } from 'recharts';
 
-// Mock payment history data
-const paymentHistory = [
-    {
-        id: 1,
-        period: 'March 2024',
-        totalCalls: 245,
-        successRate: '95.2%',
-        bonuses: 320.50,
-        fines: 25.00,
-        totalPaid: 1250.75,
-        status: 'Paid',
-        paidDate: '2024-04-01',
-        talkTime: '85:45:20',
-        basePay: 955.25,
-        growthRate: 5.9
-    },
-    {
-        id: 2,
-        period: 'February 2024',
-        totalCalls: 228,
-        successRate: '93.8%',
-        bonuses: 290.25,
-        fines: 0,
-        totalPaid: 1180.50,
-        status: 'Paid',
-        paidDate: '2024-03-01',
-        talkTime: '80:12:45',
-        basePay: 890.25,
-        growthRate: 4.9
-    },
-    {
-        id: 3,
-        period: 'January 2024',
-        totalCalls: 210,
-        successRate: '91.5%',
-        bonuses: 275.00,
-        fines: 15.00,
-        totalPaid: 1125.25,
-        status: 'Paid',
-        paidDate: '2024-02-01',
-        talkTime: '78:30:10',
-        basePay: 865.25,
-        growthRate: 0
-    }
-];
+import { fetchAgentMetrics, fetchAllAgentsMetrics } from '../services/agents';
+
 
 const ReferencePage = () => {
     const theme = useTheme();
@@ -126,9 +82,15 @@ const ReferencePage = () => {
     const [paymentTableRowsPerPage, setPaymentTableRowsPerPage] = useState(10);
     const [showForecast, setShowForecast] = useState(false);
 
+    // Add logging to see user object
+    useEffect(() => {
+        console.log('Current user:', user);
+    }, [user]);
+
     const handleAccordionChange = (panel) => (event, isExpanded) => {
         setExpanded(isExpanded ? panel : false);
     };
+
 
     // New handlers for payment enhancements
     const handlePaymentPeriodFilterChange = (event) => {
@@ -145,6 +107,7 @@ const ReferencePage = () => {
         } else {
             setPaymentSortField(field);
             setPaymentSortDirection('asc');
+
         }
     };
 
@@ -222,70 +185,6 @@ const ReferencePage = () => {
         })).reverse();
     };
 
-    // Mock agents data
-    const mockAgents = [
-        {
-            id: "647",
-            fullName: "David Cooper",
-            metrics: {
-                incoming: 245,
-                unsuccessful: 12,
-                averageTime: 180,
-                totalTime: 43920,
-            },
-            stats: {
-                id: "647",
-                name: "David C",
-                incoming: 136,
-                failed: 0,
-                successful: 136,
-                totalTalkTime: "30:39:40",
-                totalTalkTimeSeconds: 110380,
-                ratePerSecond: RATE_PER_SECOND,
-                totalTalkPay: 306.86,
-                callCounts: {
-                    firstCalls: 15,
-                    secondCalls: 13,
-                    thirdCalls: 5,
-                    fourthCalls: 2,
-                    fifthCalls: 2,
-                    verifiedAccounts: 8
-                },
-                fines: 25.00
-            }
-        },
-        {
-            id: "648",
-            fullName: "Sarah Johnson",
-            metrics: {
-                incoming: 198,
-                unsuccessful: 8,
-                averageTime: 165,
-                totalTime: 32670,
-            },
-            stats: {
-                id: "648",
-                name: "Sarah J",
-                incoming: 120,
-                failed: 2,
-                successful: 118,
-                totalTalkTime: "25:45:30",
-                totalTalkTimeSeconds: 92730,
-                ratePerSecond: RATE_PER_SECOND,
-                totalTalkPay: 278.19,
-                callCounts: {
-                    firstCalls: 12,
-                    secondCalls: 10,
-                    thirdCalls: 4,
-                    fourthCalls: 3,
-                    fifthCalls: 1,
-                    verifiedAccounts: 6
-                },
-                fines: 0.00
-            }
-        }
-    ];
-
     useEffect(() => {
         // Redirect non-agent/non-admin users
         if (user && user.role !== 'agent' && user.role !== 'admin') {
@@ -293,35 +192,57 @@ const ReferencePage = () => {
             return;
         }
 
-        // Set agents data for admin
-        if (user?.role === 'admin') {
-            setAgents(mockAgents);
-            setSelectedAgent(mockAgents[0]);
-            setMetrics(mockAgents[0].metrics);
-            setLoading(false);
-        }
-        // Set current agent data for agent role
-        else if (user?.role === 'agent') {
-            const fetchMockData = () => {
-                setTimeout(() => {
-                    setMetrics({
-                        incoming: 245,
-                        unsuccessful: 12,
-                        averageTime: 180,
-                        totalTime: 43920,
-                    });
-                    setLoading(false);
-                }, 1000);
-            };
+        const fetchData = async () => {
+            try {
+                setLoading(true);
+                setError(null);
 
-            fetchMockData();
-        }
+                if (user?.role === 'admin') {
+                    // Fetch all agents data for admin
+                    const agentsData = await fetchAllAgentsMetrics();
+                    setAgents(agentsData);
+                    if (agentsData.length > 0) {
+                        setSelectedAgent(agentsData[0]);
+                        setMetrics(agentsData[0].metrics);
+                    }
+                } else if (user?.role === 'agent') {
+                    // Fetch current agent's data using their name
+                    const agentData = await fetchAgentMetrics(user.name);
+                    setMetrics(agentData.metrics);
+                }
+            } catch (err) {
+                console.error('Error fetching metrics:', err);
+                setError('Failed to load metrics data. Please try again later.');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
     }, [user, navigate]);
 
-    const handleAgentChange = (event) => {
-        const selectedAgentData = agents.find(agent => agent.id === event.target.value);
-        setSelectedAgent(selectedAgentData);
-        setMetrics(selectedAgentData.metrics);
+    const handleAgentChange = async (event) => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            const agentName = event.target.value;
+            const selectedAgentData = agents.find(agent => agent.fullName === agentName);
+
+            if (selectedAgentData) {
+                setSelectedAgent(selectedAgentData);
+                setMetrics(selectedAgentData.metrics);
+            } else {
+                const newAgentData = await fetchAgentMetrics(agentName);
+                setSelectedAgent(newAgentData);
+                setMetrics(newAgentData.metrics);
+            }
+        } catch (err) {
+            console.error('Error changing agent:', err);
+            setError('Failed to load agent data. Please try again.');
+        } finally {
+            setLoading(false);
+        }
     };
 
     // If user is not an agent or admin, show access denied
@@ -415,20 +336,20 @@ const ReferencePage = () => {
         </Card>
     );
 
+    // Show loading state
     if (loading) {
         return (
-            <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+            <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
                 <CircularProgress />
             </Box>
         );
     }
 
+    // Show error state
     if (error) {
         return (
-            <Box p={3}>
-                <Typography color="error" variant="h6">
-                    Error: {error}
-                </Typography>
+            <Box m={2}>
+                <Alert severity="error">{error}</Alert>
             </Box>
         );
     }
@@ -450,7 +371,7 @@ const ReferencePage = () => {
                         <Select
                             labelId="agent-select-label"
                             id="agent-select"
-                            value={selectedAgent?.id || ''}
+                            value={selectedAgent?.fullName || ''}
                             label="Select Agent"
                             onChange={handleAgentChange}
                             sx={{
@@ -461,7 +382,7 @@ const ReferencePage = () => {
                             }}
                         >
                             {agents.map((agent) => (
-                                <MenuItem key={agent.id} value={agent.id}>
+                                <MenuItem key={agent.fullName} value={agent.fullName}>
                                     {agent.fullName}
                                 </MenuItem>
                             ))}
