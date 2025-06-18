@@ -24,6 +24,7 @@ import LeadsPage from './pages/LeadsPage.jsx';
 import UsersPage from './pages/UsersPage.jsx';
 import PerformancePage from './pages/PerformancePage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
+import PayrollPage from './pages/PayrollPage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
 import DisclaimerPage from './pages/DisclaimerPage.jsx';
 import ReferencePage from './pages/ReferencePage.jsx';
@@ -124,6 +125,7 @@ function AppContent() {
             <Route path="leads" element={<LeadsPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="performance" element={<PerformancePage />} />
+            <Route path="payroll" element={<PayrollPage />} />
             <Route path="profile" element={<ProfilePage />} />
           </Route>
 

@@ -100,7 +100,7 @@ const MainLayout = () => {
         ...commonItems,
         { text: 'My Leads', icon: <LeadsIcon />, path: '/leads' },
         { text: 'Performance', icon: <PerformanceIcon />, path: '/performance' },
-        { text: 'Payment', icon: <PaymentIcon />, path: '/reference' }
+        { text: 'Payroll', icon: <PaymentIcon />, path: '/payroll' }
       ];
     } else if (user?.role === 'lead_manager') {
       return [
@@ -287,4 +287,4 @@ const MainLayout = () => {
   );
 };
 
-export default MainLayout; 
+export default MainLayout;
