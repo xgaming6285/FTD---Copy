@@ -154,11 +154,11 @@ const RecentActivity = React.memo(({ title, activity, userRole }) => (
 // --- Role-Specific Dashboard Views ---
 
 const AdminDashboard = React.memo(({ data }) => {
-  const pendingOrdersCount = React.useMemo(() => 
+  const pendingOrdersCount = React.useMemo(() =>
     data.recentActivity?.filter(order => order.status === 'pending').length || 0,
     [data.recentActivity]
   );
-  
+
   const leadTypes = React.useMemo(() =>
     data.leadsStats?.leads ? Object.entries(data.leadsStats.leads).filter(([type]) => type !== 'overall') : [],
     [data.leadsStats]
@@ -204,7 +204,7 @@ const AdminDashboard = React.memo(({ data }) => {
           </CardContent>
         </Card>
       </Grid>
-      
+
       <Grid item xs={12} md={6}>
         <Card elevation={2} sx={{ height: '100%' }}>
           <CardHeader title="Top Performers Today" titleTypographyProps={{ variant: 'h6', fontWeight: 600 }} />
@@ -228,7 +228,7 @@ const AdminDashboard = React.memo(({ data }) => {
           </CardContent>
         </Card>
       </Grid>
-      
+
       <Grid item xs={12} md={6}>
         <Card elevation={2} sx={{ height: '100%' }}>
           <CardHeader title="System Overview" titleTypographyProps={{ variant: 'h6', fontWeight: 600 }} />
@@ -254,7 +254,7 @@ const AdminDashboard = React.memo(({ data }) => {
           </CardContent>
         </Card>
       </Grid>
-      
+
       <Grid item xs={12}>
         <RecentActivity title="Recent Orders" activity={data.recentActivity} userRole={USER_ROLES.ADMIN} />
       </Grid>
@@ -267,7 +267,7 @@ const AgentDashboard = React.memo(({ data }) => (
     <StatCard title="Assigned Leads" value={data.leadsStats?.assigned || 0} icon={<AssignmentIcon />} avatarBgColor="primary.main" />
     <StatCard title="Calls Today" value={data.performance?.totalCalls || 0} icon={<PhoneIcon />} avatarBgColor="success.main" />
     <StatCard title="Earnings Today" value={`$${data.performance?.totalEarnings || 0}`} icon={<MoneyIcon />} avatarBgColor="info.main" />
-    
+
     <Grid item xs={12}>
       <Card>
         <CardHeader title="Today's Performance" titleTypographyProps={{ variant: 'h6', fontWeight: 600 }} />
@@ -326,7 +326,7 @@ const DashboardPage = () => {
 
     setLoading(true);
     setError(null);
-    
+
     try {
       const promises = [];
       const { role, id } = user;
@@ -405,8 +405,8 @@ const DashboardPage = () => {
 
   const renderDashboardByRole = () => {
     if (!dashboardData) return null;
-    
-    switch (user.role) {
+
+        switch (user.role) {
       case USER_ROLES.ADMIN:
         return <AdminDashboard data={dashboardData} />;
       case USER_ROLES.AGENT:
