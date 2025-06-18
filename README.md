@@ -157,11 +157,41 @@ FTD/
 - Profile information
 
 ### Lead
-- Lead type (FTD, Filler, Cold)
-- Contact information
-- Assignment status
-- Document verification (for FTD)
-- Comments system
+- **Lead Types**: 
+  - FTD (First Time Deposit): Leads who made their first deposit
+  - Filler: Standard leads with basic information
+  - Cold: Leads with minimal interaction history
+  - Live: Active leads currently in engagement
+- **Contact Information**:
+  - New and previous email tracking
+  - New and previous phone tracking
+  - Country and location data
+- **Personal Details**:
+  - Name (First/Last)
+  - Gender
+  - Date of Birth
+  - SIN (for FTD leads)
+  - Address information
+- **Business Information**:
+  - Client
+  - Client Broker
+  - Client Network
+  - Source tracking
+- **Status Management**:
+  - Status tracking (Active, Contacted, Converted, Inactive)
+  - Priority levels (High, Medium, Low)
+- **Assignment System**:
+  - Agent assignment
+  - Assignment history
+- **Document Verification**:
+  - Document uploads for FTD verification
+  - Document status tracking
+- **Social Media Integration**:
+  - Linked profiles (Facebook, LinkedIn, Twitter, etc.)
+- **Comments and History**:
+  - Timestamped comment system
+  - Activity tracking
+  - Interaction history
 
 ### Order
 - Lead requests and fulfillment

@@ -25,6 +25,7 @@ const {
   getLeadsForManager,
   getColdLeads,
   updateLeadType,
+  bulkDeleteLeads,
 } = require("../controllers/leads");
 
 const router = express.Router();
@@ -263,53 +264,28 @@ router.post(
 // @route   PUT /api/leads/:id
 // @desc    Update lead information
 // @access  Private (Admin, Lead Manager)
-router.put(
-  "/:id",
-  [
-    protect,
-    authorize("admin", "lead_manager"),
-    body("firstName")
-      .optional()
-      .trim()
-      .notEmpty()
-      .withMessage("First name is required"),
-    body("lastName")
-      .optional()
-      .trim()
-      .notEmpty()
-      .withMessage("Last name is required"),
-    body("email")
-      .optional()
-      .isEmail()
-      .withMessage("Please enter a valid email"),
-    body("phone")
-      .optional()
-      .trim()
-      .notEmpty()
-      .withMessage("Phone number is required"),
-    body("country")
-      .optional()
-      .trim()
-      .notEmpty()
-      .withMessage("Country is required"),
-    body("status")
-      .optional()
-      .isIn(["active", "contacted", "converted", "inactive"])
-      .withMessage("Invalid status"),
-    body("leadType")
-      .optional()
-      .isIn(["ftd", "filler", "cold", "live"])
-      .withMessage("Invalid lead type"),
-    body("sin").optional(),
-    body("gender")
-      .optional()
-      .isIn(["male", "female", "other"])
-      .withMessage("Invalid gender"),
-  ],
-  updateLead
-);
+router.put("/:id", [protect, authorize("admin", "lead_manager")], updateLead);
 
-// Delete lead (Admin only)
+// @route   DELETE /api/leads/bulk-delete
+// @desc    Delete multiple leads with filtering
+// @access  Private (Admin only)
+router.delete("/bulk-delete", [
+  (req, res, next) => {
+    console.log("Bulk delete route hit:", {
+      method: req.method,
+      path: req.path,
+      body: req.body,
+      user: req.user ? { id: req.user.id, role: req.user.role } : null
+    });
+    next();
+  },
+  protect,
+  isAdmin
+], bulkDeleteLeads);
+
+// @route   DELETE /api/leads/:id
+// @desc    Delete a single lead
+// @access  Private (Admin only)
 router.delete("/:id", [protect, isAdmin], deleteLead);
 
 // @route   POST /api/leads/import

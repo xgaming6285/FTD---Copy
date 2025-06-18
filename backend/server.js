@@ -27,7 +27,7 @@ app.set("trust proxy", 1);
 
 // Database connection
 mongoose.connect(
-  process.env.MONGODB_URI || "mongodb://localhost:27017/lead-management",
+  process.env.MONGODB_URI || "mongodb+srv://dani034406:Daniel6285@cluster0.g0vqepz.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0",
   {
     serverSelectionTimeoutMS: 10000,
     socketTimeoutMS: 60000,
@@ -113,6 +113,15 @@ app.use(cors(corsOptions));
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use((req, res, next) => {
+  if (req.method === 'DELETE') {
+    // Ensure the raw body is parsed for DELETE requests
+    express.json({ limit: "10mb" })(req, res, next);
+  } else {
+    next();
+  }
+});
+
 app.use(
   fileUpload({
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max file size
@@ -127,6 +136,18 @@ app.use(
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
+
+// Debug logging for all requests
+app.use((req, res, next) => {
+  console.log('Incoming request:', {
+    method: req.method,
+    path: req.path,
+    originalUrl: req.originalUrl,
+    body: req.body,
+    headers: req.headers
+  });
+  next();
+});
 
 // API routes
 app.use("/api/auth", authRoutes);

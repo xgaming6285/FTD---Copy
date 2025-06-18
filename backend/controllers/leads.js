@@ -5,6 +5,7 @@ const User = require("../models/User");
 const csvParser = require("csv-parser");
 const { Readable } = require("stream");
 const { spawn } = require("child_process");
+const express = require("express");
 
 // @desc    Get all leads with filtering and pagination
 // @route   GET /api/leads
@@ -1326,7 +1327,7 @@ exports.injectLead = async (req, res) => {
       email: lead.newEmail,
       phone: lead.newPhone,
       country: lead.country,
-      country_code: lead.prefix,
+      country_code: lead.prefix || "1", // Default to US/Canada if no prefix
       landingPage,
       password: "TPvBwkO8", // This should be stored securely
     };
@@ -1335,7 +1336,7 @@ exports.injectLead = async (req, res) => {
 
     // Use path.join for cross-platform compatibility
     const path = require('path');
-    const scriptPath = path.join(__dirname, '..', '..', 'injector_playwright.py');
+    const scriptPath = path.resolve(path.join(__dirname, '..', '..', 'injector_playwright.py'));
 
     console.log('Python script path:', scriptPath);
 
@@ -1350,19 +1351,40 @@ exports.injectLead = async (req, res) => {
       });
     }
 
-    const pythonProcess = spawn("python", [scriptPath, JSON.stringify(leadData)]);
+    // Check if Python is installed
+    try {
+      const pythonCheck = spawn("python", ["--version"]);
+      pythonCheck.on("error", (error) => {
+        console.error('Python not found:', error);
+        return res.status(500).json({
+          success: false,
+          message: "Python not installed or not in PATH",
+          error: error.message
+        });
+      });
+    } catch (error) {
+      console.error('Failed to check Python:', error);
+    }
+
+    // Launch the Python script with properly encoded JSON
+    const pythonProcess = spawn("python", [
+      scriptPath, 
+      JSON.stringify(leadData)
+    ]);
 
     let stdoutData = '';
     let stderrData = '';
 
     pythonProcess.stdout.on("data", (data) => {
-      stdoutData += data;
-      console.log(`Python Script Output: ${data}`);
+      const output = data.toString();
+      stdoutData += output;
+      console.log(`Python Script Output: ${output}`);
     });
 
     pythonProcess.stderr.on("data", (data) => {
-      stderrData += data;
-      console.error(`Python Script Error: ${data}`);
+      const error = data.toString();
+      stderrData += error;
+      console.error(`Python Script Error: ${error}`);
     });
 
     pythonProcess.on("error", (error) => {
@@ -1400,5 +1422,65 @@ exports.injectLead = async (req, res) => {
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
+  }
+};
+
+// @desc    Delete multiple leads with filtering
+// @route   DELETE /api/leads/bulk-delete
+// @access  Private (Admin only)
+exports.bulkDeleteLeads = async (req, res, next) => {
+  try {
+    // Only admin can delete leads
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete leads",
+      });
+    }
+
+    const {
+      leadType,
+      country,
+      gender,
+      status,
+      documentStatus,
+      isAssigned,
+      search,
+    } = req.body;
+
+    // Build filter object
+    const filter = {};
+    if (leadType) filter.leadType = leadType;
+    if (country) filter.country = new RegExp(country, "i");
+    if (gender) filter.gender = gender;
+    if (status) filter.status = status;
+    if (documentStatus) filter["documents.status"] = documentStatus;
+    if (isAssigned !== undefined && isAssigned !== "") {
+      filter.isAssigned = isAssigned === "true" || isAssigned === true;
+    }
+
+    // Add search functionality
+    if (search) {
+      filter.$or = [
+        { firstName: new RegExp(search, "i") },
+        { lastName: new RegExp(search, "i") },
+        { newEmail: new RegExp(search, "i") },
+        { oldEmail: new RegExp(search, "i") },
+        { newPhone: new RegExp(search, "i") },
+        { oldPhone: new RegExp(search, "i") }
+      ];
+    }
+
+    const result = await Lead.deleteMany(filter);
+
+    res.status(200).json({
+      success: true,
+      message: `${result.deletedCount} leads deleted successfully`,
+      data: {
+        deletedCount: result.deletedCount,
+      },
+    });
+  } catch (error) {
+    next(error);
   }
 };

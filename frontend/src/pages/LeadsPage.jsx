@@ -42,6 +42,7 @@ import {
   Switch,
   Link,
   Tooltip,
+  DialogContentText,
 } from "@mui/material";
 
 // MUI Icons
@@ -59,6 +60,16 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Send as InjectIcon,
+  Contacts as ContactsIcon,
+  Info as InfoIcon,
+  AssignmentInd as AssignmentIndIcon,
+  Share as ShareIcon,
+  Facebook as FacebookIcon,
+  Twitter as TwitterIcon,
+  LinkedIn as LinkedInIcon,
+  Instagram as InstagramIcon,
+  Telegram as TelegramIcon,
+  WhatsApp as WhatsAppIcon,
 } from "@mui/icons-material";
 
 // Project Components & Services
@@ -166,7 +177,7 @@ const LeadDetails = React.memo(({ lead }) => (
     },
   }}>
     <Grid container spacing={3}>
-      {/* Basic Information */}
+      {/* Basic Information Card */}
       <Grid item xs={12} md={4}>
         <Paper elevation={0} sx={{
           p: 2,
@@ -183,125 +194,481 @@ const LeadDetails = React.memo(({ lead }) => (
         }}>
           <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
             <PersonAddIcon fontSize="small" />
-            Contact Details
+            Basic Information
           </Typography>
-          <Stack spacing={1}>
-            {lead.newEmail && (
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <span style={{ color: 'text.secondary' }}>📧</span> {lead.newEmail}
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Full Name</Typography>
+              <Typography variant="body1" fontWeight="medium">
+                {lead.fullName || `${lead.firstName} ${lead.lastName || ""}`.trim()}
               </Typography>
-            )}
-            {lead.oldEmail && (
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <span style={{ color: 'text.secondary' }}>📧</span> Old Email: {lead.oldEmail}
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Lead ID</Typography>
+              <Typography variant="body2" fontFamily="monospace">
+                {lead._id}
               </Typography>
-            )}
-            {lead.newPhone && (
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <span style={{ color: 'text.secondary' }}>📱</span> {lead.newPhone}
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Created</Typography>
+              <Typography variant="body2">
+                {new Date(lead.createdAt).toLocaleString()}
               </Typography>
-            )}
-            {lead.oldPhone && (
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <span style={{ color: 'text.secondary' }}>📱</span> Old Phone: {lead.oldPhone}
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Last Updated</Typography>
+              <Typography variant="body2">
+                {new Date(lead.updatedAt).toLocaleString()}
               </Typography>
-            )}
-            {lead.country && (
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <span style={{ color: 'text.secondary' }}>🌍</span> {lead.country}
+            </Box>
+            <Stack direction="row" spacing={1}>
+              <Chip 
+                label={lead.leadType?.toUpperCase() || 'UNKNOWN'} 
+                color={getLeadTypeColor(lead.leadType)} 
+                size="small"
+                sx={{ fontWeight: 'medium' }}
+              />
+              <Chip 
+                label={lead.status.charAt(0).toUpperCase() + lead.status.slice(1)} 
+                color={getStatusColor(lead.status)} 
+                size="small"
+                sx={{ fontWeight: 'medium' }}
+              />
+            </Stack>
+          </Stack>
+        </Paper>
+      </Grid>
+
+      {/* Contact Information Card */}
+      <Grid item xs={12} md={4}>
+        <Paper elevation={0} sx={{
+          p: 2,
+          bgcolor: 'background.paper',
+          borderRadius: 1,
+          border: '1px solid',
+          borderColor: 'divider',
+          height: '100%',
+          transition: 'all 0.2s ease-in-out',
+          '&:hover': {
+            boxShadow: theme => theme.shadows[4],
+            transform: 'translateY(-4px)',
+          },
+        }}>
+          <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <ContactsIcon fontSize="small" />
+            Contact Information
+          </Typography>
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Current Email</Typography>
+              <Typography variant="body2">{lead.newEmail}</Typography>
+              {lead.oldEmail && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Previous: {lead.oldEmail}
+                </Typography>
+              )}
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Current Phone</Typography>
+              <Typography variant="body2">{lead.newPhone}</Typography>
+              {lead.oldPhone && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Previous: {lead.oldPhone}
+                </Typography>
+              )}
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Address</Typography>
+              <Typography variant="body2">
+                {typeof lead.address === 'string' ? lead.address : 
+                  lead.address ? `${lead.address.street || ''}, ${lead.address.city || ''} ${lead.address.postalCode || ''}`.trim() : 'N/A'}
               </Typography>
-            )}
-            {lead.gender && (
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <span style={{ color: 'text.secondary' }}>⚧</span> {lead.gender === 'not_defined' ? 'Not Defined' : lead.gender.charAt(0).toUpperCase() + lead.gender.slice(1)}
-              </Typography>
-            )}
-            {lead.leadType === LEAD_TYPES.FTD && lead.sin && (
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <span style={{ color: 'text.secondary' }}>🆔</span> SIN: {lead.sin}
-              </Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Country</Typography>
+              <Typography variant="body2">{lead.country || 'N/A'}</Typography>
+            </Box>
+          </Stack>
+        </Paper>
+      </Grid>
+
+      {/* Additional Details Card */}
+      <Grid item xs={12} md={4}>
+        <Paper elevation={0} sx={{
+          p: 2,
+          bgcolor: 'background.paper',
+          borderRadius: 1,
+          border: '1px solid',
+          borderColor: 'divider',
+          height: '100%',
+          transition: 'all 0.2s ease-in-out',
+          '&:hover': {
+            boxShadow: theme => theme.shadows[4],
+            transform: 'translateY(-4px)',
+          },
+        }}>
+          <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <InfoIcon fontSize="small" />
+            Additional Details
+          </Typography>
+          <Stack spacing={2}>
+            {lead.sin && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">SIN</Typography>
+                <Typography variant="body2" fontFamily="monospace">{lead.sin}</Typography>
+              </Box>
             )}
             {lead.dob && (
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <span style={{ color: 'text.secondary' }}>📅</span> DOB: {new Date(lead.dob).toLocaleDateString()}
-              </Typography>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Date of Birth</Typography>
+                <Typography variant="body2">{new Date(lead.dob).toLocaleDateString()}</Typography>
+              </Box>
             )}
-            {lead.address && (
-              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                <span style={{ color: 'text.secondary' }}>🏠</span>
-                <span style={{ whiteSpace: 'pre-line' }}>{lead.address}</span>
+            <Box>
+              <Typography variant="caption" color="text.secondary">Gender</Typography>
+              <Typography variant="body2">
+                {lead.gender ? lead.gender.charAt(0).toUpperCase() + lead.gender.slice(1) : 'Not Specified'}
               </Typography>
+            </Box>
+            {lead.client && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">Client</Typography>
+                <Typography variant="body2">{lead.client}</Typography>
+              </Box>
+            )}
+            {lead.clientBroker && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">Client Broker</Typography>
+                <Typography variant="body2">{lead.clientBroker}</Typography>
+              </Box>
+            )}
+            {lead.clientNetwork && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">Client Network</Typography>
+                <Typography variant="body2">{lead.clientNetwork}</Typography>
+              </Box>
             )}
           </Stack>
         </Paper>
       </Grid>
 
-      {/* Documents Section */}
-      {lead.documents && lead.documents.length > 0 && (
+      {/* Assignment Information */}
+      {lead.assignedTo && (
         <Grid item xs={12} md={4}>
-          <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+          <Paper elevation={0} sx={{
+            p: 2,
+            bgcolor: 'background.paper',
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              boxShadow: theme => theme.shadows[4],
+              transform: 'translateY(-4px)',
+            },
+          }}>
             <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <DescriptionIcon fontSize="small" />
-              Documents
+              <AssignmentIndIcon fontSize="small" />
+              Assignment Information
             </Typography>
             <Stack spacing={2}>
-              {lead.documents.map((doc, index) => (
-                <Box key={index} sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
-                  {doc?.url && doc.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                    <Box sx={{ mb: 1 }}>
-                      <DocumentPreview
-                        url={doc.url}
-                        type={doc.description || `Document ${index + 1}`}
-                      />
-                    </Box>
-                  ) : (
-                    <Link
-                      href={doc?.url || '#'}
-                      target="_blank"
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        color: 'primary.main',
-                        textDecoration: 'none',
-                        '&:hover': {
-                          textDecoration: 'underline'
-                        }
-                      }}
-                    >
-                      <DescriptionIcon fontSize="small" />
-                      {doc?.description || 'View Document'}
-                    </Link>
-                  )}
-                  {doc?.description && doc?.url && !doc.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) && (
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                      {doc.description}
-                    </Typography>
-                  )}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Avatar sx={{ bgcolor: 'primary.main' }}>
+                  {lead.assignedTo.fullName?.charAt(0) || 'A'}
+                </Avatar>
+                <Box>
+                  <Typography variant="body1" fontWeight="medium">
+                    {lead.assignedTo.fullName}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Agent Code: {lead.assignedTo.fourDigitCode}
+                  </Typography>
                 </Box>
-              ))}
+              </Box>
+              <Typography variant="body2">
+                <Link href={`mailto:${lead.assignedTo.email}`} color="primary">
+                  {lead.assignedTo.email}
+                </Link>
+              </Typography>
+              {lead.assignedAt && (
+                <Typography variant="caption" color="text.secondary">
+                  Assigned on: {new Date(lead.assignedAt).toLocaleString()}
+                </Typography>
+              )}
             </Stack>
           </Paper>
         </Grid>
       )}
 
+      {/* Social Media Profiles */}
+      {lead.socialMedia && Object.values(lead.socialMedia).some(Boolean) && (
+        <Grid item xs={12} md={lead.assignedTo ? 8 : 12}>
+          <Paper elevation={0} sx={{
+            p: 2,
+            bgcolor: 'background.paper',
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              boxShadow: theme => theme.shadows[4],
+              transform: 'translateY(-4px)',
+            },
+          }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <ShareIcon fontSize="small" />
+              Social Media Profiles
+            </Typography>
+            <Grid container spacing={2}>
+              {lead.socialMedia.facebook && (
+                <Grid item xs={12} sm={6} md={4}>
+                  <Link
+                    href={lead.socialMedia.facebook}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      color: 'text.primary',
+                      textDecoration: 'none',
+                      p: 1,
+                      borderRadius: 1,
+                      '&:hover': {
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                  >
+                    <FacebookIcon color="primary" />
+                    Facebook Profile
+                  </Link>
+                </Grid>
+              )}
+              {lead.socialMedia.twitter && (
+                <Grid item xs={12} sm={6} md={4}>
+                  <Link
+                    href={lead.socialMedia.twitter}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      color: 'text.primary',
+                      textDecoration: 'none',
+                      p: 1,
+                      borderRadius: 1,
+                      '&:hover': {
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                  >
+                    <TwitterIcon color="info" />
+                    Twitter Profile
+                  </Link>
+                </Grid>
+              )}
+              {lead.socialMedia.linkedin && (
+                <Grid item xs={12} sm={6} md={4}>
+                  <Link
+                    href={lead.socialMedia.linkedin}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      color: 'text.primary',
+                      textDecoration: 'none',
+                      p: 1,
+                      borderRadius: 1,
+                      '&:hover': {
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                  >
+                    <LinkedInIcon color="primary" />
+                    LinkedIn Profile
+                  </Link>
+                </Grid>
+              )}
+              {lead.socialMedia.instagram && (
+                <Grid item xs={12} sm={6} md={4}>
+                  <Link
+                    href={lead.socialMedia.instagram}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      color: 'text.primary',
+                      textDecoration: 'none',
+                      p: 1,
+                      borderRadius: 1,
+                      '&:hover': {
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                  >
+                    <InstagramIcon color="secondary" />
+                    Instagram Profile
+                  </Link>
+                </Grid>
+              )}
+              {lead.socialMedia.telegram && (
+                <Grid item xs={12} sm={6} md={4}>
+                  <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    p: 1,
+                    borderRadius: 1,
+                  }}>
+                    <TelegramIcon color="info" />
+                    <Typography variant="body2">{lead.socialMedia.telegram}</Typography>
+                  </Box>
+                </Grid>
+              )}
+              {lead.socialMedia.whatsapp && (
+                <Grid item xs={12} sm={6} md={4}>
+                  <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    p: 1,
+                    borderRadius: 1,
+                  }}>
+                    <WhatsAppIcon color="success" />
+                    <Typography variant="body2">{lead.socialMedia.whatsapp}</Typography>
+                  </Box>
+                </Grid>
+              )}
+            </Grid>
+          </Paper>
+        </Grid>
+      )}
+
+      {/* Documents Section with Preview */}
+      {lead.documents && lead.documents.length > 0 && (
+        <Grid item xs={12}>
+          <Paper elevation={0} sx={{
+            p: 2,
+            bgcolor: 'background.paper',
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              boxShadow: theme => theme.shadows[4],
+              transform: 'translateY(-4px)',
+            },
+          }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <DescriptionIcon fontSize="small" />
+              Documents
+            </Typography>
+            <Grid container spacing={2}>
+              {lead.documents.map((doc, index) => (
+                <Grid item xs={12} sm={6} md={4} key={index}>
+                  <Paper elevation={0} sx={{
+                    p: 1.5,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                    },
+                  }}>
+                    {doc?.url && doc.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                      <Box sx={{ mb: 1 }}>
+                        <DocumentPreview
+                          url={doc.url}
+                          type={doc.description || `Document ${index + 1}`}
+                        />
+                      </Box>
+                    ) : (
+                      <Link
+                        href={doc?.url || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          color: 'primary.main',
+                          textDecoration: 'none',
+                          mb: 1,
+                        }}
+                      >
+                        <DescriptionIcon fontSize="small" />
+                        {doc?.description || 'View Document'}
+                      </Link>
+                    )}
+                    {doc?.description && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {doc.description}
+                      </Typography>
+                    )}
+                    {doc?.uploadedAt && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Uploaded: {new Date(doc.uploadedAt).toLocaleString()}
+                      </Typography>
+                    )}
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          </Paper>
+        </Grid>
+      )}
+
       {/* Comments Section */}
-      <Grid item xs={12} md={lead.documents && lead.documents.length > 0 ? 4 : 8}>
-        <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+      <Grid item xs={12}>
+        <Paper elevation={0} sx={{
+          p: 2,
+          bgcolor: 'background.paper',
+          borderRadius: 1,
+          border: '1px solid',
+          borderColor: 'divider',
+          transition: 'all 0.2s ease-in-out',
+          '&:hover': {
+            boxShadow: theme => theme.shadows[4],
+            transform: 'translateY(-4px)',
+          },
+        }}>
           <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
             <CommentIcon fontSize="small" />
             Comments & Activity
           </Typography>
-          <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
+          <Box sx={{ maxHeight: 300, overflowY: 'auto', pr: 1 }}>
             {lead.comments && lead.comments.length > 0 ? (
               <Stack spacing={2}>
                 {lead.comments.map((comment, index) => (
-                  <Box key={index} sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                      {comment.author?.fullName || 'Unknown User'} • {new Date(comment.createdAt).toLocaleString()}
-                    </Typography>
+                  <Paper
+                    key={index}
+                    elevation={0}
+                    sx={{
+                      p: 2,
+                      bgcolor: 'action.hover',
+                      borderRadius: 1,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Avatar sx={{ width: 24, height: 24, fontSize: '0.875rem' }}>
+                        {comment.author?.fullName?.charAt(0) || 'U'}
+                      </Avatar>
+                      <Typography variant="subtitle2">
+                        {comment.author?.fullName || 'Unknown User'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        • {new Date(comment.createdAt).toLocaleString()}
+                      </Typography>
+                    </Box>
                     <Typography variant="body2">{comment.text}</Typography>
-                  </Box>
+                  </Paper>
                 ))}
               </Stack>
             ) : (
@@ -313,39 +680,6 @@ const LeadDetails = React.memo(({ lead }) => (
           </Box>
         </Paper>
       </Grid>
-
-      {(lead.client || lead.clientBroker || lead.clientNetwork) && (
-        <Grid item xs={12}>
-          <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
-            <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              Client Information
-            </Typography>
-            <Stack spacing={1}>
-              {lead.client && <Typography variant="body2">Client: {lead.client}</Typography>}
-              {lead.clientBroker && <Typography variant="body2">Broker: {lead.clientBroker}</Typography>}
-              {lead.clientNetwork && <Typography variant="body2">Network: {lead.clientNetwork}</Typography>}
-            </Stack>
-          </Paper>
-        </Grid>
-      )}
-
-      {lead.socialMedia && Object.values(lead.socialMedia).some(Boolean) && (
-        <Grid item xs={12}>
-          <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
-            <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              Social Media Profiles
-            </Typography>
-            <Stack spacing={1}>
-              {lead.socialMedia.facebook && <Link href={lead.socialMedia.facebook} target="_blank" rel="noopener noreferrer" sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.primary', textDecoration: 'none' }}><img src="/facebook-icon.svg" alt="Facebook" width={16} height={16} />Facebook</Link>}
-              {lead.socialMedia.twitter && <Link href={lead.socialMedia.twitter} target="_blank" rel="noopener noreferrer" sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.primary', textDecoration: 'none' }}><img src="/twitter-icon.svg" alt="Twitter" width={16} height={16} />Twitter</Link>}
-              {lead.socialMedia.linkedin && <Link href={lead.socialMedia.linkedin} target="_blank" rel="noopener noreferrer" sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.primary', textDecoration: 'none' }}><img src="/linkedin-icon.svg" alt="LinkedIn" width={16} height={16} />LinkedIn</Link>}
-              {lead.socialMedia.instagram && <Link href={lead.socialMedia.instagram} target="_blank" rel="noopener noreferrer" sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.primary', textDecoration: 'none' }}><img src="/instagram-icon.svg" alt="Instagram" width={16} height={16} />Instagram</Link>}
-              {lead.socialMedia.telegram && <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><img src="/telegram-icon.svg" alt="Telegram" width={16} height={16} />{lead.socialMedia.telegram}</Typography>}
-              {lead.socialMedia.whatsapp && <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><img src="/whatsapp-icon.svg" alt="WhatsApp" width={16} height={16} />{lead.socialMedia.whatsapp}</Typography>}
-            </Stack>
-          </Paper>
-        </Grid>
-      )}
     </Grid>
   </Box>
 ));
@@ -370,6 +704,16 @@ const LeadsPage = () => {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [addLeadDialogOpen, setAddLeadDialogOpen] = useState(false);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleteFilters, setBulkDeleteFilters] = useState({
+    leadType: "",
+    country: "",
+    gender: "",
+    status: "",
+    documentStatus: "",
+    isAssigned: "",
+    search: "",
+  });
 
   // Pagination and filtering
   const [page, setPage] = useState(0);
@@ -573,6 +917,19 @@ const LeadsPage = () => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    try {
+      setError(null);
+      const response = await api.delete("/leads/bulk-delete", { data: bulkDeleteFilters });
+      setSuccess(response.data.message);
+      setBulkDeleteDialogOpen(false);
+      fetchLeads();
+      fetchLeadStats();
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to delete leads");
+    }
+  };
+
   // --- Effects ---
   useEffect(() => {
     fetchLeads();
@@ -695,6 +1052,9 @@ const LeadsPage = () => {
           gutterBottom
           sx={{
             position: 'relative',
+            fontWeight: 'bold',
+            color: 'primary.main',
+            mb: 4,
             '&::after': {
               content: '""',
               position: 'absolute',
@@ -720,6 +1080,16 @@ const LeadsPage = () => {
               color="primary"
               startIcon={<PersonAddIcon />}
               onClick={() => setAddLeadDialogOpen(true)}
+              sx={{
+                borderRadius: 2,
+                px: 3,
+                py: 1,
+                transition: 'all 0.2s',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: 4,
+                },
+              }}
             >
               Add New Lead
             </Button>
@@ -727,44 +1097,51 @@ const LeadsPage = () => {
           {isAdminOrManager && (
             <Button
               variant="outlined"
-              size="small"
               startIcon={<ImportIcon />}
               onClick={() => setImportDialogOpen(true)}
+              sx={{
+                borderRadius: 2,
+                px: 3,
+                py: 1,
+                transition: 'all 0.2s',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: 2,
+                },
+              }}
             >
-              Import
+              Import Leads
             </Button>
           )}
           {canAssignLeads && numSelected > 0 && (
             <Button
               variant="contained"
+              color="secondary"
               startIcon={<PersonAddIcon />}
               onClick={() => setAssignDialogOpen(true)}
+              sx={{
+                borderRadius: 2,
+                px: 3,
+                py: 1,
+                transition: 'all 0.2s',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: 4,
+                },
+              }}
             >
               Assign {numSelected} Lead{numSelected !== 1 ? "s" : ""}
             </Button>
           )}
-          {canDeleteLeads && numSelected > 0 && (
+          {canDeleteLeads && (
             <Button
               variant="contained"
               color="error"
               startIcon={<DeleteIcon />}
-              onClick={() => {
-                if (window.confirm(`Are you sure you want to delete ${numSelected} lead${numSelected !== 1 ? 's' : ''}?`)) {
-                  const selectedLeadIds = Array.from(selectedLeads);
-                  Promise.all(selectedLeadIds.map(id => api.delete(`/leads/${id}`)))
-                    .then(() => {
-                      setSuccess(`Successfully deleted ${numSelected} lead${numSelected !== 1 ? 's' : ''}`);
-                      setSelectedLeads(new Set());
-                      fetchLeads();
-                    })
-                    .catch(err => {
-                      setError(err.response?.data?.message || 'Failed to delete leads');
-                    });
-                }
-              }}
-              sx={{ ml: 2 }}
+              onClick={() => setBulkDeleteDialogOpen(true)}
+              sx={{ ml: 1 }}
             >
-              Delete {numSelected} Lead{numSelected !== 1 ? "s" : ""}
+              Bulk Delete
             </Button>
           )}
         </Box>
@@ -779,239 +1156,223 @@ const LeadsPage = () => {
         </Alert>
       )}
 
-      {isAdminOrManager && (
-        <Card sx={{
-          mb: 2,
-          background: 'linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%)',
-          transition: 'all 0.3s ease-in-out',
-          '&:hover': {
-            transform: 'translateY(-4px)',
-            boxShadow: theme => theme.shadows[8],
-          },
-        }}>
-          <CardContent>
-            <Box sx={{ mb: 2 }}>
-              <Typography
-                variant="h6"
-                gutterBottom
+      {/* Stats Section */}
+      {leadStats && (
+        <Box sx={{ mb: 4 }}>
+          <Grid container spacing={3}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper
+                elevation={0}
                 sx={{
-                  color: 'primary.main',
-                  fontWeight: 'bold',
-                  display: 'flex',
-                  alignItems: 'center',
-                  '& .MuiSvgIcon-root': {
-                    transition: 'transform 0.3s ease-in-out',
-                  },
-                  '&:hover .MuiSvgIcon-root': {
-                    transform: 'rotate(360deg)',
+                  p: 2,
+                  bgcolor: 'primary.light',
+                  borderRadius: 2,
+                  color: 'primary.contrastText',
+                  transition: 'transform 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
                   },
                 }}
               >
-                <AssignmentIcon sx={{ mr: 1 }} />
-                Lead Assignment Summary
-              </Typography>
-              <Divider />
-            </Box>
-            <Grid container spacing={3}>
-              <Grid item xs={6} sm={3}>
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 2,
-                    textAlign: 'center',
-                    height: '100%',
-                    background: 'rgba(255, 255, 255, 0.8)',
-                    transition: 'all 0.3s ease-in-out',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: theme => theme.shadows[4],
-                      background: 'rgba(255, 255, 255, 0.95)',
-                    },
-                  }}
-                >
-                  <Typography
-                    variant="h4"
-                    color="primary"
-                    sx={{
-                      fontWeight: 'bold',
-                      animation: 'countUp 1s ease-out',
-                      '@keyframes countUp': {
-                        '0%': {
-                          opacity: 0,
-                          transform: 'translateY(20px)',
-                        },
-                        '100%': {
-                          opacity: 1,
-                          transform: 'translateY(0)',
-                        },
-                      },
-                    }}
-                  >
-                    {leadStats?.leads?.overall?.total || 0}
-                  </Typography>
-                  <Typography variant="subtitle2" color="textSecondary">Total Leads</Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 2,
-                    textAlign: 'center',
-                    height: '100%',
-                    background: 'rgba(255, 255, 255, 0.8)',
-                    transition: 'all 0.3s ease-in-out',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: theme => theme.shadows[4],
-                      background: 'rgba(255, 255, 255, 0.95)',
-                    },
-                  }}
-                >
-                  <Typography
-                    variant="h4"
-                    color="success.main"
-                    sx={{
-                      fontWeight: 'bold',
-                      animation: 'countUp 1s ease-out',
-                      '@keyframes countUp': {
-                        '0%': {
-                          opacity: 0,
-                          transform: 'translateY(20px)',
-                        },
-                        '100%': {
-                          opacity: 1,
-                          transform: 'translateY(0)',
-                        },
-                      },
-                    }}
-                  >
-                    {leadStats?.leads?.overall?.assigned || 0}
-                  </Typography>
-                  <Typography variant="subtitle2" color="textSecondary">Assigned</Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 2,
-                    textAlign: 'center',
-                    height: '100%',
-                    background: 'rgba(255, 255, 255, 0.8)',
-                    transition: 'all 0.3s ease-in-out',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: theme => theme.shadows[4],
-                      background: 'rgba(255, 255, 255, 0.95)',
-                    },
-                  }}
-                >
-                  <Typography
-                    variant="h4"
-                    color="warning.main"
-                    sx={{
-                      fontWeight: 'bold',
-                      animation: 'countUp 1s ease-out',
-                      '@keyframes countUp': {
-                        '0%': {
-                          opacity: 0,
-                          transform: 'translateY(20px)',
-                        },
-                        '100%': {
-                          opacity: 1,
-                          transform: 'translateY(0)',
-                        },
-                      },
-                    }}
-                  >
-                    {leadStats?.leads?.overall?.available || 0}
-                  </Typography>
-                  <Typography variant="subtitle2" color="textSecondary">Unassigned</Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 2,
-                    textAlign: 'center',
-                    height: '100%',
-                    background: 'rgba(255, 255, 255, 0.8)',
-                    transition: 'all 0.3s ease-in-out',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: theme => theme.shadows[4],
-                      background: 'rgba(255, 255, 255, 0.95)',
-                    },
-                  }}
-                >
-                  <Typography
-                    variant="h4"
-                    color="info.main"
-                    sx={{
-                      fontWeight: 'bold',
-                      animation: 'countUp 1s ease-out',
-                      '@keyframes countUp': {
-                        '0%': {
-                          opacity: 0,
-                          transform: 'translateY(20px)',
-                        },
-                        '100%': {
-                          opacity: 1,
-                          transform: 'translateY(0)',
-                        },
-                      },
-                    }}
-                  >
-                    {leadStats?.leads?.overall?.total > 0
-                      ? Math.round((leadStats.leads.overall.assigned / leadStats.leads.overall.total) * 100)
-                      : 0}%
-                  </Typography>
-                  <Typography variant="subtitle2" color="textSecondary">Assignment Rate</Typography>
-                </Paper>
-              </Grid>
+                <Typography variant="h6" fontWeight="bold">
+                  {leadStats.leads.overall.total}
+                </Typography>
+                <Typography variant="subtitle2">Total Leads</Typography>
+              </Paper>
             </Grid>
-          </CardContent>
-        </Card>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  bgcolor: 'success.light',
+                  borderRadius: 2,
+                  color: 'success.contrastText',
+                  transition: 'transform 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                  },
+                }}
+              >
+                <Typography variant="h6" fontWeight="bold">
+                  {leadStats.leads.overall.assigned}
+                </Typography>
+                <Typography variant="subtitle2">Assigned Leads</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  bgcolor: 'warning.light',
+                  borderRadius: 2,
+                  color: 'warning.contrastText',
+                  transition: 'transform 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                  },
+                }}
+              >
+                <Typography variant="h6" fontWeight="bold">
+                  {leadStats.leads.overall.available}
+                </Typography>
+                <Typography variant="subtitle2">Available Leads</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  bgcolor: 'info.light',
+                  borderRadius: 2,
+                  color: 'info.contrastText',
+                  transition: 'transform 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                  },
+                }}
+              >
+                <Typography variant="h6" fontWeight="bold">
+                  {leadStats.leads.ftd.total}
+                </Typography>
+                <Typography variant="subtitle2">FTD Leads</Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+        </Box>
       )}
 
-      {/* --- Filters --- */}
-      <Box sx={{ mb: 2 }}>
+      {/* Filters Section */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2,
+          mb: 3,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
         <Button
-          startIcon={<FilterIcon />}
+          startIcon={showFilters ? <ExpandLessIcon /> : <FilterIcon />}
           onClick={() => setShowFilters(!showFilters)}
           sx={{
             mb: 2,
-            transition: 'all 0.2s ease-in-out',
+            color: 'primary.main',
             '&:hover': {
-              transform: 'translateY(-2px)',
-            },
-            '& .MuiSvgIcon-root': {
-              transition: 'transform 0.3s ease-in-out',
-            },
-            '&:hover .MuiSvgIcon-root': {
-              transform: 'rotate(180deg)',
+              bgcolor: 'primary.lighter',
             },
           }}
         >
           {showFilters ? "Hide Filters" : "Show Filters"}
         </Button>
+
         <Collapse in={showFilters}>
-          <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12} sm={6} md={3}><TextField fullWidth label="Search" value={filters.search} onChange={(e) => handleFilterChange("search", e.target.value)} placeholder="Name, email, phone..." InputProps={{ startAdornment: (<SearchIcon sx={{ mr: 1, color: "action.active" }} />) }} /></Grid>
-            <Grid item xs={12} sm={6} md={2}><FormControl fullWidth><InputLabel>Lead Type</InputLabel><Select value={filters.leadType} label="Lead Type" onChange={(e) => handleFilterChange("leadType", e.target.value)}><MenuItem value="">All</MenuItem>{Object.values(LEAD_TYPES).map(type => <MenuItem key={type} value={type}>{type.toUpperCase()}</MenuItem>)}</Select></FormControl></Grid>
-            {isAdminOrManager && <Grid item xs={12} sm={6} md={2}><FormControl fullWidth><InputLabel>Assignment</InputLabel><Select value={filters.isAssigned} label="Assignment" onChange={(e) => handleFilterChange("isAssigned", e.target.value)}><MenuItem value="">All</MenuItem><MenuItem value="true">Assigned</MenuItem><MenuItem value="false">Unassigned</MenuItem></Select></FormControl></Grid>}
-            {isAffiliateManager && <Grid item xs={12} sm={6} md={2}><FormControlLabel control={<Switch checked={filters.assignedToMe} onChange={(e) => handleFilterChange("assignedToMe", e.target.checked)} color="primary" />} label="My Assigned Leads" /></Grid>}
-            <Grid item xs={12} sm={6} md={2}><FormControl fullWidth><InputLabel>Status</InputLabel><Select value={filters.status} label="Status" onChange={(e) => handleFilterChange("status", e.target.value)}><MenuItem value="">All</MenuItem>{Object.values(LEAD_STATUSES).map(status => <MenuItem key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</MenuItem>)}</Select></FormControl></Grid>
-            {isAdminOrManager && <Grid item xs={12} sm={6} md={2}><FormControlLabel control={<Switch checked={filters.includeConverted} onChange={(e) => handleFilterChange("includeConverted", e.target.checked)} color="primary" />} label="Show Converted" /></Grid>}
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <TextField
+                fullWidth
+                label="Search Leads"
+                value={filters.search}
+                onChange={(e) => handleFilterChange("search", e.target.value)}
+                placeholder="Name, email, phone..."
+                InputProps={{
+                  startAdornment: (<SearchIcon sx={{ mr: 1, color: "action.active" }} />),
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                  },
+                }}
+              />
+            </Grid>
+
             <Grid item xs={12} sm={6} md={2}>
+              <FormControl fullWidth>
+                <InputLabel>Lead Type</InputLabel>
+                <Select
+                  value={filters.leadType}
+                  label="Lead Type"
+                  onChange={(e) => handleFilterChange("leadType", e.target.value)}
+                  sx={{ borderRadius: 2 }}
+                >
+                  <MenuItem value="">All Types</MenuItem>
+                  {Object.values(LEAD_TYPES).map(type => (
+                    <MenuItem key={type} value={type}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: theme => theme.palette[getLeadTypeColor(type)]?.main,
+                          }}
+                        />
+                        {type.toUpperCase()}
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {isAdminOrManager && (
+              <Grid item xs={12} sm={6} md={2}>
+                <FormControl fullWidth>
+                  <InputLabel>Assignment</InputLabel>
+                  <Select
+                    value={filters.isAssigned}
+                    label="Assignment"
+                    onChange={(e) => handleFilterChange("isAssigned", e.target.value)}
+                    sx={{ borderRadius: 2 }}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    <MenuItem value="true">Assigned</MenuItem>
+                    <MenuItem value="false">Unassigned</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
+
+            <Grid item xs={12} sm={6} md={2}>
+              <FormControl fullWidth>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={filters.status}
+                  label="Status"
+                  onChange={(e) => handleFilterChange("status", e.target.value)}
+                  sx={{ borderRadius: 2 }}
+                >
+                  <MenuItem value="">All Statuses</MenuItem>
+                  {Object.values(LEAD_STATUSES).map(status => (
+                    <MenuItem key={status} value={status}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: theme => theme.palette[getStatusColor(status)]?.main,
+                          }}
+                        />
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12} sm={6} md={3}>
               <FormControl fullWidth>
                 <InputLabel>Country</InputLabel>
                 <Select
                   value={filters.country}
                   label="Country"
                   onChange={(e) => handleFilterChange("country", e.target.value)}
+                  sx={{ borderRadius: 2 }}
                 >
                   <MenuItem value="">All Countries</MenuItem>
                   {getSortedCountries().map((country) => (
@@ -1022,13 +1383,39 @@ const LeadsPage = () => {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={6} md={2}><FormControl fullWidth><InputLabel>Gender</InputLabel><Select value={filters.gender} label="Gender" onChange={(e) => handleFilterChange("gender", e.target.value)}><MenuItem value="">All</MenuItem><MenuItem value="male">Male</MenuItem><MenuItem value="female">Female</MenuItem><MenuItem value="not_defined">Not Defined</MenuItem></Select></FormControl></Grid>
-            {isAdminOrManager && <Grid item xs={12} sm={6} md={2}><FormControl fullWidth><InputLabel>Order Filter</InputLabel><Select value={filters.orderId} label="Order Filter" onChange={(e) => handleFilterChange("orderId", e.target.value)}><MenuItem value="">All Orders</MenuItem>{orders.map(order => <MenuItem key={order._id} value={order._id}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><Chip label={`#${order._id.slice(-6)}`} size="small" color={order.status === 'fulfilled' ? 'success' : 'default'} /><Typography variant="body2">{`${Object.values(order.fulfilled).reduce((a, b) => a + b, 0)} leads - ${new Date(order.createdAt).toLocaleDateString()}`}</Typography></Box></MenuItem>)}</Select></FormControl></Grid>}
-            <Grid item xs={12} sm={6} md={2}><FormControl fullWidth><InputLabel>Order By</InputLabel><Select value={filters.order} label="Order By" onChange={(e) => handleFilterChange("order", e.target.value)}><MenuItem value="newest">Newest First</MenuItem><MenuItem value="oldest">Oldest First</MenuItem><MenuItem value="name_asc">Name (A-Z)</MenuItem><MenuItem value="name_desc">Name (Z-A)</MenuItem></Select></FormControl></Grid>
-            <Grid item xs={12}><Button onClick={clearFilters} variant="outlined">Clear Filters</Button></Grid>
+
+            {isAdminOrManager && (
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={filters.includeConverted}
+                      onChange={(e) => handleFilterChange("includeConverted", e.target.checked)}
+                      color="primary"
+                    />
+                  }
+                  label="Include Converted Leads"
+                />
+              </Grid>
+            )}
+
+            {isAffiliateManager && (
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={filters.assignedToMe}
+                      onChange={(e) => handleFilterChange("assignedToMe", e.target.checked)}
+                      color="primary"
+                    />
+                  }
+                  label="My Assigned Leads"
+                />
+              </Grid>
+            )}
           </Grid>
         </Collapse>
-      </Box>
+      </Paper>
 
       {/* --- Leads Table (Desktop) --- */}
       <Box sx={{ display: { xs: 'none', md: 'block' } }}>
@@ -1190,6 +1577,136 @@ const LeadsPage = () => {
           />
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={bulkDeleteDialogOpen}
+        onClose={() => setBulkDeleteDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Bulk Delete Leads</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Warning: This action will permanently delete all leads matching the selected filters. This action cannot be undone.
+          </DialogContentText>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Lead Type</InputLabel>
+                <Select
+                  value={bulkDeleteFilters.leadType}
+                  label="Lead Type"
+                  onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, leadType: e.target.value }))}
+                >
+                  <MenuItem value="">All Types</MenuItem>
+                  {Object.values(LEAD_TYPES).map(type => (
+                    <MenuItem key={type} value={type}>
+                      {type.toUpperCase()}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Country</InputLabel>
+                <Select
+                  value={bulkDeleteFilters.country}
+                  label="Country"
+                  onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, country: e.target.value }))}
+                >
+                  <MenuItem value="">All Countries</MenuItem>
+                  {getSortedCountries().map(country => (
+                    <MenuItem key={country.code} value={country.code}>
+                      {country.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Gender</InputLabel>
+                <Select
+                  value={bulkDeleteFilters.gender}
+                  label="Gender"
+                  onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, gender: e.target.value }))}
+                >
+                  <MenuItem value="">All Genders</MenuItem>
+                  <MenuItem value="male">Male</MenuItem>
+                  <MenuItem value="female">Female</MenuItem>
+                  <MenuItem value="other">Other</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={bulkDeleteFilters.status}
+                  label="Status"
+                  onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, status: e.target.value }))}
+                >
+                  <MenuItem value="">All Statuses</MenuItem>
+                  {Object.values(LEAD_STATUSES).map(status => (
+                    <MenuItem key={status} value={status}>
+                      {status.charAt(0).toUpperCase() + status.slice(1)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Document Status</InputLabel>
+                <Select
+                  value={bulkDeleteFilters.documentStatus}
+                  label="Document Status"
+                  onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, documentStatus: e.target.value }))}
+                >
+                  <MenuItem value="">All Document Statuses</MenuItem>
+                  <MenuItem value="good">Good</MenuItem>
+                  <MenuItem value="ok">OK</MenuItem>
+                  <MenuItem value="pending">Pending</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Assignment Status</InputLabel>
+                <Select
+                  value={bulkDeleteFilters.isAssigned}
+                  label="Assignment Status"
+                  onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, isAssigned: e.target.value }))}
+                >
+                  <MenuItem value="">All Assignment Statuses</MenuItem>
+                  <MenuItem value={true}>Assigned</MenuItem>
+                  <MenuItem value={false}>Unassigned</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Search"
+                value={bulkDeleteFilters.search}
+                onChange={(e) => setBulkDeleteFilters(prev => ({ ...prev, search: e.target.value }))}
+                helperText="Search by name, email, or phone"
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkDeleteDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleBulkDelete}
+            color="error"
+            variant="contained"
+          >
+            Delete Matching Leads
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
@@ -1305,13 +1822,27 @@ const LeadCard = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLe
             <Stack direction="row" spacing={1.5} alignItems="center">
               <Avatar sx={{ bgcolor: theme => theme.palette[getLeadTypeColor(lead.leadType)]?.light, color: theme => theme.palette[getLeadTypeColor(lead.leadType)]?.main }}>{(lead.fullName || `${lead.firstName} ${lead.lastName || ""}`.trim()).charAt(0).toUpperCase()}</Avatar>
               <Box>
-                <Typography variant="subtitle1" fontWeight="bold">{lead.fullName || `${lead.firstName} ${lead.lastName || ""}`.trim()}</Typography>
-                <Typography variant="caption" color="text.secondary">ID: {lead._id.slice(-8)}</Typography>
+                <Typography variant="subtitle1" fontWeight="bold">
+                  {lead.fullName || `${lead.firstName} ${lead.lastName || ""}`.trim()}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  ID: {lead._id.slice(-8)}
+                </Typography>
               </Box>
             </Stack>
             <Stack direction="row" spacing={1} alignItems="center">
-              <Chip label={(lead.leadType || 'unknown').toUpperCase()} color={getLeadTypeColor(lead.leadType)} size="small" />
-              <Chip label={lead.status.charAt(0).toUpperCase() + lead.status.slice(1)} color={getStatusColor(lead.status)} size="small" />
+              <Chip 
+                label={(lead.leadType || 'unknown').toUpperCase()} 
+                color={getLeadTypeColor(lead.leadType)} 
+                size="small"
+                sx={{ fontWeight: 'medium' }}
+              />
+              <Chip 
+                label={lead.status.charAt(0).toUpperCase() + lead.status.slice(1)} 
+                color={getStatusColor(lead.status)} 
+                size="small"
+                sx={{ fontWeight: 'medium' }}
+              />
             </Stack>
           </Stack>
         </Grid>
