@@ -6,6 +6,8 @@ const csvParser = require("csv-parser");
 const { Readable } = require("stream");
 const { spawn } = require("child_process");
 const express = require("express");
+const ClientNetwork = require("../models/ClientNetwork");
+const ClientBroker = require("../models/ClientBroker");
 
 // @desc    Get all leads with filtering and pagination
 // @route   GET /api/leads
@@ -92,8 +94,6 @@ exports.getLeads = async (req, res, next) => {
           { newEmail: new RegExp(search, "i") },
           { newPhone: new RegExp(search, "i") },
           { client: new RegExp(search, "i") },
-          { clientBroker: new RegExp(search, "i") },
-          { clientNetwork: new RegExp(search, "i") },
         ];
       }
     }
@@ -152,8 +152,7 @@ exports.getLeads = async (req, res, next) => {
           updatedAt: 1,
           gender: 1,
           client: 1,
-          clientBroker: 1,
-          clientNetwork: 1,
+          assignedClientBrokers: 1,
           documents: 1,
           "assignedTo._id": 1,
           "assignedTo.fullName": 1,
@@ -692,6 +691,277 @@ exports.unassignLeads = async (req, res, next) => {
       },
     });
   } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Assign client broker to individual lead
+// @route   PUT /api/leads/:id/assign-client-broker
+// @access  Private (Admin, Affiliate Manager)
+exports.assignClientBrokerToLead = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors: errors.array(),
+      });
+    }
+
+    const leadId = req.params.id;
+    const { clientBrokerId, client, intermediaryClientNetwork, domain } = req.body;
+
+    // Find the lead and client broker
+    const [lead, clientBroker] = await Promise.all([
+      Lead.findById(leadId),
+      ClientBroker.findById(clientBrokerId)
+    ]);
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    if (!clientBroker) {
+      return res.status(404).json({
+        success: false,
+        message: "Client broker not found",
+      });
+    }
+
+    // Check if user has permission to assign client brokers
+    if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can assign client brokers.",
+      });
+    }
+
+    if (!clientBroker.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot assign lead to inactive client broker",
+      });
+    }
+
+    // Check if this lead has already been assigned to this client broker
+    if (lead.isAssignedToClientBroker(clientBrokerId)) {
+      return res.status(400).json({
+        success: false,
+        message: `Lead "${lead.firstName} ${lead.lastName}" is already assigned to client broker "${clientBroker.name}".`,
+        data: {
+          leadId: lead._id,
+          leadName: `${lead.firstName} ${lead.lastName}`,
+          clientBroker: clientBroker.name,
+        }
+      });
+    }
+
+    // Assign the client broker to the lead
+    lead.assignClientBroker(
+      clientBrokerId,
+      req.user.id,
+      lead.orderId,
+      intermediaryClientNetwork,
+      domain
+    );
+
+    // Update client field if provided
+    if (client !== undefined) {
+      lead.client = client;
+    }
+
+    // Update the client broker
+    clientBroker.assignLead(leadId);
+
+    // Save both documents
+    await Promise.all([lead.save(), clientBroker.save()]);
+
+    // Populate the response
+    const updatedLead = await Lead.findById(leadId)
+      .populate('assignedTo', 'fullName fourDigitCode email')
+      .populate('assignedClientBrokers', 'name domain');
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully assigned client broker "${clientBroker.name}" to lead "${lead.firstName} ${lead.lastName}"`,
+      data: updatedLead,
+    });
+  } catch (error) {
+    console.error("Assign client broker to lead error:", error);
+    next(error);
+  }
+};
+
+// @desc    Get lead assignment history
+// @route   GET /api/leads/:id/assignment-history
+// @access  Private (Admin, Affiliate Manager)
+exports.getLeadAssignmentHistory = async (req, res, next) => {
+  try {
+    const leadId = req.params.id;
+
+    const lead = await Lead.findById(leadId)
+      .populate('clientBrokerHistory.assignedBy', 'fullName fourDigitCode email')
+      .populate('clientBrokerHistory.orderId', 'status createdAt')
+      .populate('clientBrokerHistory.clientBroker', 'name domain')
+      .populate('clientBrokerHistory.intermediaryClientNetwork', 'name')
+      .populate('assignedClientBrokers', 'name domain');
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    // Check if user has permission to view assignment history
+    if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can view assignment history.",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        leadId: lead._id,
+        leadName: `${lead.firstName} ${lead.lastName}`,
+        currentAssignments: {
+          clientBrokers: lead.assignedClientBrokers.map(broker => ({
+            id: broker._id,
+            name: broker.name,
+            domain: broker.domain
+          })),
+          client: lead.client
+        },
+        assignmentHistory: lead.clientBrokerHistory.map(history => ({
+          clientBroker: {
+            id: history.clientBroker._id,
+            name: history.clientBroker.name,
+            domain: history.clientBroker.domain
+          },
+          intermediaryClientNetwork: history.intermediaryClientNetwork ? {
+            id: history.intermediaryClientNetwork._id,
+            name: history.intermediaryClientNetwork.name
+          } : null,
+          assignedAt: history.assignedAt,
+          assignedBy: history.assignedBy,
+          orderId: history.orderId,
+          orderStatus: history.orderId ? history.orderId.status : null,
+          orderCreatedAt: history.orderId ? history.orderId.createdAt : null,
+          injectionStatus: history.injectionStatus,
+          domain: history.domain
+        }))
+      }
+    });
+  } catch (error) {
+    console.error("Get lead assignment history error:", error);
+    next(error);
+  }
+};
+
+// @desc    Get client broker assignment analytics
+// @route   GET /api/leads/client-broker-analytics
+// @access  Private (Admin, Affiliate Manager)
+exports.getClientBrokerAnalytics = async (req, res, next) => {
+  try {
+    const { orderId } = req.query;
+
+    // Check if user has permission
+    if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can view analytics.",
+      });
+    }
+
+    let matchStage = {};
+    if (orderId) {
+      if (!mongoose.Types.ObjectId.isValid(orderId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid order ID format",
+        });
+      }
+      matchStage.orderId = new mongoose.Types.ObjectId(orderId);
+    }
+
+    // Aggregate client broker assignment data
+    const analytics = await Lead.aggregate([
+      { $match: matchStage },
+      { $unwind: { path: "$clientBrokerHistory", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "clientbrokers",
+          localField: "clientBrokerHistory.clientBroker",
+          foreignField: "_id",
+          as: "brokerDetails"
+        }
+      },
+      { $unwind: { path: "$brokerDetails", preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: {
+            clientBroker: "$clientBrokerHistory.clientBroker",
+            orderId: "$clientBrokerHistory.orderId"
+          },
+          brokerName: { $first: "$brokerDetails.name" },
+          brokerDomain: { $first: "$brokerDetails.domain" },
+          totalAssignments: { $sum: 1 },
+          uniqueLeads: { $addToSet: "$_id" },
+          firstAssignment: { $min: "$clientBrokerHistory.assignedAt" },
+          lastAssignment: { $max: "$clientBrokerHistory.assignedAt" },
+          injectionStatuses: { $addToSet: "$clientBrokerHistory.injectionStatus" }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.clientBroker",
+          brokerName: { $first: "$brokerName" },
+          brokerDomain: { $first: "$brokerDomain" },
+          totalAssignments: { $sum: "$totalAssignments" },
+          totalUniqueLeads: { $sum: { $size: "$uniqueLeads" } },
+          orderBreakdown: {
+            $push: {
+              orderId: "$_id.orderId",
+              assignments: "$totalAssignments",
+              uniqueLeads: { $size: "$uniqueLeads" },
+              firstAssignment: "$firstAssignment",
+              lastAssignment: "$lastAssignment",
+              injectionStatuses: "$injectionStatuses"
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          clientBrokerId: "$_id",
+          brokerName: 1,
+          brokerDomain: 1,
+          totalAssignments: 1,
+          totalUniqueLeads: 1,
+          orderBreakdown: 1,
+          _id: 0
+        }
+      },
+      { $sort: { totalAssignments: -1 } }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        analytics,
+        totalClientBrokers: analytics.length,
+        totalAssignments: analytics.reduce((sum, item) => sum + item.totalAssignments, 0),
+        totalUniqueLeads: analytics.reduce((sum, item) => sum + item.totalUniqueLeads, 0)
+      }
+    });
+  } catch (error) {
+    console.error("Get client broker analytics error:", error);
     next(error);
   }
 };
@@ -1368,7 +1638,7 @@ exports.injectLead = async (req, res) => {
 
     // Launch the Python script with properly encoded JSON
     const pythonProcess = spawn("python", [
-      scriptPath, 
+      scriptPath,
       JSON.stringify(leadData)
     ]);
 
@@ -1479,6 +1749,62 @@ exports.bulkDeleteLeads = async (req, res, next) => {
       data: {
         deletedCount: result.deletedCount,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Check and wake up sleeping leads
+// @route   POST /api/leads/wake-up-sleeping
+// @access  Private (Admin only)
+exports.wakeUpSleepingLeads = async (req, res, next) => {
+  try {
+    const Lead = require("../models/Lead");
+    const ClientNetwork = require("../models/ClientNetwork");
+
+    const sleepingLeads = await Lead.findSleepingLeads();
+    let wokeUpCount = 0;
+
+    if (sleepingLeads.length > 0) {
+      // Get all active client networks with their brokers
+      const clientNetworks = await ClientNetwork.find({ isActive: true });
+
+      for (const lead of sleepingLeads) {
+        let hasAvailableBrokers = false;
+
+        // Check if any brokers are now available for this lead
+        for (const network of clientNetworks) {
+          if (network.clientBrokers && network.clientBrokers.length > 0) {
+            const availableBrokers = network.clientBrokers
+              .filter(broker => broker.isActive)
+              .map(broker => broker.domain || broker.name);
+
+            const assignedBrokers = lead.getAssignedClientBrokers();
+            const hasNewBrokers = availableBrokers.some(broker => !assignedBrokers.includes(broker));
+
+            if (hasNewBrokers) {
+              hasAvailableBrokers = true;
+              break;
+            }
+          }
+        }
+
+        if (hasAvailableBrokers) {
+          lead.wakeUp();
+          await lead.save();
+          wokeUpCount++;
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Checked ${sleepingLeads.length} sleeping leads and woke up ${wokeUpCount}`,
+      data: {
+        totalSleepingLeads: sleepingLeads.length,
+        wokeUpCount: wokeUpCount
+      }
     });
   } catch (error) {
     next(error);

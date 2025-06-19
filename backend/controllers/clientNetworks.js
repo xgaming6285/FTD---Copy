@@ -2,6 +2,7 @@ const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 const ClientNetwork = require("../models/ClientNetwork");
 const User = require("../models/User");
+const Lead = require("../models/Lead");
 
 // @desc    Get all client networks
 // @route   GET /api/client-networks
@@ -253,152 +254,26 @@ exports.deleteClientNetwork = async (req, res, next) => {
   }
 };
 
-// @desc    Add client broker to network
-// @route   POST /api/client-networks/:id/brokers
-// @access  Private (Admin only)
-exports.addClientBroker = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errors.array(),
-      });
-    }
-
-    const { name, domain } = req.body;
-
-    const clientNetwork = await ClientNetwork.findById(req.params.id);
-    if (!clientNetwork) {
-      return res.status(404).json({
-        success: false,
-        message: "Client network not found",
-      });
-    }
-
-    // Check if broker name already exists in this network
-    const existingBroker = clientNetwork.clientBrokers.find(
-      (broker) => broker.name.toLowerCase() === name.toLowerCase()
-    );
-
-    if (existingBroker) {
-      return res.status(400).json({
-        success: false,
-        message: "Client broker already exists in this network",
-      });
-    }
-
-    clientNetwork.clientBrokers.push({
-      name,
-      domain,
-    });
-
-    await clientNetwork.save();
-
-    res.status(201).json({
-      success: true,
-      message: "Client broker added successfully",
-      data: clientNetwork,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Update client broker in network
-// @route   PUT /api/client-networks/:id/brokers/:brokerId
-// @access  Private (Admin only)
-exports.updateClientBroker = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errors.array(),
-      });
-    }
-
-    const { name, domain, isActive } = req.body;
-
-    const clientNetwork = await ClientNetwork.findById(req.params.id);
-    if (!clientNetwork) {
-      return res.status(404).json({
-        success: false,
-        message: "Client network not found",
-      });
-    }
-
-    const broker = clientNetwork.clientBrokers.id(req.params.brokerId);
-    if (!broker) {
-      return res.status(404).json({
-        success: false,
-        message: "Client broker not found",
-      });
-    }
-
-    // Update broker fields
-    if (name !== undefined) broker.name = name;
-    if (domain !== undefined) broker.domain = domain;
-    if (isActive !== undefined) broker.isActive = isActive;
-
-    await clientNetwork.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Client broker updated successfully",
-      data: clientNetwork,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Remove client broker from network
-// @route   DELETE /api/client-networks/:id/brokers/:brokerId
-// @access  Private (Admin only)
-exports.removeClientBroker = async (req, res, next) => {
-  try {
-    const clientNetwork = await ClientNetwork.findById(req.params.id);
-    if (!clientNetwork) {
-      return res.status(404).json({
-        success: false,
-        message: "Client network not found",
-      });
-    }
-
-    const broker = clientNetwork.clientBrokers.id(req.params.brokerId);
-    if (!broker) {
-      return res.status(404).json({
-        success: false,
-        message: "Client broker not found",
-      });
-    }
-
-    clientNetwork.clientBrokers.pull(req.params.brokerId);
-    await clientNetwork.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Client broker removed successfully",
-      data: clientNetwork,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+// Note: Client broker management has been moved to separate ClientBroker model
+// Client networks now serve as intermediaries only
 
 // @desc    Get client networks assigned to current affiliate manager
 // @route   GET /api/client-networks/my-networks
 // @access  Private (Affiliate Manager only)
 exports.getMyClientNetworks = async (req, res, next) => {
   try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({
+        success: false,
+        message: "User not authenticated"
+      });
+    }
+
     const clientNetworks = await ClientNetwork.find({
       assignedAffiliateManagers: req.user._id,
       isActive: true,
     })
-      .select("name description clientBrokers")
+      .select("name description")
       .sort({ name: 1 });
 
     res.status(200).json({
@@ -406,6 +281,7 @@ exports.getMyClientNetworks = async (req, res, next) => {
       data: clientNetworks,
     });
   } catch (error) {
+    console.error('Error in getMyClientNetworks:', error);
     next(error);
   }
 }; 

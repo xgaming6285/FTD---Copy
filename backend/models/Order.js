@@ -46,7 +46,7 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
-    // Selected client network for this order
+    // Selected client network for this order (for reference only)
     selectedClientNetwork: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ClientNetwork",
@@ -108,7 +108,25 @@ const orderSchema = new mongoose.Schema(
       failedInjections: { type: Number, default: 0 },
       ftdsPendingManualFill: { type: Number, default: 0 },
       lastInjectionAt: { type: Date },
-      completedAt: { type: Date }
+      completedAt: { type: Date },
+      // Track client broker assignment after injection
+      brokersAssigned: { type: Number, default: 0 },
+      brokerAssignmentPending: { type: Boolean, default: false }
+    },
+
+    // Client broker assignment tracking
+    clientBrokerAssignment: {
+      status: {
+        type: String,
+        enum: ["pending", "in_progress", "completed", "skipped"],
+        default: "pending"
+      },
+      assignedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+      },
+      assignedAt: { type: Date },
+      notes: { type: String }
     },
 
     // Completion tracking

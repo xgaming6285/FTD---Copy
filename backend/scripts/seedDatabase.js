@@ -21,9 +21,9 @@ const createDefaultAdmin = async () => {
       password: "admin123",
       fullName: "System Admin",
       role: "admin",
-      permissions: { 
+      permissions: {
         canCreateOrders: true,
-        canManageLeads: true 
+        canManageLeads: true
       },
       isActive: true,
     });

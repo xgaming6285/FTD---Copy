@@ -1,4 +1,5 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const { body, query } = require("express-validator");
 const { protect, isManager, hasPermission } = require("../middleware/auth");
 const {
@@ -14,6 +15,11 @@ const {
   pauseOrderInjection,
   stopOrderInjection,
   skipOrderFTDs,
+  assignClientBrokers,
+  getLeadsPendingBrokerAssignment,
+  skipBrokerAssignment,
+  getFTDLeadsForOrder,
+  manualFTDInjection,
 } = require("../controllers/orders");
 
 const router = express.Router();
@@ -39,6 +45,10 @@ router.post(
       .optional()
       .isInt({ min: 0 })
       .withMessage("Cold request must be a non-negative integer"),
+    body("requests.live")
+      .optional()
+      .isInt({ min: 0 })
+      .withMessage("Live request must be a non-negative integer"),
     body("priority")
       .optional()
       .isIn(["low", "medium", "high"])
@@ -65,9 +75,72 @@ router.post(
       .isIn(["male", "female", "not_defined", null, ""])
       .withMessage("Gender must be male, female, not_defined, or empty"),
     body("selectedClientNetwork")
+      .optional({ nullable: true })
+      .custom((value) => {
+        if (value === null || value === "" || value === undefined) {
+          return true;
+        }
+        if (!mongoose.Types.ObjectId.isValid(value)) {
+          throw new Error("selectedClientNetwork must be a valid MongoDB ObjectId");
+        }
+        return true;
+      }),
+    body("injectionSettings")
       .optional()
-      .isMongoId()
-      .withMessage("selectedClientNetwork must be a valid MongoDB ObjectId"),
+      .isObject()
+      .withMessage("injectionSettings must be an object"),
+    body("injectionSettings.enabled")
+      .optional()
+      .isBoolean()
+      .withMessage("injectionSettings.enabled must be a boolean"),
+    body("injectionSettings.mode")
+      .optional()
+      .isIn(["manual", "bulk", "scheduled"])
+      .withMessage("injectionSettings.mode must be 'manual', 'bulk', or 'scheduled'"),
+    body("injectionSettings.includeTypes")
+      .optional()
+      .isObject()
+      .withMessage("injectionSettings.includeTypes must be an object"),
+    body("injectionSettings.includeTypes.filler")
+      .optional()
+      .isBoolean()
+      .withMessage("injectionSettings.includeTypes.filler must be a boolean"),
+    body("injectionSettings.includeTypes.cold")
+      .optional()
+      .isBoolean()
+      .withMessage("injectionSettings.includeTypes.cold must be a boolean"),
+    body("injectionSettings.includeTypes.live")
+      .optional()
+      .isBoolean()
+      .withMessage("injectionSettings.includeTypes.live must be a boolean"),
+    body("injectionSettings.scheduledTime")
+      .optional()
+      .isObject()
+      .withMessage("injectionSettings.scheduledTime must be an object"),
+    body("injectionSettings.scheduledTime.startTime")
+      .optional()
+      .custom((value) => {
+        // Accept either ISO8601 format or HH:MM format
+        if (typeof value === 'string' && value.match(/^\d{2}:\d{2}$/)) {
+          return true; // HH:MM format
+        }
+        if (typeof value === 'string' && !isNaN(Date.parse(value))) {
+          return true; // ISO8601 format
+        }
+        throw new Error("injectionSettings.scheduledTime.startTime must be either HH:MM format or ISO8601 date");
+      }),
+    body("injectionSettings.scheduledTime.endTime")
+      .optional()
+      .custom((value) => {
+        // Accept either ISO8601 format or HH:MM format
+        if (typeof value === 'string' && value.match(/^\d{2}:\d{2}$/)) {
+          return true; // HH:MM format
+        }
+        if (typeof value === 'string' && !isNaN(Date.parse(value))) {
+          return true; // ISO8601 format
+        }
+        throw new Error("injectionSettings.scheduledTime.endTime must be either HH:MM format or ISO8601 date");
+      }),
   ],
   createOrder
 );
@@ -152,5 +225,30 @@ router.post("/:id/stop-injection", [protect, isManager], stopOrderInjection);
 // @desc    Skip FTDs and mark them for manual filling later
 // @access  Private (Admin, Affiliate Manager)
 router.post("/:id/skip-ftds", [protect, isManager], skipOrderFTDs);
+
+// @route   POST /api/orders/:id/assign-brokers
+// @desc    Assign client brokers to leads in an order
+// @access  Private (Admin, Manager)
+router.post("/:id/assign-brokers", [protect, isManager], assignClientBrokers);
+
+// @route   GET /api/orders/:id/pending-broker-assignment
+// @desc    Get leads pending broker assignment for an order
+// @access  Private (Admin, Manager)
+router.get("/:id/pending-broker-assignment", [protect, isManager], getLeadsPendingBrokerAssignment);
+
+// @route   POST /api/orders/:id/skip-broker-assignment
+// @desc    Skip broker assignment for leads in an order
+// @access  Private (Admin, Manager)
+router.post("/:id/skip-broker-assignment", [protect, isManager], skipBrokerAssignment);
+
+// @route   GET /api/orders/:id/ftd-leads
+// @desc    Get FTD leads for manual injection
+// @access  Private (Admin, Affiliate Manager)
+router.get("/:id/ftd-leads", [protect, isManager], getFTDLeadsForOrder);
+
+// @route   POST /api/orders/:id/manual-ftd-injection
+// @desc    Manual FTD injection
+// @access  Private (Admin, Affiliate Manager)
+router.post("/:id/manual-ftd-injection", [protect, isManager], manualFTDInjection);
 
 module.exports = router;

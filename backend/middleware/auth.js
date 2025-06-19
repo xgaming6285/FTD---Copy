@@ -113,12 +113,21 @@ exports.isAgent = (req, res, next) => {
 // Check if user has specific permission
 exports.hasPermission = (permission) => {
   return (req, res, next) => {
+    console.log(`[PERMISSION-DEBUG] Checking permission "${permission}" for user:`, {
+      userId: req.user._id,
+      role: req.user.role,
+      permissions: req.user.permissions
+    });
+
     if (!req.user.permissions || !req.user.permissions[permission]) {
+      console.log(`[PERMISSION-DEBUG] Permission denied for "${permission}"`);
       return res.status(403).json({
         success: false,
         message: `Permission ${permission} required`
       });
     }
+
+    console.log(`[PERMISSION-DEBUG] Permission "${permission}" granted`);
     next();
   };
 };

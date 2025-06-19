@@ -44,6 +44,8 @@ import {
   PlayArrow as InjectIcon,
   Pause as PauseIcon,
   Stop as StopIcon,
+  SkipNext as SkipNextIcon,
+  Send as SendIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -51,8 +53,8 @@ import * as yup from 'yup';
 import api from '../services/api';
 import { selectUser } from '../store/slices/authSlice';
 import { getSortedCountries } from '../constants/countries';
-import AssignClientInfoDialog from '../components/AssignClientInfoDialog';
 import LeadDetailCard from '../components/LeadDetailCard';
+import ManualFTDInjectionModal from '../components/ManualFTDInjectionModal';
 
 // --- Best Practice: Define constants and schemas outside the component ---
 // This prevents them from being recreated on every render.
@@ -148,15 +150,13 @@ const OrdersPage = () => {
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [assignClientDialogOpen, setAssignClientDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [selectedOrderForClient, setSelectedOrderForClient] = useState(null);
-  const [isAssigningClient, setIsAssigningClient] = useState(false);
+
 
   // Injection states
   const [injectionStatus, setInjectionStatus] = useState({});
   const [isInjecting, setIsInjecting] = useState({});
-  
+
   // Client networks state
   const [clientNetworks, setClientNetworks] = useState([]);
   const [loadingClientNetworks, setLoadingClientNetworks] = useState(false);
@@ -180,6 +180,8 @@ const OrdersPage = () => {
   // State for individual lead expansion within orders
   const [expandedLeads, setExpandedLeads] = useState({});
 
+
+
   const {
     control,
     handleSubmit,
@@ -188,6 +190,21 @@ const OrdersPage = () => {
   } = useForm({
     resolver: yupResolver(orderSchema),
     defaultValues: orderSchema.getDefault(),
+  });
+
+  // Broker assignment states
+  const [brokerAssignmentDialog, setBrokerAssignmentDialog] = useState({
+    open: false,
+    orderId: null,
+    leadsWithBrokers: []
+  });
+  const [brokerAssignments, setBrokerAssignments] = useState({});
+  const [assigningBrokers, setAssigningBrokers] = useState(false);
+
+  // Manual FTD injection states
+  const [ftdInjectionModal, setFtdInjectionModal] = useState({
+    open: false,
+    order: null
   });
 
   // --- Optimization: `useCallback` to memoize functions ---
@@ -238,7 +255,7 @@ const OrdersPage = () => {
   // Fetch client networks for affiliate managers
   const fetchClientNetworks = useCallback(async () => {
     if (user?.role !== 'affiliate_manager') return;
-    
+
     setLoadingClientNetworks(true);
     try {
       const response = await api.get('/client-networks/my-networks');
@@ -268,7 +285,7 @@ const OrdersPage = () => {
         notes: data.notes,
         country: data.country || null,
         gender: data.gender || null,
-        selectedClientNetwork: data.selectedClientNetwork || null,
+        selectedClientNetwork: data.selectedClientNetwork || undefined,
         // Include injection settings
         injectionSettings: data.enableInjection ? {
           enabled: true,
@@ -417,47 +434,10 @@ const OrdersPage = () => {
     setPage(0);
   }, []);
 
-  // Client assignment handlers
-  const handleOpenAssignClientDialog = useCallback(async (orderId) => {
-    try {
-      const response = await api.get(`/orders/${orderId}`);
-      setSelectedOrderForClient(response.data.data);
-      setAssignClientDialogOpen(true);
-    } catch (err) {
-      setNotification({
-        message: err.response?.data?.message || 'Failed to fetch order details',
-        severity: 'error',
-      });
-    }
-  }, []);
+  // Mass client assignment functionality has been removed
+  // Use individual lead assignment instead: PUT /api/leads/:id/assign-client-network
 
-  const handleAssignClientInfo = useCallback(async (clientData) => {
-    if (!selectedOrderForClient) return;
-
-    setIsAssigningClient(true);
-    try {
-      const response = await api.put(`/orders/${selectedOrderForClient._id}/assign-client-info`, clientData);
-      setNotification({
-        message: response.data.message || 'Client information assigned successfully!',
-        severity: 'success'
-      });
-      setAssignClientDialogOpen(false);
-      setSelectedOrderForClient(null);
-      fetchOrders(); // Refresh the orders list
-    } catch (err) {
-      setNotification({
-        message: err.response?.data?.message || 'Failed to assign client information',
-        severity: 'error',
-      });
-    } finally {
-      setIsAssigningClient(false);
-    }
-  }, [selectedOrderForClient, fetchOrders]);
-
-  const handleCloseAssignClientDialog = useCallback(() => {
-    setAssignClientDialogOpen(false);
-    setSelectedOrderForClient(null);
-  }, []);
+  // Mass assignment dialog handlers removed
 
   // Handle opening create dialog and fetching exclusion options
   const handleOpenCreateDialog = useCallback(() => {
@@ -469,7 +449,7 @@ const OrdersPage = () => {
   const handleStartInjection = useCallback(async (orderId) => {
     setIsInjecting(prev => ({ ...prev, [orderId]: true }));
     setInjectionStatus(prev => ({ ...prev, [orderId]: { success: null, message: "Starting injection..." } }));
-    
+
     try {
       const response = await api.post(`/orders/${orderId}/start-injection`);
       setInjectionStatus(prev => ({ ...prev, [orderId]: { success: true, message: "Injection started successfully!" } }));
@@ -514,6 +494,122 @@ const OrdersPage = () => {
       setNotification({ message: err.response?.data?.message || 'Failed to skip FTDs', severity: 'error' });
     }
   }, [fetchOrders]);
+
+  // Broker assignment handlers
+  const handleOpenBrokerAssignment = useCallback(async (orderId) => {
+    try {
+      const response = await api.get(`/orders/${orderId}/pending-broker-assignment`);
+      setBrokerAssignmentDialog({
+        open: true,
+        orderId: orderId,
+        leadsWithBrokers: response.data.data.leadsWithBrokers
+      });
+
+      // Initialize broker assignments
+      const initialAssignments = {};
+      response.data.data.leadsWithBrokers.forEach(item => {
+        if (item.availableBrokers.length > 0) {
+          initialAssignments[item.lead._id] = {
+            clientBroker: '',
+            domain: ''
+          };
+        }
+      });
+      setBrokerAssignments(initialAssignments);
+    } catch (err) {
+      setNotification({
+        message: err.response?.data?.message || 'Failed to load broker assignment data',
+        severity: 'error'
+      });
+    }
+  }, []);
+
+  const handleBrokerAssignmentChange = useCallback((leadId, field, value) => {
+    setBrokerAssignments(prev => ({
+      ...prev,
+      [leadId]: {
+        ...prev[leadId],
+        [field]: value
+      }
+    }));
+  }, []);
+
+  const handleSubmitBrokerAssignments = useCallback(async () => {
+    try {
+      setAssigningBrokers(true);
+
+      const assignments = Object.entries(brokerAssignments)
+        .filter(([leadId, assignment]) => assignment.clientBroker && assignment.domain)
+        .map(([leadId, assignment]) => ({
+          leadId,
+          clientBroker: assignment.clientBroker,
+          domain: assignment.domain
+        }));
+
+      if (assignments.length === 0) {
+        setNotification({ message: 'Please assign at least one broker', severity: 'warning' });
+        return;
+      }
+
+      await api.post(`/orders/${brokerAssignmentDialog.orderId}/assign-brokers`, {
+        brokerAssignments: assignments
+      });
+
+      setNotification({
+        message: `Successfully assigned brokers to ${assignments.length} leads!`,
+        severity: 'success'
+      });
+
+      setBrokerAssignmentDialog({ open: false, orderId: null, leadsWithBrokers: [] });
+      setBrokerAssignments({});
+      fetchOrders();
+    } catch (err) {
+      setNotification({
+        message: err.response?.data?.message || 'Failed to assign brokers',
+        severity: 'error'
+      });
+    } finally {
+      setAssigningBrokers(false);
+    }
+  }, [brokerAssignmentDialog.orderId, brokerAssignments, fetchOrders]);
+
+  const handleSkipBrokerAssignment = useCallback(async (orderId) => {
+    try {
+      await api.post(`/orders/${orderId}/skip-broker-assignment`);
+      setNotification({ message: 'Broker assignment skipped', severity: 'info' });
+      fetchOrders();
+    } catch (err) {
+      setNotification({
+        message: err.response?.data?.message || 'Failed to skip broker assignment',
+        severity: 'error'
+      });
+    }
+  }, [fetchOrders]);
+
+  // Manual FTD injection handlers
+  const handleOpenFTDInjection = useCallback((order) => {
+    setFtdInjectionModal({
+      open: true,
+      order: order
+    });
+  }, []);
+
+  const handleCloseFTDInjection = useCallback(() => {
+    setFtdInjectionModal({
+      open: false,
+      order: null
+    });
+  }, []);
+
+  const handleFTDInjectionSuccess = useCallback(() => {
+    setNotification({ 
+      message: 'FTD leads injected successfully!', 
+      severity: 'success' 
+    });
+    fetchOrders(); // Refresh orders to show updated status
+  }, [fetchOrders]);
+
+
 
   // Readability: Helper component for rendering lead counts
   const renderLeadCounts = (label, requested, fulfilled) => (
@@ -610,7 +706,7 @@ const OrdersPage = () => {
                 </FormControl>
               </Grid>
               <Grid item xs={12} sm={6} md={3}>
-                <TextField fullWidth label="Start Date" type="date" value={filters.startDate} onChange={handleFilterChange('startDate')} InputLabelProps={{ shrink: true }} size="small"/>
+                <TextField fullWidth label="Start Date" type="date" value={filters.startDate} onChange={handleFilterChange('startDate')} InputLabelProps={{ shrink: true }} size="small" />
               </Grid>
               <Grid item xs={12} sm={6} md={3}>
                 <TextField fullWidth label="End Date" type="date" value={filters.endDate} onChange={handleFilterChange('endDate')} InputLabelProps={{ shrink: true }} size="small" />
@@ -634,6 +730,7 @@ const OrdersPage = () => {
                 <TableCell>Requests (F/Fi/C/L)</TableCell>
                 <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Fulfilled (F/Fi/C/L)</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>Injection</TableCell>
                 <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Priority</TableCell>
                 <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Created</TableCell>
                 <TableCell>Actions</TableCell>
@@ -642,11 +739,11 @@ const OrdersPage = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center"><CircularProgress /></TableCell>
+                  <TableCell colSpan={9} align="center"><CircularProgress /></TableCell>
                 </TableRow>
               ) : orders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center">No orders found</TableCell>
+                  <TableCell colSpan={9} align="center">No orders found</TableCell>
                 </TableRow>
               ) : (
                 orders.map((order) => {
@@ -661,22 +758,34 @@ const OrdersPage = () => {
                         <TableCell>{`${order.requests?.ftd || 0}/${order.requests?.filler || 0}/${order.requests?.cold || 0}/${order.requests?.live || 0}`}</TableCell>
                         <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{`${order.fulfilled?.ftd || 0}/${order.fulfilled?.filler || 0}/${order.fulfilled?.cold || 0}/${order.fulfilled?.live || 0}`}</TableCell>
                         <TableCell><Chip label={order.status} color={getStatusColor(order.status)} size="small" /></TableCell>
+                        <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
+                          {order.injectionSettings?.enabled ? (
+                            <Chip
+                              label={order.injectionSettings.status || 'pending'}
+                              color={
+                                order.injectionSettings.status === 'completed' ? 'success' :
+                                  order.injectionSettings.status === 'in_progress' ? 'warning' :
+                                    order.injectionSettings.status === 'failed' ? 'error' : 'default'
+                              }
+                              size="small"
+                            />
+                          ) : (
+                            <Chip label="disabled" color="default" size="small" />
+                          )}
+                        </TableCell>
                         <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}><Chip label={order.priority} color={getPriorityColor(order.priority)} size="small" /></TableCell>
                         <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{new Date(order.createdAt).toLocaleDateString()}</TableCell>
                         <TableCell>
                           <IconButton size="small" onClick={() => handleViewOrder(order._id)} title="View Order"><ViewIcon fontSize="small" /></IconButton>
                           <IconButton size="small" onClick={() => handleExportLeads(order._id)} title="Export Leads as CSV"><DownloadIcon fontSize="small" /></IconButton>
-                          {order.leads && order.leads.length > 0 && (
-                            <IconButton size="small" onClick={() => handleOpenAssignClientDialog(order._id)} title="Assign Client Info to All Leads"><AssignmentIcon fontSize="small" /></IconButton>
-                          )}
-                          
+
                           {/* Injection Controls - only for admin/affiliate managers */}
                           {(user?.role === 'admin' || user?.role === 'affiliate_manager') && order.injectionSettings?.enabled && (
                             <>
                               {order.injectionSettings.status === 'pending' && (
-                                <IconButton 
-                                  size="small" 
-                                  onClick={() => handleStartInjection(order._id)} 
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleStartInjection(order._id)}
                                   title="Start Injection"
                                   disabled={isInjecting[order._id]}
                                   color="primary"
@@ -684,7 +793,7 @@ const OrdersPage = () => {
                                   {isInjecting[order._id] ? <CircularProgress size={16} /> : <InjectIcon fontSize="small" />}
                                 </IconButton>
                               )}
-                              
+
                               {order.injectionSettings.status === 'in_progress' && (
                                 <>
                                   <IconButton size="small" onClick={() => handlePauseInjection(order._id)} title="Pause Injection" color="warning">
@@ -695,31 +804,42 @@ const OrdersPage = () => {
                                   </IconButton>
                                 </>
                               )}
-                              
-                              {order.injectionSettings.status === 'paused' && (
+
+                              {order.injectionSettings.status === 'completed' && order.ftdHandling?.status === 'manual_fill_required' && (
                                 <>
-                                  <IconButton size="small" onClick={() => handleStartInjection(order._id)} title="Resume Injection" color="primary">
-                                    <InjectIcon fontSize="small" />
+                                  <IconButton size="small" onClick={() => handleOpenFTDInjection(order)} title="Manual FTD Injection" color="primary">
+                                    <SendIcon fontSize="small" />
                                   </IconButton>
-                                  <IconButton size="small" onClick={() => handleStopInjection(order._id)} title="Stop Injection" color="error">
-                                    <StopIcon fontSize="small" />
+                                  <IconButton size="small" onClick={() => handleSkipFTDs(order._id)} title="Skip FTDs" color="info">
+                                    <SkipNextIcon fontSize="small" />
                                   </IconButton>
                                 </>
                               )}
-                              
-                              {order.ftdHandling?.status === 'manual_fill_required' && order.injectionProgress?.ftdsPendingManualFill > 0 && (
-                                <IconButton 
-                                  size="small" 
-                                  onClick={() => handleSkipFTDs(order._id)} 
-                                  title="Skip FTDs - Fill Later"
-                                  color="secondary"
-                                >
-                                  <Typography variant="caption" sx={{ fontSize: '10px' }}>Skip FTDs</Typography>
-                                </IconButton>
-                              )}
                             </>
                           )}
-                          
+
+                          {/* Broker Assignment Controls - only for admin/affiliate managers */}
+                          {(user?.role === 'admin' || user?.role === 'affiliate_manager') && order.injectionProgress?.brokerAssignmentPending && (
+                            <>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleOpenBrokerAssignment(order._id)}
+                                title="Assign Client Brokers"
+                                color="secondary"
+                              >
+                                <AssignmentIcon fontSize="small" />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleSkipBrokerAssignment(order._id)}
+                                title="Skip Broker Assignment"
+                                color="default"
+                              >
+                                <SkipNextIcon fontSize="small" />
+                              </IconButton>
+                            </>
+                          )}
+
                           <IconButton size="small" onClick={() => toggleRowExpansion(order._id)} title={isExpanded ? "Collapse" : "Expand"}>
                             {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                           </IconButton>
@@ -727,7 +847,7 @@ const OrdersPage = () => {
                       </TableRow>
                       {/* Expanded Row with details */}
                       <TableRow>
-                        <TableCell sx={{ p: 0, borderBottom: 'none' }} colSpan={8}>
+                        <TableCell sx={{ p: 0, borderBottom: 'none' }} colSpan={9}>
                           <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                             <Box sx={{ p: 2, bgcolor: 'action.hover' }}>
                               <Typography variant="h6" gutterBottom>Order Details</Typography>
@@ -739,13 +859,13 @@ const OrdersPage = () => {
                                     <Typography variant="body2"><strong>Gender Filter:</strong> {expandedDetails.genderFilter || 'Any'}</Typography>
                                   </Grid>
                                   <Grid item xs={12} md={6}>
-                                      <Typography variant="body2"><strong>Assigned Leads:</strong> {expandedDetails.leads?.length || 0}</Typography>
-                                      {/* Information hidden on small screens now visible here */}
-                                      <Box sx={{ display: { sm: 'none' } }}>
-                                          <Typography variant="body2"><strong>Priority:</strong> {expandedDetails.priority}</Typography>
-                                          <Typography variant="body2"><strong>Created:</strong> {new Date(expandedDetails.createdAt).toLocaleString()}</Typography>
-                                          <Typography variant="body2"><strong>Fulfilled:</strong> {`${expandedDetails.fulfilled?.ftd || 0}/${expandedDetails.fulfilled?.filler || 0}/${expandedDetails.fulfilled?.cold || 0}/${expandedDetails.fulfilled?.live || 0}`}</Typography>
-                                      </Box>
+                                    <Typography variant="body2"><strong>Assigned Leads:</strong> {expandedDetails.leads?.length || 0}</Typography>
+                                    {/* Information hidden on small screens now visible here */}
+                                    <Box sx={{ display: { sm: 'none' } }}>
+                                      <Typography variant="body2"><strong>Priority:</strong> {expandedDetails.priority}</Typography>
+                                      <Typography variant="body2"><strong>Created:</strong> {new Date(expandedDetails.createdAt).toLocaleString()}</Typography>
+                                      <Typography variant="body2"><strong>Fulfilled:</strong> {`${expandedDetails.fulfilled?.ftd || 0}/${expandedDetails.fulfilled?.filler || 0}/${expandedDetails.fulfilled?.cold || 0}/${expandedDetails.fulfilled?.live || 0}`}</Typography>
+                                    </Box>
                                   </Grid>
                                   {expandedDetails.leads && expandedDetails.leads.length > 0 && (
                                     <Grid item xs={12}>
@@ -857,17 +977,17 @@ const OrdersPage = () => {
         <form onSubmit={handleSubmit(onSubmitOrder)}>
           <DialogContent>
             <Grid container spacing={2}>
-              <Grid item xs={6} sm={3}><Controller name="ftd" control={control} render={({ field }) => <TextField {...field} fullWidth label="FTD" type="number" error={!!errors.ftd} helperText={errors.ftd?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
-              <Grid item xs={6} sm={3}><Controller name="filler" control={control} render={({ field }) => <TextField {...field} fullWidth label="Filler" type="number" error={!!errors.filler} helperText={errors.filler?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
-              <Grid item xs={6} sm={3}><Controller name="cold" control={control} render={({ field }) => <TextField {...field} fullWidth label="Cold" type="number" error={!!errors.cold} helperText={errors.cold?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
-              <Grid item xs={6} sm={3}><Controller name="live" control={control} render={({ field }) => <TextField {...field} fullWidth label="Live" type="number" error={!!errors.live} helperText={errors.live?.message} inputProps={{ min: 0 }} size="small" />}/></Grid>
+              <Grid item xs={6} sm={3}><Controller name="ftd" control={control} render={({ field }) => <TextField {...field} fullWidth label="FTD" type="number" error={!!errors.ftd} helperText={errors.ftd?.message} inputProps={{ min: 0 }} size="small" />} /></Grid>
+              <Grid item xs={6} sm={3}><Controller name="filler" control={control} render={({ field }) => <TextField {...field} fullWidth label="Filler" type="number" error={!!errors.filler} helperText={errors.filler?.message} inputProps={{ min: 0 }} size="small" />} /></Grid>
+              <Grid item xs={6} sm={3}><Controller name="cold" control={control} render={({ field }) => <TextField {...field} fullWidth label="Cold" type="number" error={!!errors.cold} helperText={errors.cold?.message} inputProps={{ min: 0 }} size="small" />} /></Grid>
+              <Grid item xs={6} sm={3}><Controller name="live" control={control} render={({ field }) => <TextField {...field} fullWidth label="Live" type="number" error={!!errors.live} helperText={errors.live?.message} inputProps={{ min: 0 }} size="small" />} /></Grid>
               <Grid item xs={12} sm={6}>
                 <Controller name="priority" control={control} render={({ field }) => (
                   <FormControl fullWidth size="small" error={!!errors.priority}>
                     <InputLabel>Priority</InputLabel>
                     <Select {...field} label="Priority"><MenuItem value="low">Low</MenuItem><MenuItem value="medium">Medium</MenuItem><MenuItem value="high">High</MenuItem></Select>
                   </FormControl>
-                )}/>
+                )} />
               </Grid>
               <Grid item xs={12} sm={6}>
                 <Controller name="gender" control={control} render={({ field }) => (
@@ -875,7 +995,7 @@ const OrdersPage = () => {
                     <InputLabel>Gender (Optional)</InputLabel>
                     <Select {...field} label="Gender (Optional)"><MenuItem value="">All</MenuItem><MenuItem value="male">Male</MenuItem><MenuItem value="female">Female</MenuItem><MenuItem value="not_defined">Not Defined</MenuItem></Select>
                   </FormControl>
-                )}/>
+                )} />
               </Grid>
               <Grid item xs={12}>
                 <Controller name="country" control={control} render={({ field }) => (
@@ -904,10 +1024,56 @@ const OrdersPage = () => {
                       </Typography>
                     )}
                   </FormControl>
-                )}/>
+                )} />
               </Grid>
+
+              {/* Client Network Selection - Only show for affiliate managers */}
+              {user?.role === 'affiliate_manager' && (
+                <Grid item xs={12}>
+                  <Controller
+                    name="selectedClientNetwork"
+                    control={control}
+                    render={({ field }) => (
+                      <FormControl fullWidth size="small" error={!!errors.selectedClientNetwork}>
+                        <InputLabel>Client Network (Optional)</InputLabel>
+                        <Select
+                          {...field}
+                          label="Client Network (Optional)"
+                          value={field.value || ''}
+                          disabled={loadingClientNetworks}
+                        >
+                          <MenuItem value="">All Client Networks</MenuItem>
+                          {clientNetworks.map((network) => (
+                            <MenuItem key={network._id} value={network._id}>
+                              {network.name}
+                              {network.description && (
+                                <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                                  {network.description}
+                                </Typography>
+                              )}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                        {errors.selectedClientNetwork?.message && (
+                          <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+                            {errors.selectedClientNetwork.message}
+                          </Typography>
+                        )}
+                        {!errors.selectedClientNetwork?.message && (
+                          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
+                            {loadingClientNetworks
+                              ? 'Loading client networks...'
+                              : `${clientNetworks.length} client network(s) available`
+                            }
+                          </Typography>
+                        )}
+                      </FormControl>
+                    )}
+                  />
+                </Grid>
+              )}
               <Grid item xs={12}>
-                <Controller name="notes" control={control} render={({ field }) => <TextField {...field} fullWidth label="Notes" multiline rows={3} error={!!errors.notes} helperText={errors.notes?.message} size="small" />}/>
+                <Controller name="notes" control={control} render={({ field }) => <TextField {...field} fullWidth label="Notes" multiline rows={3} error={!!errors.notes} helperText={errors.notes?.message} size="small" />} />
               </Grid>
 
               {/* Injection Settings Section */}
@@ -1154,26 +1320,105 @@ const OrdersPage = () => {
             </Grid>
           )}
         </DialogContent>
-                  <DialogActions>
-            <Button onClick={() => setViewDialogOpen(false)}>Close</Button>
-            <Button
-              onClick={() => handleExportLeads(selectedOrder._id)}
-              startIcon={<DownloadIcon />}
-              variant="contained"
-              color="primary"
-            >
-              Export Leads CSV
-            </Button>
-          </DialogActions>
+        <DialogActions>
+          <Button onClick={() => setViewDialogOpen(false)}>Close</Button>
+          <Button
+            onClick={() => handleExportLeads(selectedOrder._id)}
+            startIcon={<DownloadIcon />}
+            variant="contained"
+            color="primary"
+          >
+            Export Leads CSV
+          </Button>
+        </DialogActions>
       </Dialog>
 
-      {/* Assign Client Info Dialog */}
-      <AssignClientInfoDialog
-        open={assignClientDialogOpen}
-        onClose={handleCloseAssignClientDialog}
-        onSubmit={handleAssignClientInfo}
-        isSubmitting={isAssigningClient}
-        orderData={selectedOrderForClient}
+
+
+      {/* Broker Assignment Dialog */}
+      <Dialog
+        open={brokerAssignmentDialog.open}
+        onClose={() => setBrokerAssignmentDialog({ open: false, orderId: null, leadsWithBrokers: [] })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Assign Client Brokers</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Assign client brokers to leads based on the final domain after injection.
+          </Typography>
+
+          {brokerAssignmentDialog.leadsWithBrokers.length === 0 ? (
+            <Typography variant="body1" color="text.secondary">
+              No leads require broker assignment.
+            </Typography>
+          ) : (
+            <Box sx={{ maxHeight: 400, overflowY: 'auto' }}>
+              {brokerAssignmentDialog.leadsWithBrokers.map((item) => (
+                <Card key={item.lead._id} sx={{ mb: 2, p: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    {item.lead.firstName} {item.lead.lastName} ({item.lead.newEmail})
+                  </Typography>
+
+                  {item.availableBrokers.length === 0 ? (
+                    <Typography variant="body2" color="error">
+                      No available brokers for this lead (already assigned to all available brokers)
+                    </Typography>
+                  ) : (
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>Client Broker</InputLabel>
+                          <Select
+                            value={brokerAssignments[item.lead._id]?.clientBroker || ''}
+                            onChange={(e) => handleBrokerAssignmentChange(item.lead._id, 'clientBroker', e.target.value)}
+                            label="Client Broker"
+                          >
+                            {item.availableBrokers.map((broker) => (
+                              <MenuItem key={broker} value={broker}>
+                                {broker}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label="Domain"
+                          value={brokerAssignments[item.lead._id]?.domain || ''}
+                          onChange={(e) => handleBrokerAssignmentChange(item.lead._id, 'domain', e.target.value)}
+                          placeholder="e.g., example.com"
+                        />
+                      </Grid>
+                    </Grid>
+                  )}
+                </Card>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBrokerAssignmentDialog({ open: false, orderId: null, leadsWithBrokers: [] })}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSubmitBrokerAssignments}
+            disabled={assigningBrokers || brokerAssignmentDialog.leadsWithBrokers.length === 0}
+          >
+            {assigningBrokers ? 'Assigning...' : 'Assign Brokers'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Manual FTD Injection Modal */}
+      <ManualFTDInjectionModal
+        open={ftdInjectionModal.open}
+        onClose={handleCloseFTDInjection}
+        order={ftdInjectionModal.order}
+        onSuccess={handleFTDInjectionSuccess}
       />
     </Box>
   );

@@ -26,6 +26,10 @@ const {
   getColdLeads,
   updateLeadType,
   bulkDeleteLeads,
+  wakeUpSleepingLeads,
+  assignClientBrokerToLead,
+  getLeadAssignmentHistory,
+  getClientBrokerAnalytics,
 } = require("../controllers/leads");
 
 const router = express.Router();
@@ -120,6 +124,22 @@ router.get(
   getLeadStats
 );
 
+// @route   GET /api/leads/client-broker-analytics
+// @desc    Get client broker assignment analytics
+// @access  Private (Admin, Affiliate Manager)
+router.get(
+  "/client-broker-analytics",
+  [
+    protect,
+    authorize("admin", "affiliate_manager"),
+    query("orderId")
+      .optional()
+      .isMongoId()
+      .withMessage("Invalid order ID format"),
+  ],
+  getClientBrokerAnalytics
+);
+
 // @route   GET /api/leads/:id
 // @desc    Get lead by ID
 // @access  Private (Admin or assigned agent)
@@ -160,6 +180,40 @@ router.put(
       .withMessage("Status must be active, contacted, converted, or inactive"),
   ],
   updateLeadStatus
+);
+
+// @route   PUT /api/leads/:id/assign-client-broker
+// @desc    Assign client broker to individual lead
+// @access  Private (Admin, Affiliate Manager)
+router.put(
+  "/:id/assign-client-broker",
+  [
+    protect,
+    authorize("admin", "affiliate_manager"),
+    body("clientBrokerId")
+      .isMongoId()
+      .withMessage("Valid client broker ID is required"),
+    body("client")
+      .optional()
+      .trim(),
+    body("intermediaryClientNetwork")
+      .optional()
+      .isMongoId()
+      .withMessage("Client network ID must be valid"),
+    body("domain")
+      .optional()
+      .trim(),
+  ],
+  assignClientBrokerToLead
+);
+
+// @route   GET /api/leads/:id/assignment-history
+// @desc    Get lead assignment history
+// @access  Private (Admin, Affiliate Manager)
+router.get(
+  "/:id/assignment-history",
+  [protect, authorize("admin", "affiliate_manager")],
+  getLeadAssignmentHistory
 );
 
 // @route   POST /api/leads/assign
@@ -304,6 +358,15 @@ router.post(
   "/:id/inject",
   [protect, authorize("admin", "affiliate_manager")],
   injectLead
+);
+
+// @route   POST /api/leads/wake-up
+// @desc    Wake up sleeping leads
+// @access  Private (Admin, Affiliate Manager)
+router.post(
+  "/wake-up",
+  [protect, authorize("admin", "affiliate_manager")],
+  wakeUpSleepingLeads
 );
 
 module.exports = router;
