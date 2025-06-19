@@ -18,6 +18,8 @@ const {
   assignClientBrokers,
   getLeadsPendingBrokerAssignment,
   skipBrokerAssignment,
+  getFTDLeadsForOrder,
+  manualFTDInjection,
 } = require("../controllers/orders");
 
 const router = express.Router();
@@ -238,5 +240,15 @@ router.get("/:id/pending-broker-assignment", [protect, isManager], getLeadsPendi
 // @desc    Skip broker assignment for leads in an order
 // @access  Private (Admin, Manager)
 router.post("/:id/skip-broker-assignment", [protect, isManager], skipBrokerAssignment);
+
+// @route   GET /api/orders/:id/ftd-leads
+// @desc    Get FTD leads for manual injection
+// @access  Private (Admin, Affiliate Manager)
+router.get("/:id/ftd-leads", [protect, isManager], getFTDLeadsForOrder);
+
+// @route   POST /api/orders/:id/manual-ftd-injection
+// @desc    Manual FTD injection
+// @access  Private (Admin, Affiliate Manager)
+router.post("/:id/manual-ftd-injection", [protect, isManager], manualFTDInjection);
 
 module.exports = router;
