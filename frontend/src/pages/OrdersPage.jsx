@@ -67,9 +67,6 @@ const orderSchema = yup.object({
   notes: yup.string(),
   country: yup.string().nullable(),
   gender: yup.string().oneOf(['', 'male', 'female', 'not_defined'], 'Invalid gender').nullable().default(''),
-  excludeClients: yup.array().of(yup.string()).default([]),
-  excludeBrokers: yup.array().of(yup.string()).default([]),
-  excludeNetworks: yup.array().of(yup.string()).default([]),
   // New injection fields
   enableInjection: yup.boolean().default(false),
   injectionMode: yup.string().oneOf(['manual', 'bulk', 'scheduled'], 'Invalid injection mode').default('manual'),
@@ -159,14 +156,10 @@ const OrdersPage = () => {
   // Injection states
   const [injectionStatus, setInjectionStatus] = useState({});
   const [isInjecting, setIsInjecting] = useState({});
-
-  // Exclusion options state
-  const [exclusionOptions, setExclusionOptions] = useState({
-    clients: [],
-    brokers: [],
-    networks: [],
-  });
-  const [loadingExclusionOptions, setLoadingExclusionOptions] = useState(false);
+  
+  // Client networks state
+  const [clientNetworks, setClientNetworks] = useState([]);
+  const [loadingClientNetworks, setLoadingClientNetworks] = useState(false);
 
   // Pagination and filtering
   const [page, setPage] = useState(0);
@@ -242,22 +235,24 @@ const OrdersPage = () => {
     }
   }, [notification.message]);
 
-  // Fetch exclusion options
-  const fetchExclusionOptions = useCallback(async () => {
-    setLoadingExclusionOptions(true);
+  // Fetch client networks for affiliate managers
+  const fetchClientNetworks = useCallback(async () => {
+    if (user?.role !== 'affiliate_manager') return;
+    
+    setLoadingClientNetworks(true);
     try {
-      const response = await api.get('/orders/exclusion-options');
-      setExclusionOptions(response.data.data);
+      const response = await api.get('/client-networks/my-networks');
+      setClientNetworks(response.data.data || []);
     } catch (err) {
-      console.error('Failed to fetch exclusion options:', err);
+      console.error('Failed to fetch client networks:', err);
       setNotification({
-        message: 'Failed to load exclusion options',
+        message: 'Failed to load client networks',
         severity: 'warning',
       });
     } finally {
-      setLoadingExclusionOptions(false);
+      setLoadingClientNetworks(false);
     }
-  }, []);
+  }, [user?.role]);
 
   const onSubmitOrder = useCallback(async (data) => {
     try {
@@ -273,9 +268,7 @@ const OrdersPage = () => {
         notes: data.notes,
         country: data.country || null,
         gender: data.gender || null,
-        excludeClients: data.excludeClients || [],
-        excludeBrokers: data.excludeBrokers || [],
-        excludeNetworks: data.excludeNetworks || [],
+        selectedClientNetwork: data.selectedClientNetwork || null,
         // Include injection settings
         injectionSettings: data.enableInjection ? {
           enabled: true,
@@ -469,8 +462,8 @@ const OrdersPage = () => {
   // Handle opening create dialog and fetching exclusion options
   const handleOpenCreateDialog = useCallback(() => {
     setCreateDialogOpen(true);
-    fetchExclusionOptions();
-  }, [fetchExclusionOptions]);
+    fetchClientNetworks();
+  }, [fetchClientNetworks]);
 
   // Injection handlers
   const handleStartInjection = useCallback(async (orderId) => {
@@ -1059,127 +1052,6 @@ const OrdersPage = () => {
                   )
                 )}
               />
-
-              {/* Exclusion Filters Section */}
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
-                  Exclusion Filters (Optional)
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Exclude leads that have been previously assigned to these destinations. This prevents sending the same lead to the same client/broker/network twice.
-                </Typography>
-              </Grid>
-
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="excludeClients"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl fullWidth size="small" error={!!errors.excludeClients}>
-                      <InputLabel>Exclude Clients</InputLabel>
-                      <Select
-                        {...field}
-                        multiple
-                        label="Exclude Clients"
-                        value={field.value || []}
-                        renderValue={(selected) => (
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {selected.map((value) => (
-                              <Chip key={value} label={value} size="small" />
-                            ))}
-                          </Box>
-                        )}
-                        disabled={loadingExclusionOptions}
-                      >
-                        {exclusionOptions.clients.map((client) => (
-                          <MenuItem key={client} value={client}>
-                            {client}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      {errors.excludeClients && (
-                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                          {errors.excludeClients.message}
-                        </Typography>
-                      )}
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="excludeBrokers"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl fullWidth size="small" error={!!errors.excludeBrokers}>
-                      <InputLabel>Exclude Brokers</InputLabel>
-                      <Select
-                        {...field}
-                        multiple
-                        label="Exclude Brokers"
-                        value={field.value || []}
-                        renderValue={(selected) => (
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {selected.map((value) => (
-                              <Chip key={value} label={value} size="small" />
-                            ))}
-                          </Box>
-                        )}
-                        disabled={loadingExclusionOptions}
-                      >
-                        {exclusionOptions.brokers.map((broker) => (
-                          <MenuItem key={broker} value={broker}>
-                            {broker}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      {errors.excludeBrokers && (
-                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                          {errors.excludeBrokers.message}
-                        </Typography>
-                      )}
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="excludeNetworks"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl fullWidth size="small" error={!!errors.excludeNetworks}>
-                      <InputLabel>Exclude Networks</InputLabel>
-                      <Select
-                        {...field}
-                        multiple
-                        label="Exclude Networks"
-                        value={field.value || []}
-                        renderValue={(selected) => (
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {selected.map((value) => (
-                              <Chip key={value} label={value} size="small" />
-                            ))}
-                          </Box>
-                        )}
-                        disabled={loadingExclusionOptions}
-                      >
-                        {exclusionOptions.networks.map((network) => (
-                          <MenuItem key={network} value={network}>
-                            {network}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      {errors.excludeNetworks && (
-                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                          {errors.excludeNetworks.message}
-                        </Typography>
-                      )}
-                    </FormControl>
-                  )}
-                />
-              </Grid>
             </Grid>
             {errors[''] && <Alert severity="error" sx={{ mt: 2 }}>{errors['']?.message}</Alert>}
           </DialogContent>
@@ -1211,38 +1083,6 @@ const OrdersPage = () => {
               <Grid item xs={12} sm={6}><Typography variant="subtitle2">Country Filter</Typography><Typography variant="body2">{selectedOrder.countryFilter || 'Any'}</Typography></Grid>
               <Grid item xs={12} sm={6}><Typography variant="subtitle2">Gender Filter</Typography><Typography variant="body2">{selectedOrder.genderFilter || 'Any'}</Typography></Grid>
 
-              {/* Show exclusion filters if any were applied */}
-              {(selectedOrder.excludeClients?.length > 0 || selectedOrder.excludeBrokers?.length > 0 || selectedOrder.excludeNetworks?.length > 0) && (
-                <Grid item xs={12}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>Exclusion Filters Applied</Typography>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    {selectedOrder.excludeClients?.length > 0 && (
-                      <Box>
-                        <Typography variant="body2" component="span" sx={{ fontWeight: 'medium' }}>Excluded Clients: </Typography>
-                        {selectedOrder.excludeClients.map((client, index) => (
-                          <Chip key={client} label={client} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
-                        ))}
-                      </Box>
-                    )}
-                    {selectedOrder.excludeBrokers?.length > 0 && (
-                      <Box>
-                        <Typography variant="body2" component="span" sx={{ fontWeight: 'medium' }}>Excluded Brokers: </Typography>
-                        {selectedOrder.excludeBrokers.map((broker, index) => (
-                          <Chip key={broker} label={broker} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
-                        ))}
-                      </Box>
-                    )}
-                    {selectedOrder.excludeNetworks?.length > 0 && (
-                      <Box>
-                        <Typography variant="body2" component="span" sx={{ fontWeight: 'medium' }}>Excluded Networks: </Typography>
-                        {selectedOrder.excludeNetworks.map((network, index) => (
-                          <Chip key={network} label={network} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
-                        ))}
-                      </Box>
-                    )}
-                  </Box>
-                </Grid>
-              )}
               <Grid item xs={12}><Typography variant="subtitle2">Notes</Typography><Typography variant="body2">{selectedOrder.notes || 'N/A'}</Typography></Grid>
               <Grid item xs={12}><Typography variant="subtitle2">Created</Typography><Typography variant="body2">{new Date(selectedOrder.createdAt).toLocaleString()}</Typography></Grid>
               <Grid item xs={12}>

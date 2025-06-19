@@ -12,10 +12,10 @@ finished, the affiliate manager or the admin is asked to skip ftd's and fill the
 should contain that information(if the lead injection was successful or not, and if the affiliate
 manager or the admin decides to skip the ftd's and fill them later or they are filled).
 
-Admin should have an option to add client networks and client brokers and assign them to
-specific affiliate manager. Affiliate manager sees these client networks and client brokers when
+Admin should have an option to add client networks and assign them to
+specific affiliate manager. Affiliate manager sees these client networks when
 making orders. Affiliate manager doesn't have an option to add new client networks, only to
-select them. He has an option to select a client broker or add a new one.
+select them. 
 
 Leads should have a history of assigned client networks and client brokers. If one lead is already
 assigned by affiliate manager or admin to client network he cannot be assigned to that specific

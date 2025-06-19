@@ -9,7 +9,6 @@ const {
   cancelOrder,
   getOrderStats,
   exportOrderLeads,
-  getExclusionOptions,
   assignClientInfoToOrderLeads,
   startOrderInjection,
   pauseOrderInjection,
@@ -65,18 +64,10 @@ router.post(
       .optional({ nullable: true })
       .isIn(["male", "female", "not_defined", null, ""])
       .withMessage("Gender must be male, female, not_defined, or empty"),
-    body("excludeClients")
+    body("selectedClientNetwork")
       .optional()
-      .isArray()
-      .withMessage("excludeClients must be an array"),
-    body("excludeBrokers")
-      .optional()
-      .isArray()
-      .withMessage("excludeBrokers must be an array"),
-    body("excludeNetworks")
-      .optional()
-      .isArray()
-      .withMessage("excludeNetworks must be an array"),
+      .isMongoId()
+      .withMessage("selectedClientNetwork must be a valid MongoDB ObjectId"),
   ],
   createOrder
 );
@@ -105,15 +96,6 @@ router.get(
 // @desc    Get order statistics
 // @access  Private (Admin, Manager)
 router.get("/stats", [protect, isManager], getOrderStats);
-
-// @route   GET /api/orders/exclusion-options
-// @desc    Get available exclusion options for orders
-// @access  Private (Admin, Manager with canCreateOrders permission)
-router.get(
-  "/exclusion-options",
-  [protect, isManager, hasPermission("canCreateOrders")],
-  getExclusionOptions
-);
 
 // @route   GET /api/orders/:id
 // @desc    Get a single order by ID

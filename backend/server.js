@@ -16,6 +16,7 @@ const leadRoutes = require("./routes/leads");
 const userRoutes = require("./routes/users");
 const landingRoutes = require("./routes/landing");
 const agentRoutes = require("./routes/agents");
+const clientNetworkRoutes = require("./routes/clientNetworks");
 
 // Import middleware
 const errorHandler = require("./middleware/errorHandler");
@@ -146,6 +147,7 @@ app.use("/api/leads", leadRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/landing", landingRoutes);
 app.use("/api/agents", agentRoutes);
+app.use("/api/client-networks", clientNetworkRoutes);
 
 // Import health check route
 const healthRoutes = require("./routes/health");

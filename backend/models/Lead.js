@@ -72,6 +72,33 @@ const leadSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Client network and broker history
+    clientNetworkHistory: [
+      {
+        clientNetwork: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        clientBroker: {
+          type: String,
+          trim: true,
+        },
+        assignedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        assignedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        orderId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Order",
+        },
+      },
+    ],
     gender: {
       type: String,
       enum: ["male", "female", "not_defined"],

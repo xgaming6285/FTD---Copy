@@ -418,10 +418,8 @@ exports.createOrder = async (req, res, next) => {
       notes,
       country,
       gender,
-      excludeClients = [],
-      excludeBrokers = [],
-      excludeNetworks = [],
-      injectionSettings = { enabled: false }
+      injectionSettings = { enabled: false },
+      selectedClientNetwork
     } = req.body;
 
     const { ftd = 0, filler = 0, cold = 0, live = 0 } = requests || {};
@@ -433,6 +431,23 @@ exports.createOrder = async (req, res, next) => {
       });
     }
 
+    // Validate client network access for affiliate managers
+    if (req.user.role === "affiliate_manager" && selectedClientNetwork) {
+      const ClientNetwork = require("../models/ClientNetwork");
+      const clientNetwork = await ClientNetwork.findOne({
+        _id: selectedClientNetwork,
+        assignedAffiliateManagers: req.user._id,
+        isActive: true,
+      });
+
+      if (!clientNetwork) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - client network not assigned to you or inactive",
+        });
+      }
+    }
+
     const pulledLeads = [];
     const fulfilled = { ftd: 0, filler: 0, cold: 0, live: 0 };
 
@@ -440,28 +455,12 @@ exports.createOrder = async (req, res, next) => {
     const countryFilter = country ? { country: new RegExp(country, "i") } : {};
     const genderFilter = gender ? { gender } : {};
 
-    // Build exclusion filters
-    const exclusionFilters = {};
-
-    if (excludeClients.length > 0) {
-      exclusionFilters.client = { $nin: excludeClients };
-    }
-
-    if (excludeBrokers.length > 0) {
-      exclusionFilters.clientBroker = { $nin: excludeBrokers };
-    }
-
-    if (excludeNetworks.length > 0) {
-      exclusionFilters.clientNetwork = { $nin: excludeNetworks };
-    }
-
     // Pull FTD leads
     if (ftd > 0) {
       const ftdLeads = await Lead.find({
         leadType: "ftd",
         ...countryFilter,
         ...genderFilter,
-        ...exclusionFilters,
       }).limit(ftd);
 
       if (ftdLeads.length > 0) {
@@ -502,7 +501,6 @@ exports.createOrder = async (req, res, next) => {
             leadType: "filler",
             ...countryFilter,
             ...genderFilter,
-            ...exclusionFilters,
           },
         },
         {
@@ -535,7 +533,6 @@ exports.createOrder = async (req, res, next) => {
         leadType: "cold",
         ...countryFilter,
         ...genderFilter,
-        ...exclusionFilters,
       }).limit(cold);
 
       if (coldLeads.length > 0) {
@@ -550,7 +547,6 @@ exports.createOrder = async (req, res, next) => {
         leadType: "live",
         ...countryFilter,
         ...genderFilter,
-        ...exclusionFilters,
       }).limit(live);
 
       if (liveLeads.length > 0) {
@@ -612,9 +608,7 @@ exports.createOrder = async (req, res, next) => {
       status: orderStatus,
       countryFilter: country || null,
       genderFilter: gender || null,
-      excludeClients: excludeClients.length > 0 ? excludeClients : undefined,
-      excludeBrokers: excludeBrokers.length > 0 ? excludeBrokers : undefined,
-      excludeNetworks: excludeNetworks.length > 0 ? excludeNetworks : undefined,
+      selectedClientNetwork: selectedClientNetwork || null,
       
       // Add injection settings
       injectionSettings: {
@@ -637,7 +631,7 @@ exports.createOrder = async (req, res, next) => {
       ...(orderStatus === "cancelled" && {
         cancelledAt: new Date(),
         cancellationReason:
-          "No leads available matching the requested criteria and exclusion filters",
+          "No leads available matching the requested criteria",
       }),
     });
 
@@ -716,18 +710,6 @@ exports.createOrder = async (req, res, next) => {
       },
     ]);
 
-    // Enhanced success message with exclusion details
-    let exclusionMessage = "";
-    if (excludeClients.length > 0) {
-      exclusionMessage += ` (excluded clients: ${excludeClients.join(", ")})`;
-    }
-    if (excludeBrokers.length > 0) {
-      exclusionMessage += ` (excluded brokers: ${excludeBrokers.join(", ")})`;
-    }
-    if (excludeNetworks.length > 0) {
-      exclusionMessage += ` (excluded networks: ${excludeNetworks.join(", ")})`;
-    }
-
     res.status(201).json({
       success: true,
       message: (() => {
@@ -754,7 +736,6 @@ exports.createOrder = async (req, res, next) => {
           }
         }
 
-        msg += exclusionMessage;
         return msg;
       })(),
       data: order,
@@ -1333,38 +1314,7 @@ exports.assignClientInfoToOrderLeads = async (req, res, next) => {
   }
 };
 
-// @desc    Get unique client, broker, and network values for exclusion filters
-// @route   GET /api/orders/exclusion-options
-// @access  Private (Admin, Manager with canCreateOrders permission)
-exports.getExclusionOptions = async (req, res, next) => {
-  try {
-    // Get unique client values
-    const clients = await Lead.distinct("client", {
-      client: { $ne: null, $ne: "" },
-    });
 
-    // Get unique broker values
-    const brokers = await Lead.distinct("clientBroker", {
-      clientBroker: { $ne: null, $ne: "" },
-    });
-
-    // Get unique network values
-    const networks = await Lead.distinct("clientNetwork", {
-      clientNetwork: { $ne: null, $ne: "" },
-    });
-
-    res.status(200).json({
-      success: true,
-      data: {
-        clients: clients.sort(),
-        brokers: brokers.sort(),
-        networks: networks.sort(),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
 
 // @desc    Start order injection
 // @route   POST /api/orders/:id/start-injection
