@@ -880,19 +880,19 @@ class LeadInjector:
                             print("SUCCESS: Form submitted successfully")
                             self._take_screenshot(page, "success")
                             
-                            # Wait 1 minute for the final redirect to complete
-                            print("INFO: Waiting 1 minute for final redirect...")
+                            # Wait 20 seconds for the final redirect to complete
+                            print("INFO: Waiting 20 seconds for final redirect...")
                             
                             # Take periodic screenshots during the wait to monitor redirects
-                            for i in range(6):  # 6 checks over 60 seconds (every 10 seconds)
-                                time.sleep(10)
+                            for i in range(4):  # 4 checks over 20 seconds (every 5 seconds)
+                                time.sleep(5)
                                 current_url = page.url
-                                print(f"INFO: URL after {(i+1)*10} seconds: {current_url}")
+                                print(f"INFO: URL after {(i+1)*5} seconds: {current_url}")
                                 self._take_screenshot(page, f"redirect_check_{i+1}")
                             
                             # Get the final domain after all redirects
                             final_url = page.url
-                            print(f"INFO: Final URL after 1 minute: {final_url}")
+                            print(f"INFO: Final URL after 20 seconds: {final_url}")
                             
                             # Extract domain from URL
                             parsed_url = urlparse(final_url)
