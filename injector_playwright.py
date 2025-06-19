@@ -703,37 +703,30 @@ class LeadInjector:
                 print("ERROR: No proxy configuration available. Cannot proceed without proxy.")
                 return False
             
+            # Get fingerprint configuration from lead data
+            fingerprint_config = lead_data.get('fingerprint', {})
+            if not fingerprint_config:
+                print("WARNING: No fingerprint configuration provided. Using default mobile settings.")
+                fingerprint_config = self._get_default_fingerprint()
+            
             with sync_playwright() as p:
                 # Launch browser with configuration
                 print("INFO: Launching browser...")
                 browser = p.chromium.launch(**self._setup_browser_config())
                 
-                # Create a new context with iPhone 14 Pro Max settings
-                iphone_14_pro_max = {
-                    'screen': {
-                        'width': 428,  # Standard iPhone width
-                        'height': 926  # Standard iPhone height
-                    },
-                    'viewport': {
-                        'width': 428,  # Adjusted to standard iPhone viewport width
-                        'height': 926  # Adjusted to show the form properly
-                    },
-                    'device_scale_factor': 3,
-                    'is_mobile': True,
-                    'has_touch': True,
-                    'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/605.1 NAVER(inapp; search; 2000; 12.12.50; 14PROMAX)',
-                }
+                # Create context with fingerprint settings
+                device_config = self._create_device_config_from_fingerprint(fingerprint_config)
+                print(f"INFO: Using device configuration: {fingerprint_config.get('deviceType', 'unknown')} - {fingerprint_config.get('deviceId', 'unknown')}")
                 
-                # Add additional context options to ensure proper rendering
                 context = browser.new_context(
-                    **iphone_14_pro_max,
+                    **device_config,
                     locale="en-US"
                 )
                 
                 # Create a new page
                 page = context.new_page()
                 
-                # Set content size to ensure proper rendering
+                # Set viewport meta tag for proper rendering
                 page.evaluate("""() => {
                     const meta = document.createElement('meta');
                     meta.name = 'viewport';
@@ -741,59 +734,47 @@ class LeadInjector:
                     document.head.appendChild(meta);
                 }""")
                 
+                # Apply fingerprint properties to the page
+                self._apply_fingerprint_to_page(page, fingerprint_config)
+                
                 # Navigate to target URL with retries
                 print(f"INFO: Navigating to target URL: {target_url}")
                 
                 success = False
                 for attempt in range(MAX_RETRIES):
                     try:
-                        page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+                        # Check proxy health before navigation
+                        if not self._check_proxy_health():
+                            print("ERROR: Proxy health check failed. Session terminated.")
+                            return False
+                        
+                        page.goto(target_url, wait_until="networkidle", timeout=30000)
                         success = True
                         break
                     except Exception as e:
-                        print(f"WARNING: Failed to navigate on attempt {attempt+1}/{MAX_RETRIES}: {str(e)}")
+                        if "proxy" in str(e).lower() or "timeout" in str(e).lower():
+                            print(f"WARNING: Proxy may have expired during navigation. Error: {str(e)}")
+                            if not self._handle_proxy_expiration():
+                                return False
+                        
+                        print(f"WARNING: Navigation attempt {attempt + 1} failed: {str(e)}")
                         if attempt < MAX_RETRIES - 1:
-                            print(f"Retrying in {RETRY_DELAY} seconds...")
+                            print(f"INFO: Retrying in {RETRY_DELAY} seconds...")
                             time.sleep(RETRY_DELAY)
+                        else:
+                            print("ERROR: All navigation attempts failed")
+                            return False
                 
                 if not success:
-                    print("ERROR: Failed to navigate to target URL after multiple attempts")
                     return False
                 
-                # Take a screenshot after page load
-                self._take_screenshot(page, "initial_page_load")
-                    
-                # Reduce break time for testing
-                print("INFO: Taking a short break...")
-                time.sleep(3)
-                print("\nINFO: Break finished, continuing with form filling...")
+                # Take initial screenshot
+                self._take_screenshot(page, "initial_load")
                 
-                # Check if the form is visible
-                form_visible = page.is_visible('form[id="landingForm"], form[data-testid="landingForm"]')
-                if not form_visible:
-                    print("WARNING: Form not immediately visible, trying to find it...")
-                    # Try to scroll to find the form
-                    page.evaluate("window.scrollTo(0, 0);")
-                    time.sleep(1)
-                    
-                    # Try to find the form by scrolling down
-                    for i in range(5):
-                        page.evaluate(f"window.scrollTo(0, {i * 200});")
-                        time.sleep(0.5)
-                        if page.is_visible('form[id="landingForm"], form[data-testid="landingForm"], #firstName'):
-                            print(f"INFO: Form found after scrolling {i * 200}px")
-                            form_visible = True
-                            break
-                    
-                    # Take another screenshot after scrolling
-                    self._take_screenshot(page, "after_scrolling")
-                    
-                    # If still not visible, try to adjust zoom
-                    if not form_visible:
-                        print("WARNING: Form still not visible, trying to adjust zoom...")
-                        page.evaluate("document.body.style.zoom = '80%'")
-                        time.sleep(1)
-                        self._take_screenshot(page, "after_zoom_adjustment")
+                # Verify proxy and device simulation
+                verification_result = self._verify_proxy_and_device(page)
+                if not verification_result:
+                    print("WARNING: Proxy and device verification failed, but continuing...")
                 
                 # Fill form fields with human-like behavior
                 print("INFO: Filling form fields...")
@@ -941,7 +922,11 @@ class LeadInjector:
                     return False
                 
         except Exception as e:
-            print(f"ERROR: Browser initialization failed - {str(e)}")
+            if "proxy" in str(e).lower():
+                print(f"ERROR: Proxy-related error during injection: {str(e)}")
+                self._handle_proxy_expiration()
+            else:
+                print(f"ERROR: Browser initialization failed - {str(e)}")
             traceback.print_exc()
             return False
         finally:
@@ -951,8 +936,141 @@ class LeadInjector:
                 except:
                     pass
 
+    def _get_default_fingerprint(self):
+        """Get default fingerprint configuration for fallback."""
+        return {
+            'deviceType': 'android',
+            'deviceId': 'default_android_device',
+            'screen': {'width': 428, 'height': 926, 'devicePixelRatio': 3},
+            'navigator': {
+                'userAgent': 'Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                'platform': 'Linux armv8l',
+                'language': 'en-US',
+                'languages': ['en-US', 'en'],
+                'vendor': 'Google Inc.',
+                'hardwareConcurrency': 8,
+                'deviceMemory': 8,
+                'maxTouchPoints': 10
+            },
+            'mobile': {'isMobile': True, 'isTablet': False}
+        }
+
+    def _create_device_config_from_fingerprint(self, fingerprint):
+        """Create Playwright device configuration from fingerprint data."""
+        screen = fingerprint.get('screen', {})
+        navigator = fingerprint.get('navigator', {})
+        mobile = fingerprint.get('mobile', {})
+        
+        return {
+            'screen': {
+                'width': screen.get('width', 428),
+                'height': screen.get('height', 926)
+            },
+            'viewport': {
+                'width': screen.get('availWidth', screen.get('width', 428)),
+                'height': screen.get('availHeight', screen.get('height', 926))
+            },
+            'device_scale_factor': screen.get('devicePixelRatio', 1),
+            'is_mobile': mobile.get('isMobile', False),
+            'has_touch': navigator.get('maxTouchPoints', 0) > 0,
+            'user_agent': navigator.get('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+        }
+
+    def _apply_fingerprint_to_page(self, page, fingerprint):
+        """Apply fingerprint properties to the page context."""
+        try:
+            # Override navigator properties
+            navigator = fingerprint.get('navigator', {})
+            screen = fingerprint.get('screen', {})
+            additional = fingerprint.get('additional', {})
+            
+            page.evaluate(f"""() => {{
+                // Override navigator properties
+                Object.defineProperty(navigator, 'platform', {{
+                    get: () => '{navigator.get('platform', 'Win32')}'
+                }});
+                Object.defineProperty(navigator, 'language', {{
+                    get: () => '{navigator.get('language', 'en-US')}'
+                }});
+                Object.defineProperty(navigator, 'languages', {{
+                    get: () => {navigator.get('languages', ['en-US', 'en'])}
+                }});
+                Object.defineProperty(navigator, 'vendor', {{
+                    get: () => '{navigator.get('vendor', '')}'
+                }});
+                Object.defineProperty(navigator, 'hardwareConcurrency', {{
+                    get: () => {navigator.get('hardwareConcurrency', 4)}
+                }});
+                Object.defineProperty(navigator, 'deviceMemory', {{
+                    get: () => {navigator.get('deviceMemory', 8)}
+                }});
+                Object.defineProperty(navigator, 'maxTouchPoints', {{
+                    get: () => {navigator.get('maxTouchPoints', 0)}
+                }});
+                
+                // Override screen properties
+                Object.defineProperty(screen, 'width', {{
+                    get: () => {screen.get('width', 1920)}
+                }});
+                Object.defineProperty(screen, 'height', {{
+                    get: () => {screen.get('height', 1080)}
+                }});
+                Object.defineProperty(screen, 'availWidth', {{
+                    get: () => {screen.get('availWidth', 1920)}
+                }});
+                Object.defineProperty(screen, 'availHeight', {{
+                    get: () => {screen.get('availHeight', 1040)}
+                }});
+                Object.defineProperty(screen, 'colorDepth', {{
+                    get: () => {screen.get('colorDepth', 24)}
+                }});
+                Object.defineProperty(screen, 'pixelDepth', {{
+                    get: () => {screen.get('pixelDepth', 24)}
+                }});
+                
+                // Apply additional properties
+                if (typeof Storage !== 'undefined') {{
+                    Object.defineProperty(navigator, 'cookieEnabled', {{
+                        get: () => {str(additional.get('cookieEnabled', True)).lower()}
+                    }});
+                }}
+            }});""")
+            
+            print(f"INFO: Applied fingerprint properties for device: {fingerprint.get('deviceId', 'unknown')}")
+            
+        except Exception as e:
+            print(f"WARNING: Failed to apply fingerprint properties: {str(e)}")
+
+    def _check_proxy_health(self):
+        """Check if the current proxy is still healthy."""
+        try:
+            if not self.proxy_config:
+                return False
+            
+            # Quick health check with a lightweight request
+            import requests
+            proxy_url = f"http://{self.proxy_config['username']}:{self.proxy_config['password']}@{self.proxy_config['host']}:{self.proxy_config['port']}"
+            proxies = {'http': proxy_url, 'https': proxy_url}
+            
+            response = requests.get('https://api.ipify.org', proxies=proxies, timeout=10)
+            return response.status_code == 200
+            
+        except Exception as e:
+            print(f"WARNING: Proxy health check failed: {str(e)}")
+            return False
+
+    def _handle_proxy_expiration(self):
+        """Handle proxy expiration during session."""
+        print("INFO: Proxy appears to have expired during session.")
+        print("INFO: Session terminated due to proxy expiration.")
+        print("INFO: Please restart the injection process to get a new proxy.")
+        
+        # Output specific message that the backend can parse
+        print("PROXY_EXPIRED: Session ended due to proxy expiration")
+        return False
+
 def get_proxy_config(country_name):
-    """Get proxy configuration from 922proxy API."""
+    """Get proxy configuration from 922proxy API (fallback method)."""
     try:
         # Get 2-letter ISO code for the country
         iso_code = COUNTRY_TO_ISO_CODE.get(country_name)
@@ -960,69 +1078,33 @@ def get_proxy_config(country_name):
             print(f"WARNING: No ISO code found for '{country_name}'. Defaulting to 'us'.")
             iso_code = "us"
 
-        print(f"INFO: Setting up proxy for country: {country_name} ({iso_code})")
+        print(f"INFO: Setting up fallback proxy for country: {country_name} ({iso_code})")
 
         # To get a new proxy for each lead, we generate a new random session ID.
-        # This should result in a new IP for each session from the proxy provider.
         session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
-        # The country is specified as part of the username.
         username = f"34998931-zone-custom-country-{iso_code}-sessid-{session_id}"
         print(f"INFO: Generated new session username: {username}")
 
-        # Proxy configuration for 922proxy - host is static, country is in username
+        # Proxy configuration for 922proxy
         proxy_info = {
             'username': username,
             'password': 'TPvBwkO8',
-            'host': 'us.922s5.net',  # Use static host; country is selected via username
+            'host': 'us.922s5.net',
             'port': 6300
         }
 
-        # Format proxy server string for requests.
-        # Playwright's Chromium does not support SOCKS5 with authentication, so we must use HTTP.
+        # Test the proxy
         proxy_url = f"http://{proxy_info['username']}:{proxy_info['password']}@{proxy_info['host']}:{proxy_info['port']}"
+        proxies = {'http': proxy_url, 'https': proxy_url}
         
-        proxies = {
-            'http': proxy_url,
-            'https': proxy_url
-        }
-        
-        print(f"INFO: Using proxy server: {proxy_info['host']}:{proxy_info['port']}")
-
-        # Try multiple IP checking services in case one fails
-        test_urls = [
-            'https://api.ipify.org',
-            'https://ip.oxylabs.io/location',
-            'https://api.myip.com'
-        ]
-
-        success = False
-        for test_url in test_urls:
-            try:
-                print(f"INFO: Testing with {test_url}")
-                response = requests.get(
-                    test_url,
-                    proxies=proxies,
-                    timeout=30,
-                    headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'application/json,text/plain,*/*'
-                    }
-                )
-                response.raise_for_status()
-                test_ip = response.text.strip()
-                print(f"INFO: Proxy test successful. Response: {test_ip}")
-                success = True
-                break
-            except requests.exceptions.RequestException as e:
-                print(f"WARNING: Test failed with {test_url}: {str(e)}")
-                continue
-
-        if not success:
-            print("ERROR: All proxy tests failed")
+        try:
+            response = requests.get('https://api.ipify.org', proxies=proxies, timeout=30)
+            response.raise_for_status()
+            print(f"INFO: Fallback proxy test successful: {response.text.strip()}")
+        except Exception as e:
+            print(f"WARNING: Fallback proxy test failed: {str(e)}")
             return None
 
-        # Return proxy configuration in the format expected by Playwright
-        # We use HTTP because Playwright's Chromium does not support SOCKS5 authentication.
         return {
             "server": f"http://{proxy_info['host']}:{proxy_info['port']}",
             "username": proxy_info['username'],
@@ -1030,8 +1112,7 @@ def get_proxy_config(country_name):
         }
 
     except Exception as e:
-        print(f"ERROR: An unexpected error occurred while setting up proxy: {str(e)}")
-        traceback.print_exc()
+        print(f"ERROR: An unexpected error occurred while setting up fallback proxy: {str(e)}")
         return None
 
 def main():
@@ -1041,29 +1122,28 @@ def main():
         sys.exit(1)
 
     try:
-        lead_data_str = sys.argv[1]
-        lead_data = json.loads(lead_data_str)
-        print(f"INFO: Processing lead data for {lead_data.get('email', 'unknown')}")
+        injection_data_str = sys.argv[1]
+        injection_data = json.loads(injection_data_str)
+        print(f"INFO: Processing injection data for lead {injection_data.get('leadId', 'unknown')}")
         
-        country_name = lead_data.get("country")
-        if not country_name:
-            print("WARNING: Country not found in lead data, using default.")
-            country_name = "United States"
+        # Extract proxy configuration from injection data
+        proxy_config = injection_data.get('proxy')
+        if not proxy_config:
+            print("WARNING: No proxy configuration provided. Attempting to get fallback proxy.")
+            country_name = injection_data.get("country", "United States")
+            proxy_config = get_proxy_config(country_name)
             
-        # Try to get a proxy. If it fails, exit, as it's required.
-        proxy_config = get_proxy_config(country_name)
         if not proxy_config:
             print("FATAL: Could not obtain proxy configuration. Cannot proceed.")
             sys.exit(1)
 
-        # Get target URL from lead data
-        target_url = "https://ftd-copy.vercel.app/landing"
-            
+        # Get target URL
+        target_url = injection_data.get('targetUrl', "https://ftd-copy.vercel.app/landing")
         print(f"INFO: Target URL: {target_url}")
 
-        # Initialize and run injector
+        # Initialize and run injector with proxy configuration
         injector = LeadInjector(proxy_config)
-        success = injector.inject_lead(lead_data, target_url)
+        success = injector.inject_lead(injection_data, target_url)
 
         if success:
             print("INFO: Lead injection completed successfully")

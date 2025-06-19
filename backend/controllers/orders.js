@@ -2080,30 +2080,32 @@ const injectSingleLead = async (lead, orderId) => {
       }
     }
 
-    // Prepare enhanced injection data
-    const enhancedInjectionData = {
-      leadData: {
-        leadId: lead._id.toString(),
-        firstName: lead.firstName,
-        lastName: lead.lastName,
-        email: lead.newEmail,
-        phone: lead.newPhone,
-        country: lead.country,
-        country_code: lead.prefix || "1",
-      },
-      proxyConfig: proxyConfig,
-      fingerprintConfig: fingerprintConfig,
+    // Prepare injection data with fingerprint and proxy configuration
+    const injectionData = {
+      // Lead basic data
+      leadId: lead._id.toString(),
+      firstName: lead.firstName,
+      lastName: lead.lastName,
+      email: lead.newEmail,
+      phone: lead.newPhone,
+      country: lead.country,
+      country_code: lead.prefix || "1",
+      // Fingerprint configuration
+      fingerprint: fingerprintConfig,
+      // Proxy configuration
+      proxy: proxyConfig,
+      // Target URL
       targetUrl: "https://ftd-copy.vercel.app/landing",
     };
 
     const scriptPath = path.resolve(
-      path.join(__dirname, "..", "..", "enhanced_injector_playwright.py")
+      path.join(__dirname, "..", "..", "injector_playwright.py")
     );
 
     console.log(`[DEBUG] Script path: ${scriptPath}`);
     console.log(
-      `[DEBUG] Enhanced injection data: ${JSON.stringify(
-        enhancedInjectionData,
+      `[DEBUG] Injection data: ${JSON.stringify(
+        injectionData,
         null,
         2
       )}`
@@ -2113,7 +2115,7 @@ const injectSingleLead = async (lead, orderId) => {
     return new Promise((resolve, reject) => {
       const pythonProcess = spawn(
         "python",
-        [scriptPath, JSON.stringify(enhancedInjectionData)],
+        [scriptPath, JSON.stringify(injectionData)],
         {
           cwd: path.resolve(path.join(__dirname, "..", "..")), // Set working directory to project root
         }
@@ -2126,6 +2128,21 @@ const injectSingleLead = async (lead, orderId) => {
         const output = data.toString();
         console.log(`[PYTHON STDOUT] ${output}`);
         stdoutData += output;
+        
+        // Check for proxy expiration messages
+        if (output.includes("PROXY_EXPIRED:")) {
+          console.log(`[WARNING] Proxy expired during injection for lead ${lead._id}`);
+          // Mark the proxy assignment as expired
+          if (lead.proxyAssignments && lead.proxyAssignments.length > 0) {
+            const activeAssignment = lead.proxyAssignments.find(
+              assignment => assignment.status === 'active' && assignment.orderId.toString() === orderId.toString()
+            );
+            if (activeAssignment) {
+              activeAssignment.status = 'expired';
+              activeAssignment.completedAt = new Date();
+            }
+          }
+        }
       });
 
       pythonProcess.stderr.on("data", (data) => {

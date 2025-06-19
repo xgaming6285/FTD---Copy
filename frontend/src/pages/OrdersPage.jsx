@@ -69,8 +69,9 @@ const orderSchema = yup.object({
   notes: yup.string(),
   country: yup.string().nullable(),
   gender: yup.string().oneOf(['', 'male', 'female', 'not_defined'], 'Invalid gender').nullable().default(''),
-  // Injection fields - injection is always enabled
-  injectionMode: yup.string().oneOf(['bulk', 'scheduled'], 'Invalid injection mode').default('bulk'),
+  // Injection fields
+  enableInjection: yup.boolean().default(false),
+  injectionMode: yup.string().oneOf(['manual', 'bulk', 'scheduled'], 'Invalid injection mode').default('manual'),
   injectionStartTime: yup.string().when('injectionMode', {
     is: 'scheduled',
     then: schema => schema.required('Start time is required for scheduled injection'),
@@ -81,8 +82,52 @@ const orderSchema = yup.object({
     then: schema => schema.required('End time is required for scheduled injection'),
     otherwise: schema => schema
   }),
+  injectFiller: yup.boolean().default(true),
+  injectCold: yup.boolean().default(true),
+  injectLive: yup.boolean().default(true),
+  // Device configuration fields
+  deviceSelectionMode: yup.string().oneOf(['random', 'bulk', 'ratio', 'individual'], 'Invalid device selection mode').default('random'),
+  bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac', 'linux'], 'Invalid device type').when('deviceSelectionMode', {
+    is: 'bulk',
+    then: schema => schema.required('Device type is required for bulk mode'),
+    otherwise: schema => schema
+  }),
+  deviceRatio: yup.object({
+    windows: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+    android: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+    ios: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+    mac: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+    linux: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+  }),
+  availableDeviceTypes: yup.object({
+    windows: yup.boolean().default(true),
+    android: yup.boolean().default(true),
+    ios: yup.boolean().default(true),
+    mac: yup.boolean().default(true),
+    linux: yup.boolean().default(true),
+  }),
+  // Proxy configuration fields
+  ftdProxySharing: yup.boolean().default(true),
+  maxFTDsPerProxy: yup.number().min(1, 'Must be at least 1').max(10, 'Must be 10 or less').integer('Must be a whole number').default(3),
+  proxyExpireHours: yup.number().min(1, 'Must be at least 1 hour').max(168, 'Must be 168 hours or less').integer('Must be a whole number').default(24),
+  shareByCountry: yup.boolean().default(true),
 }).test('at-least-one', 'At least one lead type must be requested', (value) => {
   return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
+}).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
+  if (value.enableInjection) {
+    return value.injectFiller || value.injectCold || value.injectLive;
+  }
+  return true;
+}).test('device-ratio', 'At least one device ratio must be greater than 0 for ratio mode', (value) => {
+  if (value.deviceSelectionMode === 'ratio') {
+    return Object.values(value.deviceRatio || {}).some(ratio => ratio > 0);
+  }
+  return true;
+}).test('available-devices', 'At least one device type must be selected for random mode', (value) => {
+  if (value.deviceSelectionMode === 'random') {
+    return Object.values(value.availableDeviceTypes || {}).some(enabled => enabled);
+  }
+  return true;
 });
 
 // Helper functions for status/priority colors
@@ -277,8 +322,8 @@ const OrdersPage = () => {
         country: data.country || null,
         gender: data.gender || null,
         selectedClientNetwork: data.selectedClientNetwork || undefined,
-        // Include injection settings - always enabled for all lead types
-        injectionSettings: {
+        // Include injection settings
+        injectionSettings: data.enableInjection ? {
           enabled: true,
           mode: data.injectionMode,
           scheduledTime: data.injectionMode === 'scheduled' ? {
@@ -286,10 +331,35 @@ const OrdersPage = () => {
             endTime: data.injectionEndTime
           } : undefined,
           includeTypes: {
-            filler: true,
-            cold: true,
-            live: true
+            filler: data.injectFiller,
+            cold: data.injectCold,
+            live: data.injectLive
+          },
+          // Device configuration
+          deviceConfig: {
+            selectionMode: data.deviceSelectionMode,
+            bulkDeviceType: data.deviceSelectionMode === 'bulk' ? data.bulkDeviceType : null,
+            deviceRatio: data.deviceSelectionMode === 'ratio' ? data.deviceRatio : {
+              windows: 0, android: 0, ios: 0, mac: 0, linux: 0
+            },
+            availableDeviceTypes: data.deviceSelectionMode === 'random' ? 
+              Object.keys(data.availableDeviceTypes).filter(key => data.availableDeviceTypes[key]) : 
+              ['windows', 'android', 'ios', 'mac', 'linux']
+          },
+          // Proxy configuration
+          proxyConfig: {
+            ftdProxySharing: {
+              enabled: data.ftdProxySharing,
+              maxFTDsPerProxy: data.maxFTDsPerProxy,
+              shareByCountry: data.shareByCountry
+            },
+            proxyExpiration: {
+              autoExpireHours: data.proxyExpireHours,
+              healthCheckInterval: 300000 // 5 minutes
+            }
           }
+        } : {
+          enabled: false
         }
       };
 
@@ -1140,6 +1210,337 @@ const OrdersPage = () => {
                   )
                 )}
               />
+
+              {/* Lead types to inject */}
+              <Grid item xs={12}>
+                <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
+                  Lead Types to Inject (FTDs are always manual):
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                  <Controller
+                    name="injectFiller"
+                    control={control}
+                    render={({ field }) => (
+                      <FormControlLabel
+                        control={<Checkbox {...field} checked={field.value} />}
+                        label="Filler Leads"
+                      />
+                    )}
+                  />
+                  <Controller
+                    name="injectCold"
+                    control={control}
+                    render={({ field }) => (
+                      <FormControlLabel
+                        control={<Checkbox {...field} checked={field.value} />}
+                        label="Cold Leads"
+                      />
+                    )}
+                  />
+                  <Controller
+                    name="injectLive"
+                    control={control}
+                    render={({ field }) => (
+                      <FormControlLabel
+                        control={<Checkbox {...field} checked={field.value} />}
+                        label="Live Leads"
+                      />
+                    )}
+                  />
+                </Box>
+              </Grid>
+
+              {/* Device Configuration Section */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                  Device Configuration
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Configure device types for lead injection. Each lead gets a unique fingerprint for the assigned device type.
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="deviceSelectionMode"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Device Selection Mode</InputLabel>
+                      <Select {...field} label="Device Selection Mode">
+                        <MenuItem value="random">Random Assignment</MenuItem>
+                        <MenuItem value="bulk">Bulk Assignment (Same Device)</MenuItem>
+                        <MenuItem value="ratio">Ratio-based Distribution</MenuItem>
+                        <MenuItem value="individual">Individual Assignment</MenuItem>
+                      </Select>
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+
+              {/* Bulk Device Type Selection */}
+              <Controller
+                name="deviceSelectionMode"
+                control={control}
+                render={({ field }) => (
+                  field.value === 'bulk' && (
+                    <Grid item xs={12} sm={6}>
+                      <Controller
+                        name="bulkDeviceType"
+                        control={control}
+                        render={({ field: deviceField }) => (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Device Type</InputLabel>
+                            <Select {...deviceField} label="Device Type">
+                              <MenuItem value="windows">Windows Desktop</MenuItem>
+                              <MenuItem value="android">Android Mobile</MenuItem>
+                              <MenuItem value="ios">iPhone/iPad</MenuItem>
+                              <MenuItem value="mac">Mac Desktop</MenuItem>
+                              <MenuItem value="linux">Linux Desktop</MenuItem>
+                            </Select>
+                          </FormControl>
+                        )}
+                      />
+                    </Grid>
+                  )
+                )}
+              />
+
+              {/* Ratio-based Device Distribution */}
+              <Controller
+                name="deviceSelectionMode"
+                control={control}
+                render={({ field }) => (
+                  field.value === 'ratio' && (
+                    <>
+                      <Grid item xs={12}>
+                        <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
+                          Device Distribution Ratios (0-10 scale):
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={2.4}>
+                        <Controller
+                          name="deviceRatio.windows"
+                          control={control}
+                          render={({ field: ratioField }) => (
+                            <TextField
+                              {...ratioField}
+                              fullWidth
+                              label="Windows"
+                              type="number"
+                              inputProps={{ min: 0, max: 10, step: 1 }}
+                              size="small"
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={2.4}>
+                        <Controller
+                          name="deviceRatio.android"
+                          control={control}
+                          render={({ field: ratioField }) => (
+                            <TextField
+                              {...ratioField}
+                              fullWidth
+                              label="Android"
+                              type="number"
+                              inputProps={{ min: 0, max: 10, step: 1 }}
+                              size="small"
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={2.4}>
+                        <Controller
+                          name="deviceRatio.ios"
+                          control={control}
+                          render={({ field: ratioField }) => (
+                            <TextField
+                              {...ratioField}
+                              fullWidth
+                              label="iOS"
+                              type="number"
+                              inputProps={{ min: 0, max: 10, step: 1 }}
+                              size="small"
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={2.4}>
+                        <Controller
+                          name="deviceRatio.mac"
+                          control={control}
+                          render={({ field: ratioField }) => (
+                            <TextField
+                              {...ratioField}
+                              fullWidth
+                              label="Mac"
+                              type="number"
+                              inputProps={{ min: 0, max: 10, step: 1 }}
+                              size="small"
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={2.4}>
+                        <Controller
+                          name="deviceRatio.linux"
+                          control={control}
+                          render={({ field: ratioField }) => (
+                            <TextField
+                              {...ratioField}
+                              fullWidth
+                              label="Linux"
+                              type="number"
+                              inputProps={{ min: 0, max: 10, step: 1 }}
+                              size="small"
+                            />
+                          )}
+                        />
+                      </Grid>
+                    </>
+                  )
+                )}
+              />
+
+              {/* Random Device Types Selection */}
+              <Controller
+                name="deviceSelectionMode"
+                control={control}
+                render={({ field }) => (
+                  field.value === 'random' && (
+                    <Grid item xs={12}>
+                      <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
+                        Available Device Types for Random Selection:
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                        <Controller
+                          name="availableDeviceTypes.windows"
+                          control={control}
+                          render={({ field: deviceField }) => (
+                            <FormControlLabel
+                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              label="Windows"
+                            />
+                          )}
+                        />
+                        <Controller
+                          name="availableDeviceTypes.android"
+                          control={control}
+                          render={({ field: deviceField }) => (
+                            <FormControlLabel
+                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              label="Android"
+                            />
+                          )}
+                        />
+                        <Controller
+                          name="availableDeviceTypes.ios"
+                          control={control}
+                          render={({ field: deviceField }) => (
+                            <FormControlLabel
+                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              label="iOS"
+                            />
+                          )}
+                        />
+                        <Controller
+                          name="availableDeviceTypes.mac"
+                          control={control}
+                          render={({ field: deviceField }) => (
+                            <FormControlLabel
+                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              label="Mac"
+                            />
+                          )}
+                        />
+                        <Controller
+                          name="availableDeviceTypes.linux"
+                          control={control}
+                          render={({ field: deviceField }) => (
+                            <FormControlLabel
+                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              label="Linux"
+                            />
+                          )}
+                        />
+                      </Box>
+                    </Grid>
+                  )
+                )}
+              />
+
+              {/* Proxy Configuration Section */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                  Proxy Configuration
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Configure proxy sharing and expiration settings for lead injection.
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="ftdProxySharing"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControlLabel
+                      control={<Checkbox {...field} checked={field.value} />}
+                      label="Enable FTD Proxy Sharing"
+                    />
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="maxFTDsPerProxy"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Max FTDs per Proxy"
+                      type="number"
+                      inputProps={{ min: 1, max: 10, step: 1 }}
+                      size="small"
+                      helperText="Maximum FTDs that can share one proxy"
+                    />
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="proxyExpireHours"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Proxy Auto-Expire (Hours)"
+                      type="number"
+                      inputProps={{ min: 1, max: 168, step: 1 }}
+                      size="small"
+                      helperText="Hours after which proxy auto-expires"
+                    />
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="shareByCountry"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControlLabel
+                      control={<Checkbox {...field} checked={field.value} />}
+                      label="Share Proxies by Country"
+                    />
+                  )}
+                />
+              </Grid>
             </Grid>
             {errors[''] && <Alert severity="error" sx={{ mt: 2 }}>{errors['']?.message}</Alert>}
           </DialogContent>
