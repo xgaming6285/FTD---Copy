@@ -1264,6 +1264,16 @@ exports.startOrderInjection = async (req, res, next) => {
       });
     }
 
+    // Calculate total leads to inject if not already set
+    if (order.injectionProgress.totalToInject === 0) {
+      const Lead = require("../models/Lead");
+      const leadsToInject = await Lead.find({
+        _id: { $in: order.leads },
+        leadType: { $in: getInjectableLeadTypes(order.injectionSettings.includeTypes) }
+      });
+      order.injectionProgress.totalToInject = leadsToInject.length;
+    }
+
     // Update injection status
     order.injectionSettings.status = "in_progress";
     order.injectionProgress.lastInjectionAt = new Date();
@@ -1630,21 +1640,15 @@ const injectSingleLead = async (lead, orderId) => {
       return true;
     }
 
-    // Check available client brokers for this lead
-    const availableBrokers = await getAvailableClientBrokers(lead, order.selectedClientNetwork);
-
-    console.log(`[DEBUG] Available brokers for lead ${lead._id}: ${availableBrokers.length} brokers`);
-    console.log(`[DEBUG] Broker list: ${JSON.stringify(availableBrokers)}`);
-
-    if (availableBrokers.length === 0) {
-      const networkName = order.selectedClientNetwork ? order.selectedClientNetwork.name : 'any network';
-      console.log(`No available client brokers for lead ${lead._id} in ${networkName}. Putting lead to sleep.`);
-
-      lead.putToSleep(`No available client brokers for injection in ${networkName}`);
-      await lead.save();
-      await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed
-      return false;
+    // Wake up the lead if it's sleeping (since we'll create brokers automatically now)
+    if (lead.brokerAvailabilityStatus === "sleep") {
+      console.log(`[DEBUG] Waking up sleeping lead ${lead._id} for auto-broker assignment`);
+      lead.wakeUp();
+      await lead.save(); // Save the wake-up status
     }
+
+    // Note: We no longer check for available brokers before injection
+    // Instead, we'll create client brokers automatically based on final redirect domain
 
     const leadData = {
       firstName: lead.firstName,
@@ -1691,6 +1695,14 @@ const injectSingleLead = async (lead, orderId) => {
         if (code === 0) {
           console.log(`Successfully injected lead ${lead._id} for order ${orderId}`);
 
+          // Parse final domain from stdout
+          let finalDomain = null;
+          const domainMatch = stdoutData.match(/FINAL_DOMAIN:(.+)/);
+          if (domainMatch) {
+            finalDomain = domainMatch[1].trim();
+            console.log(`[DEBUG] Extracted final domain: ${finalDomain}`);
+          }
+
           // Add client network assignment to lead history if available
           if (order.selectedClientNetwork) {
             try {
@@ -1705,10 +1717,30 @@ const injectSingleLead = async (lead, orderId) => {
             }
           }
 
-          // Mark order as needing broker assignment
-          await Order.findByIdAndUpdate(orderId, {
-            'injectionProgress.brokerAssignmentPending': true
-          });
+          // Automatically assign client broker based on final domain
+          if (finalDomain) {
+            try {
+              await assignClientBrokerByDomain(lead, finalDomain, order.requester, orderId);
+              console.log(`[DEBUG] Successfully assigned client broker for domain: ${finalDomain}`);
+
+              // Update broker assignment count
+              await Order.findByIdAndUpdate(orderId, {
+                '$inc': { 'injectionProgress.brokersAssigned': 1 }
+              });
+            } catch (error) {
+              console.error(`[ERROR] Failed to assign client broker for domain ${finalDomain}:`, error);
+              // Mark order as needing manual broker assignment if auto-assignment fails
+              await Order.findByIdAndUpdate(orderId, {
+                'injectionProgress.brokerAssignmentPending': true
+              });
+            }
+          } else {
+            console.warn(`[WARN] No final domain found in output, marking for manual broker assignment`);
+            // Mark order as needing broker assignment
+            await Order.findByIdAndUpdate(orderId, {
+              'injectionProgress.brokerAssignmentPending': true
+            });
+          }
 
           await updateOrderInjectionProgress(orderId, 0, 1); // Add 1 successful injection
           resolve(true);
@@ -1743,18 +1775,89 @@ const getAvailableClientBrokers = async (lead, clientNetwork) => {
     // Filter out brokers this lead has already been assigned to
     const assignedBrokerIds = lead.getAssignedClientBrokers();
     console.log(`[DEBUG] Lead already assigned to broker IDs: ${JSON.stringify(assignedBrokerIds)}`);
-    
+
     // Filter out brokers that the lead is already assigned to
-    const availableBrokers = allBrokers.filter(broker => 
+    const availableBrokers = allBrokers.filter(broker =>
       !assignedBrokerIds.includes(broker._id.toString())
     );
-    
+
     const availableBrokerDomains = availableBrokers.map(broker => broker.domain || broker.name);
     console.log(`[DEBUG] Available brokers after filtering: ${availableBrokerDomains.length}`);
     return availableBrokerDomains;
   } catch (error) {
     console.error('Error getting available client brokers:', error);
     return [];
+  }
+};
+
+// Helper function to assign client broker by domain
+const assignClientBrokerByDomain = async (lead, domain, assignedBy, orderId) => {
+  try {
+    const ClientBroker = require("../models/ClientBroker");
+
+    // First, try to find an existing client broker with this domain
+    let clientBroker = await ClientBroker.findOne({
+      domain: domain,
+      isActive: true
+    });
+
+    // If no broker exists with this domain, create a new one
+    if (!clientBroker) {
+      console.log(`[DEBUG] Creating new client broker for domain: ${domain}`);
+
+      clientBroker = new ClientBroker({
+        name: domain, // Use domain as the name
+        domain: domain,
+        isActive: true,
+        description: `Auto-created from injection redirect to ${domain}`,
+        createdBy: assignedBy, // Use the assignedBy parameter as createdBy
+        createdAt: new Date()
+      });
+
+      await clientBroker.save();
+      console.log(`[DEBUG] Created new client broker with ID: ${clientBroker._id}`);
+    } else {
+      console.log(`[DEBUG] Found existing client broker for domain: ${domain} (ID: ${clientBroker._id})`);
+    }
+
+    // Check if lead is already assigned to this broker
+    if (lead.isAssignedToClientBroker(clientBroker._id)) {
+      console.log(`[DEBUG] Lead ${lead._id} is already assigned to broker ${clientBroker._id}`);
+      return;
+    }
+
+    // Assign the client broker to the lead
+    lead.assignClientBroker(
+      clientBroker._id,
+      assignedBy,
+      orderId,
+      null, // intermediaryClientNetwork - not needed for direct assignment
+      domain
+    );
+
+    // Update injection status to successful with domain
+    // Find the most recent assignment for this order and update it
+    const recentAssignment = lead.clientBrokerHistory
+      .filter(history => history.orderId && history.orderId.toString() === orderId.toString())
+      .pop(); // Get the most recent one
+
+    if (recentAssignment) {
+      recentAssignment.injectionStatus = "successful";
+      recentAssignment.domain = domain;
+    }
+
+    // Update the client broker's assigned leads
+    clientBroker.assignLead(lead._id);
+
+    // Save both documents
+    await Promise.all([lead.save(), clientBroker.save()]);
+
+    console.log(`[DEBUG] Successfully assigned client broker ${clientBroker.name} (${domain}) to lead ${lead._id}`);
+
+    return clientBroker;
+  } catch (error) {
+    console.error(`[ERROR] Failed to assign client broker by domain ${domain}:`, error);
+    throw error;
   }
 };
 
@@ -1780,6 +1883,20 @@ const updateOrderInjectionProgress = async (orderId, failedCount = 0, successCou
         'injectionProgress.completedAt': new Date()
       });
       console.log(`Injection completed for order ${orderId}`);
+
+      // Check if all successful injections have been assigned brokers
+      const brokersAssigned = order.injectionProgress.brokersAssigned || 0;
+      const successfulInjections = order.injectionProgress.successfulInjections || 0;
+
+      if (brokersAssigned >= successfulInjections && !order.injectionProgress.brokerAssignmentPending) {
+        // All brokers have been automatically assigned
+        await Order.findByIdAndUpdate(orderId, {
+          'clientBrokerAssignment.status': 'completed',
+          'clientBrokerAssignment.assignedAt': new Date(),
+          'clientBrokerAssignment.notes': 'Auto-assigned based on injection redirect domains'
+        });
+        console.log(`Client broker assignment completed automatically for order ${orderId}`);
+      }
     }
   } catch (error) {
     console.error(`Error updating injection progress for order ${orderId}:`, error);
@@ -1787,12 +1904,28 @@ const updateOrderInjectionProgress = async (orderId, failedCount = 0, successCou
 };
 
 const scheduleRandomInjections = (leads, order) => {
-  // Parse start and end times
-  const [startHour, startMinute] = order.injectionSettings.scheduledTime.startTime.split(':').map(Number);
-  const [endHour, endMinute] = order.injectionSettings.scheduledTime.endTime.split(':').map(Number);
+  // Parse start and end times - handle both ISO8601 and HH:MM formats
+  let startTimeMs, endTimeMs;
 
-  const startTimeMs = (startHour * 60 + startMinute) * 60 * 1000;
-  const endTimeMs = (endHour * 60 + endMinute) * 60 * 1000;
+  if (order.injectionSettings.scheduledTime.startTime.includes(':') &&
+    order.injectionSettings.scheduledTime.startTime.length <= 5) {
+    // HH:MM format
+    const [startHour, startMinute] = order.injectionSettings.scheduledTime.startTime.split(':').map(Number);
+    const [endHour, endMinute] = order.injectionSettings.scheduledTime.endTime.split(':').map(Number);
+
+    startTimeMs = (startHour * 60 + startMinute) * 60 * 1000;
+    endTimeMs = (endHour * 60 + endMinute) * 60 * 1000;
+  } else {
+    // ISO8601 format
+    const startTime = new Date(order.injectionSettings.scheduledTime.startTime);
+    const endTime = new Date(order.injectionSettings.scheduledTime.endTime);
+    const now = new Date();
+
+    // Calculate milliseconds from now to start/end times
+    startTimeMs = Math.max(0, startTime.getTime() - now.getTime());
+    endTimeMs = Math.max(0, endTime.getTime() - now.getTime());
+  }
+
   const windowMs = endTimeMs - startTimeMs;
 
   if (windowMs <= 0) {

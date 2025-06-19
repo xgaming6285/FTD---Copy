@@ -699,6 +699,7 @@ const OrdersPage = () => {
                 <TableCell>Requests (F/Fi/C/L)</TableCell>
                 <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Fulfilled (F/Fi/C/L)</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>Injection</TableCell>
                 <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Priority</TableCell>
                 <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Created</TableCell>
                 <TableCell>Actions</TableCell>
@@ -707,11 +708,11 @@ const OrdersPage = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center"><CircularProgress /></TableCell>
+                  <TableCell colSpan={9} align="center"><CircularProgress /></TableCell>
                 </TableRow>
               ) : orders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center">No orders found</TableCell>
+                  <TableCell colSpan={9} align="center">No orders found</TableCell>
                 </TableRow>
               ) : (
                 orders.map((order) => {
@@ -726,6 +727,21 @@ const OrdersPage = () => {
                         <TableCell>{`${order.requests?.ftd || 0}/${order.requests?.filler || 0}/${order.requests?.cold || 0}/${order.requests?.live || 0}`}</TableCell>
                         <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{`${order.fulfilled?.ftd || 0}/${order.fulfilled?.filler || 0}/${order.fulfilled?.cold || 0}/${order.fulfilled?.live || 0}`}</TableCell>
                         <TableCell><Chip label={order.status} color={getStatusColor(order.status)} size="small" /></TableCell>
+                        <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
+                          {order.injectionSettings?.enabled ? (
+                            <Chip
+                              label={order.injectionSettings.status || 'pending'}
+                              color={
+                                order.injectionSettings.status === 'completed' ? 'success' :
+                                  order.injectionSettings.status === 'in_progress' ? 'warning' :
+                                    order.injectionSettings.status === 'failed' ? 'error' : 'default'
+                              }
+                              size="small"
+                            />
+                          ) : (
+                            <Chip label="disabled" color="default" size="small" />
+                          )}
+                        </TableCell>
                         <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}><Chip label={order.priority} color={getPriorityColor(order.priority)} size="small" /></TableCell>
                         <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{new Date(order.createdAt).toLocaleDateString()}</TableCell>
                         <TableCell>
@@ -795,7 +811,7 @@ const OrdersPage = () => {
                       </TableRow>
                       {/* Expanded Row with details */}
                       <TableRow>
-                        <TableCell sx={{ p: 0, borderBottom: 'none' }} colSpan={8}>
+                        <TableCell sx={{ p: 0, borderBottom: 'none' }} colSpan={9}>
                           <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                             <Box sx={{ p: 2, bgcolor: 'action.hover' }}>
                               <Typography variant="h6" gutterBottom>Order Details</Typography>

@@ -10,6 +10,7 @@ import os
 import string
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from urllib.parse import urlparse
 
 # Fix for Windows encoding issues - ensure everything uses utf-8
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -370,6 +371,36 @@ class LeadInjector:
                         if success_message:
                             print("SUCCESS: Form submitted successfully")
                             self._take_screenshot(page, "success")
+                            
+                            # Wait 1 minute for the final redirect to complete
+                            print("INFO: Waiting 1 minute for final redirect...")
+                            
+                            # Take periodic screenshots during the wait to monitor redirects
+                            for i in range(6):  # 6 checks over 60 seconds (every 10 seconds)
+                                time.sleep(10)
+                                current_url = page.url
+                                print(f"INFO: URL after {(i+1)*10} seconds: {current_url}")
+                                self._take_screenshot(page, f"redirect_check_{i+1}")
+                            
+                            # Get the final domain after all redirects
+                            final_url = page.url
+                            print(f"INFO: Final URL after 1 minute: {final_url}")
+                            
+                            # Extract domain from URL
+                            parsed_url = urlparse(final_url)
+                            final_domain = parsed_url.netloc
+                            
+                            # Validate domain
+                            if not final_domain or final_domain == "ftd-copy.vercel.app":
+                                print(f"WARNING: Final domain appears to be the original form domain: {final_domain}")
+                                print("INFO: This might indicate no redirect occurred or redirect failed")
+                            
+                            print(f"SUCCESS: Final domain captured: {final_domain}")
+                            self._take_screenshot(page, "final_redirect")
+                            
+                            # Store the final domain in a way the backend can access it
+                            # We'll output it in a specific format the backend can parse
+                            print(f"FINAL_DOMAIN:{final_domain}")
                             
                             # Verify proxy and device simulation
                             verification_result = self._verify_proxy_and_device(page)

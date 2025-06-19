@@ -117,12 +117,28 @@ router.post(
       .withMessage("injectionSettings.scheduledTime must be an object"),
     body("injectionSettings.scheduledTime.startTime")
       .optional()
-      .isISO8601()
-      .withMessage("injectionSettings.scheduledTime.startTime must be a valid ISO8601 date"),
+      .custom((value) => {
+        // Accept either ISO8601 format or HH:MM format
+        if (typeof value === 'string' && value.match(/^\d{2}:\d{2}$/)) {
+          return true; // HH:MM format
+        }
+        if (typeof value === 'string' && !isNaN(Date.parse(value))) {
+          return true; // ISO8601 format
+        }
+        throw new Error("injectionSettings.scheduledTime.startTime must be either HH:MM format or ISO8601 date");
+      }),
     body("injectionSettings.scheduledTime.endTime")
       .optional()
-      .isISO8601()
-      .withMessage("injectionSettings.scheduledTime.endTime must be a valid ISO8601 date"),
+      .custom((value) => {
+        // Accept either ISO8601 format or HH:MM format
+        if (typeof value === 'string' && value.match(/^\d{2}:\d{2}$/)) {
+          return true; // HH:MM format
+        }
+        if (typeof value === 'string' && !isNaN(Date.parse(value))) {
+          return true; // ISO8601 format
+        }
+        throw new Error("injectionSettings.scheduledTime.endTime must be either HH:MM format or ISO8601 date");
+      }),
   ],
   createOrder
 );
