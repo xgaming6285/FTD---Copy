@@ -7,6 +7,7 @@ const { Readable } = require("stream");
 const { spawn } = require("child_process");
 const express = require("express");
 const ClientNetwork = require("../models/ClientNetwork");
+const ClientBroker = require("../models/ClientBroker");
 
 // @desc    Get all leads with filtering and pagination
 // @route   GET /api/leads
@@ -93,8 +94,6 @@ exports.getLeads = async (req, res, next) => {
           { newEmail: new RegExp(search, "i") },
           { newPhone: new RegExp(search, "i") },
           { client: new RegExp(search, "i") },
-          { clientBroker: new RegExp(search, "i") },
-          { clientNetwork: new RegExp(search, "i") },
         ];
       }
     }
@@ -153,8 +152,7 @@ exports.getLeads = async (req, res, next) => {
           updatedAt: 1,
           gender: 1,
           client: 1,
-          clientBroker: 1,
-          clientNetwork: 1,
+          assignedClientBrokers: 1,
           documents: 1,
           "assignedTo._id": 1,
           "assignedTo.fullName": 1,
@@ -697,10 +695,10 @@ exports.unassignLeads = async (req, res, next) => {
   }
 };
 
-// @desc    Assign client network to individual lead
-// @route   PUT /api/leads/:id/assign-client-network
+// @desc    Assign client broker to individual lead
+// @route   PUT /api/leads/:id/assign-client-broker
 // @access  Private (Admin, Affiliate Manager)
-exports.assignClientNetworkToLead = async (req, res, next) => {
+exports.assignClientBrokerToLead = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -712,10 +710,14 @@ exports.assignClientNetworkToLead = async (req, res, next) => {
     }
 
     const leadId = req.params.id;
-    const { clientNetwork, clientBroker, client } = req.body;
+    const { clientBrokerId, client, intermediaryClientNetwork, domain } = req.body;
 
-    // Find the lead
-    const lead = await Lead.findById(leadId);
+    // Find the lead and client broker
+    const [lead, clientBroker] = await Promise.all([
+      Lead.findById(leadId),
+      ClientBroker.findById(clientBrokerId)
+    ]);
+
     if (!lead) {
       return res.status(404).json({
         success: false,
@@ -723,77 +725,73 @@ exports.assignClientNetworkToLead = async (req, res, next) => {
       });
     }
 
-    // Check if user has permission to assign client networks
+    if (!clientBroker) {
+      return res.status(404).json({
+        success: false,
+        message: "Client broker not found",
+      });
+    }
+
+    // Check if user has permission to assign client brokers
     if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can assign client networks.",
+        message: "Access denied. Only admins and affiliate managers can assign client brokers.",
       });
     }
 
-    // Validate that clientNetwork is provided
-    if (!clientNetwork) {
+    if (!clientBroker.isActive) {
       return res.status(400).json({
         success: false,
-        message: "Client network is required",
+        message: "Cannot assign lead to inactive client broker",
       });
     }
 
-    // Check if this lead has already been assigned to this client network within the same order
-    if (lead.orderId) {
-      const isAlreadyAssignedInOrder = lead.clientNetworkHistory.some(history => 
-        history.clientNetwork === clientNetwork && 
-        history.orderId && 
-        history.orderId.toString() === lead.orderId.toString()
-      );
-
-      if (isAlreadyAssignedInOrder) {
-        return res.status(400).json({
-          success: false,
-          message: `Lead "${lead.firstName} ${lead.lastName}" has already been assigned to client network "${clientNetwork}" within this order.`,
-          data: {
-            leadId: lead._id,
-            leadName: `${lead.firstName} ${lead.lastName}`,
-            clientNetwork: clientNetwork,
-            orderId: lead.orderId
-          }
-        });
-      }
+    // Check if this lead has already been assigned to this client broker
+    if (lead.isAssignedToClientBroker(clientBrokerId)) {
+      return res.status(400).json({
+        success: false,
+        message: `Lead "${lead.firstName} ${lead.lastName}" is already assigned to client broker "${clientBroker.name}".`,
+        data: {
+          leadId: lead._id,
+          leadName: `${lead.firstName} ${lead.lastName}`,
+          clientBroker: clientBroker.name,
+        }
+      });
     }
 
-    // Create history entry
-    const historyEntry = {
-      clientNetwork: clientNetwork,
-      clientBroker: clientBroker || lead.clientBroker,
-      assignedAt: new Date(),
-      assignedBy: req.user.id,
-      orderId: lead.orderId
-    };
+    // Assign the client broker to the lead
+    lead.assignClientBroker(
+      clientBrokerId,
+      req.user.id,
+      lead.orderId,
+      intermediaryClientNetwork,
+      domain
+    );
 
-    // Update the lead
-    const updateData = {
-      clientNetwork: clientNetwork,
-      $push: {
-        clientNetworkHistory: historyEntry
-      }
-    };
+    // Update client field if provided
+    if (client !== undefined) {
+      lead.client = client;
+    }
 
-    if (clientBroker !== undefined) updateData.clientBroker = clientBroker;
-    if (client !== undefined) updateData.client = client;
+    // Update the client broker
+    clientBroker.assignLead(leadId);
 
-    const updatedLead = await Lead.findByIdAndUpdate(
-      leadId,
-      updateData,
-      { new: true, runValidators: true }
-    ).populate('assignedTo', 'fullName fourDigitCode email');
+    // Save both documents
+    await Promise.all([lead.save(), clientBroker.save()]);
+
+    // Populate the response
+    const updatedLead = await Lead.findById(leadId)
+      .populate('assignedTo', 'fullName fourDigitCode email')
+      .populate('assignedClientBrokers', 'name domain');
 
     res.status(200).json({
       success: true,
-      message: `Successfully assigned client network "${clientNetwork}" to lead "${lead.firstName} ${lead.lastName}"`,
+      message: `Successfully assigned client broker "${clientBroker.name}" to lead "${lead.firstName} ${lead.lastName}"`,
       data: updatedLead,
     });
   } catch (error) {
-    console.error("Assign client network to lead error:", error);
+    console.error("Assign client broker to lead error:", error);
     next(error);
   }
 };
@@ -806,8 +804,11 @@ exports.getLeadAssignmentHistory = async (req, res, next) => {
     const leadId = req.params.id;
 
     const lead = await Lead.findById(leadId)
-      .populate('clientNetworkHistory.assignedBy', 'fullName fourDigitCode email')
-      .populate('clientNetworkHistory.orderId', 'status createdAt');
+      .populate('clientBrokerHistory.assignedBy', 'fullName fourDigitCode email')
+      .populate('clientBrokerHistory.orderId', 'status createdAt')
+      .populate('clientBrokerHistory.clientBroker', 'name domain')
+      .populate('clientBrokerHistory.intermediaryClientNetwork', 'name')
+      .populate('assignedClientBrokers', 'name domain');
 
     if (!lead) {
       return res.status(404).json({
@@ -829,19 +830,31 @@ exports.getLeadAssignmentHistory = async (req, res, next) => {
       data: {
         leadId: lead._id,
         leadName: `${lead.firstName} ${lead.lastName}`,
-        currentAssignment: {
-          clientNetwork: lead.clientNetwork,
-          clientBroker: lead.clientBroker,
+        currentAssignments: {
+          clientBrokers: lead.assignedClientBrokers.map(broker => ({
+            id: broker._id,
+            name: broker.name,
+            domain: broker.domain
+          })),
           client: lead.client
         },
-        assignmentHistory: lead.clientNetworkHistory.map(history => ({
-          clientNetwork: history.clientNetwork,
-          clientBroker: history.clientBroker,
+        assignmentHistory: lead.clientBrokerHistory.map(history => ({
+          clientBroker: {
+            id: history.clientBroker._id,
+            name: history.clientBroker.name,
+            domain: history.clientBroker.domain
+          },
+          intermediaryClientNetwork: history.intermediaryClientNetwork ? {
+            id: history.intermediaryClientNetwork._id,
+            name: history.intermediaryClientNetwork.name
+          } : null,
           assignedAt: history.assignedAt,
           assignedBy: history.assignedBy,
           orderId: history.orderId,
           orderStatus: history.orderId ? history.orderId.status : null,
-          orderCreatedAt: history.orderId ? history.orderId.createdAt : null
+          orderCreatedAt: history.orderId ? history.orderId.createdAt : null,
+          injectionStatus: history.injectionStatus,
+          domain: history.domain
         }))
       }
     });
@@ -851,10 +864,10 @@ exports.getLeadAssignmentHistory = async (req, res, next) => {
   }
 };
 
-// @desc    Get client network assignment analytics
-// @route   GET /api/leads/client-network-analytics
+// @desc    Get client broker assignment analytics
+// @route   GET /api/leads/client-broker-analytics
 // @access  Private (Admin, Affiliate Manager)
-exports.getClientNetworkAnalytics = async (req, res, next) => {
+exports.getClientBrokerAnalytics = async (req, res, next) => {
   try {
     const { orderId } = req.query;
 
@@ -877,26 +890,39 @@ exports.getClientNetworkAnalytics = async (req, res, next) => {
       matchStage.orderId = new mongoose.Types.ObjectId(orderId);
     }
 
-    // Aggregate client network assignment data
+    // Aggregate client broker assignment data
     const analytics = await Lead.aggregate([
       { $match: matchStage },
-      { $unwind: { path: "$clientNetworkHistory", preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: "$clientBrokerHistory", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "clientbrokers",
+          localField: "clientBrokerHistory.clientBroker",
+          foreignField: "_id",
+          as: "brokerDetails"
+        }
+      },
+      { $unwind: { path: "$brokerDetails", preserveNullAndEmptyArrays: true } },
       {
         $group: {
           _id: {
-            clientNetwork: "$clientNetworkHistory.clientNetwork",
-            orderId: "$clientNetworkHistory.orderId"
+            clientBroker: "$clientBrokerHistory.clientBroker",
+            orderId: "$clientBrokerHistory.orderId"
           },
+          brokerName: { $first: "$brokerDetails.name" },
+          brokerDomain: { $first: "$brokerDetails.domain" },
           totalAssignments: { $sum: 1 },
           uniqueLeads: { $addToSet: "$_id" },
-          firstAssignment: { $min: "$clientNetworkHistory.assignedAt" },
-          lastAssignment: { $max: "$clientNetworkHistory.assignedAt" },
-          clientBrokers: { $addToSet: "$clientNetworkHistory.clientBroker" }
+          firstAssignment: { $min: "$clientBrokerHistory.assignedAt" },
+          lastAssignment: { $max: "$clientBrokerHistory.assignedAt" },
+          injectionStatuses: { $addToSet: "$clientBrokerHistory.injectionStatus" }
         }
       },
       {
         $group: {
-          _id: "$_id.clientNetwork",
+          _id: "$_id.clientBroker",
+          brokerName: { $first: "$brokerName" },
+          brokerDomain: { $first: "$brokerDomain" },
           totalAssignments: { $sum: "$totalAssignments" },
           totalUniqueLeads: { $sum: { $size: "$uniqueLeads" } },
           orderBreakdown: {
@@ -906,14 +932,16 @@ exports.getClientNetworkAnalytics = async (req, res, next) => {
               uniqueLeads: { $size: "$uniqueLeads" },
               firstAssignment: "$firstAssignment",
               lastAssignment: "$lastAssignment",
-              clientBrokers: "$clientBrokers"
+              injectionStatuses: "$injectionStatuses"
             }
           }
         }
       },
       {
         $project: {
-          clientNetwork: "$_id",
+          clientBrokerId: "$_id",
+          brokerName: 1,
+          brokerDomain: 1,
           totalAssignments: 1,
           totalUniqueLeads: 1,
           orderBreakdown: 1,
@@ -923,25 +951,17 @@ exports.getClientNetworkAnalytics = async (req, res, next) => {
       { $sort: { totalAssignments: -1 } }
     ]);
 
-    // Get conflict summary if orderId is provided
-    let conflictSummary = null;
-    if (orderId) {
-      const { checkOrderClientNetworkConflicts } = require('../utils/clientNetworkValidator');
-      conflictSummary = await checkOrderClientNetworkConflicts(orderId);
-    }
-
     res.status(200).json({
       success: true,
       data: {
         analytics,
-        conflictSummary,
-        totalClientNetworks: analytics.length,
+        totalClientBrokers: analytics.length,
         totalAssignments: analytics.reduce((sum, item) => sum + item.totalAssignments, 0),
         totalUniqueLeads: analytics.reduce((sum, item) => sum + item.totalUniqueLeads, 0)
       }
     });
   } catch (error) {
-    console.error("Get client network analytics error:", error);
+    console.error("Get client broker analytics error:", error);
     next(error);
   }
 };

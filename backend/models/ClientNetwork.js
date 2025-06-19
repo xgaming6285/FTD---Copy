@@ -27,28 +27,8 @@ const clientNetworkSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    // Client brokers associated with this network
-    clientBrokers: [
-      {
-        name: {
-          type: String,
-          required: true,
-          trim: true,
-        },
-        domain: {
-          type: String,
-          trim: true,
-        },
-        isActive: {
-          type: Boolean,
-          default: true,
-        },
-        addedAt: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
+    // Client networks now serve as intermediaries only
+    // Client brokers are managed separately in the ClientBroker model
   },
   {
     timestamps: true,
@@ -68,9 +48,10 @@ clientNetworkSchema.virtual("assignedManagersCount").get(function () {
   return this.assignedAffiliateManagers ? this.assignedAffiliateManagers.length : 0;
 });
 
-// Virtual for active client brokers count
+// Virtual for active client brokers count (now tracked separately)
 clientNetworkSchema.virtual("activeBrokersCount").get(function () {
-  return this.clientBrokers ? this.clientBrokers.filter((broker) => broker.isActive).length : 0;
+  // This will need to be calculated via aggregation with ClientBroker model
+  return 0; // Placeholder - will be populated when needed
 });
 
 module.exports = mongoose.model("ClientNetwork", clientNetworkSchema); 

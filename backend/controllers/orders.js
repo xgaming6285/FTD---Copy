@@ -1546,16 +1546,20 @@ const startBulkInjection = async (order) => {
     });
 
     console.log(`Found ${leadsToInject.length} leads to inject for order ${order._id}`);
+    console.log(`[DEBUG] Injectable lead types: ${JSON.stringify(getInjectableLeadTypes(order.injectionSettings.includeTypes))}`);
+    console.log(`[DEBUG] Order leads: ${JSON.stringify(order.leads)}`);
+    console.log(`[DEBUG] Leads to inject IDs: ${leadsToInject.map(l => l._id).join(', ')}`);
 
     // Process leads one by one with delays
     for (const lead of leadsToInject) {
+      console.log(`[DEBUG] Processing lead ${lead._id} (${lead.firstName} ${lead.lastName})`);
       await injectSingleLead(lead, order._id);
       // Add delay between injections to avoid overwhelming the system
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
-    // Update order status when completed
-    await updateOrderInjectionProgress(order._id, leadsToInject.length, leadsToInject.length);
+    // The order status is automatically updated by updateOrderInjectionProgress() 
+    // called within each injectSingleLead() call, so no need to update it here
 
   } catch (error) {
     console.error(`Error in bulk injection for order ${order._id}:`, error);
@@ -1607,19 +1611,33 @@ const injectSingleLead = async (lead, orderId) => {
     // Get order details to check client network
     const order = await Order.findById(orderId).populate('selectedClientNetwork');
 
-    // Check if lead can be assigned to this client network
-    if (order.selectedClientNetwork && lead.isAssignedToClientNetwork(order.selectedClientNetwork._id)) {
-      console.log(`Lead ${lead._id} already assigned to client network ${order.selectedClientNetwork.name}`);
-      await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed
-      return false;
+    console.log(`[DEBUG] Order selectedClientNetwork: ${order.selectedClientNetwork ? order.selectedClientNetwork.name : 'null'}`);
+    console.log(`[DEBUG] Lead clientNetworkHistory: ${JSON.stringify(lead.clientNetworkHistory)}`);
+
+    // Check if lead has already been successfully injected for this order
+    const existingAssignment = lead.clientNetworkHistory.find(
+      history => history.orderId && history.orderId.toString() === orderId.toString() &&
+        history.injectionStatus === 'successful'
+    );
+
+    if (existingAssignment) {
+      console.log(`Lead ${lead._id} already successfully injected for order ${orderId}`);
+      await updateOrderInjectionProgress(orderId, 0, 1); // Count as successful since it was already done
+      return true;
     }
 
     // Check available client brokers for this lead
     const availableBrokers = await getAvailableClientBrokers(lead, order.selectedClientNetwork);
 
+    console.log(`[DEBUG] Available brokers for lead ${lead._id}: ${availableBrokers.length} brokers`);
+    console.log(`[DEBUG] Broker list: ${JSON.stringify(availableBrokers)}`);
+
     if (availableBrokers.length === 0) {
-      console.log(`No available client brokers for lead ${lead._id}. Putting lead to sleep.`);
-      lead.putToSleep("No available client brokers for injection");
+      const networkName = order.selectedClientNetwork ? order.selectedClientNetwork.name : 'any network';
+      console.log(`No available client brokers for lead ${lead._id} in ${networkName}. Putting lead to sleep.`);
+      console.log(`[DEBUG] Client network ${networkName} has ${order.selectedClientNetwork ? order.selectedClientNetwork.clientBrokers.length : 0} total brokers`);
+
+      lead.putToSleep(`No available client brokers for injection in ${networkName}`);
       await lead.save();
       await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed
       return false;
@@ -1638,21 +1656,35 @@ const injectSingleLead = async (lead, orderId) => {
 
     const scriptPath = path.resolve(path.join(__dirname, '..', '..', 'injector_playwright.py'));
 
+    console.log(`[DEBUG] Script path: ${scriptPath}`);
+    console.log(`[DEBUG] Lead data: ${JSON.stringify(leadData)}`);
+    console.log(`[DEBUG] Working directory: ${process.cwd()}`);
+
     return new Promise((resolve, reject) => {
-      const pythonProcess = spawn("python", [scriptPath, JSON.stringify(leadData)]);
+      const pythonProcess = spawn("python", [scriptPath, JSON.stringify(leadData)], {
+        cwd: path.resolve(path.join(__dirname, '..', '..')) // Set working directory to project root
+      });
 
       let stdoutData = '';
       let stderrData = '';
 
       pythonProcess.stdout.on("data", (data) => {
-        stdoutData += data.toString();
+        const output = data.toString();
+        console.log(`[PYTHON STDOUT] ${output}`);
+        stdoutData += output;
       });
 
       pythonProcess.stderr.on("data", (data) => {
-        stderrData += data.toString();
+        const output = data.toString();
+        console.log(`[PYTHON STDERR] ${output}`);
+        stderrData += output;
       });
 
       pythonProcess.on("close", async (code) => {
+        console.log(`[DEBUG] Python process closed with code: ${code}`);
+        console.log(`[DEBUG] STDOUT: ${stdoutData}`);
+        console.log(`[DEBUG] STDERR: ${stderrData}`);
+
         if (code === 0) {
           console.log(`Successfully injected lead ${lead._id} for order ${orderId}`);
 
@@ -1694,22 +1726,32 @@ const injectSingleLead = async (lead, orderId) => {
 // Helper function to get available client brokers for a lead
 const getAvailableClientBrokers = async (lead, clientNetwork) => {
   try {
+    console.log(`[DEBUG] getAvailableClientBrokers called with clientNetwork: ${clientNetwork ? clientNetwork.name : 'null'}`);
+
     if (!clientNetwork) {
       // If no specific client network, get all available brokers
       const allNetworks = await ClientNetwork.find({ isActive: true });
+      console.log(`[DEBUG] Found ${allNetworks.length} active client networks`);
 
       const allBrokers = [];
       allNetworks.forEach(network => {
+        console.log(`[DEBUG] Network ${network.name} has ${network.clientBrokers.length} brokers`);
         network.clientBrokers.forEach(broker => {
+          console.log(`[DEBUG] Broker: ${broker.name}, active: ${broker.isActive}, domain: ${broker.domain}`);
           if (broker.isActive) {
             allBrokers.push(broker.domain || broker.name);
           }
         });
       });
 
+      console.log(`[DEBUG] Total active brokers found: ${allBrokers.length}`);
+
       // Filter out brokers this lead has already been assigned to
       const assignedBrokers = lead.getAssignedClientBrokers();
-      return allBrokers.filter(broker => !assignedBrokers.includes(broker));
+      console.log(`[DEBUG] Lead already assigned to brokers: ${JSON.stringify(assignedBrokers)}`);
+      const availableBrokers = allBrokers.filter(broker => !assignedBrokers.includes(broker));
+      console.log(`[DEBUG] Available brokers after filtering: ${availableBrokers.length}`);
+      return availableBrokers;
     } else {
       // Get brokers from specific client network
       const availableBrokers = clientNetwork.clientBrokers

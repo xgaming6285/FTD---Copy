@@ -27,9 +27,9 @@ const {
   updateLeadType,
   bulkDeleteLeads,
   wakeUpSleepingLeads,
-  assignClientNetworkToLead,
+  assignClientBrokerToLead,
   getLeadAssignmentHistory,
-  getClientNetworkAnalytics,
+  getClientBrokerAnalytics,
 } = require("../controllers/leads");
 
 const router = express.Router();
@@ -124,11 +124,11 @@ router.get(
   getLeadStats
 );
 
-// @route   GET /api/leads/client-network-analytics
-// @desc    Get client network assignment analytics
+// @route   GET /api/leads/client-broker-analytics
+// @desc    Get client broker assignment analytics
 // @access  Private (Admin, Affiliate Manager)
 router.get(
-  "/client-network-analytics",
+  "/client-broker-analytics",
   [
     protect,
     authorize("admin", "affiliate_manager"),
@@ -137,7 +137,7 @@ router.get(
       .isMongoId()
       .withMessage("Invalid order ID format"),
   ],
-  getClientNetworkAnalytics
+  getClientBrokerAnalytics
 );
 
 // @route   GET /api/leads/:id
@@ -182,26 +182,29 @@ router.put(
   updateLeadStatus
 );
 
-// @route   PUT /api/leads/:id/assign-client-network
-// @desc    Assign client network to individual lead
+// @route   PUT /api/leads/:id/assign-client-broker
+// @desc    Assign client broker to individual lead
 // @access  Private (Admin, Affiliate Manager)
 router.put(
-  "/:id/assign-client-network",
+  "/:id/assign-client-broker",
   [
     protect,
     authorize("admin", "affiliate_manager"),
-    body("clientNetwork")
-      .trim()
-      .notEmpty()
-      .withMessage("Client network is required"),
-    body("clientBroker")
-      .optional()
-      .trim(),
+    body("clientBrokerId")
+      .isMongoId()
+      .withMessage("Valid client broker ID is required"),
     body("client")
       .optional()
       .trim(),
+    body("intermediaryClientNetwork")
+      .optional()
+      .isMongoId()
+      .withMessage("Client network ID must be valid"),
+    body("domain")
+      .optional()
+      .trim(),
   ],
-  assignClientNetworkToLead
+  assignClientBrokerToLead
 );
 
 // @route   GET /api/leads/:id/assignment-history

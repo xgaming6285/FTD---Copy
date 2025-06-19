@@ -64,25 +64,20 @@ const leadSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    clientBroker: {
-      type: String,
-      trim: true,
-    },
-    clientNetwork: {
-      type: String,
-      trim: true,
-    },
-    // Client network and broker history
-    clientNetworkHistory: [
+    // Many-to-many relationship with client brokers
+    assignedClientBrokers: [
       {
-        clientNetwork: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "ClientNetwork",
-          required: true,
-        },
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "ClientBroker",
+      },
+    ],
+    // History of client broker assignments
+    clientBrokerHistory: [
+      {
         clientBroker: {
-          type: String,
-          trim: true,
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "ClientBroker",
+          required: true,
         },
         assignedAt: {
           type: Date,
@@ -101,6 +96,11 @@ const leadSchema = new mongoose.Schema(
           type: String,
           enum: ["pending", "successful", "failed"],
           default: "pending"
+        },
+        // Track which client network was used as intermediary (for session tracking only)
+        intermediaryClientNetwork: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "ClientNetwork",
         },
         domain: {
           type: String,
@@ -221,8 +221,7 @@ leadSchema.index({ country: 1 });
 leadSchema.index({ assignedTo: 1 });
 leadSchema.index({ createdAt: -1 });
 leadSchema.index({ client: 1 }, { sparse: true });
-leadSchema.index({ clientBroker: 1 }, { sparse: true });
-leadSchema.index({ clientNetwork: 1 }, { sparse: true });
+leadSchema.index({ assignedClientBrokers: 1 });
 leadSchema.index({ newEmail: 1 }, { unique: true }); // Optimize lookup by email
 leadSchema.index({ status: 1 }); // Add index for status field
 leadSchema.index({ assignedAt: -1 }); // Add index for assignedAt for sorting
@@ -231,11 +230,11 @@ leadSchema.index({ firstName: 1, lastName: 1 }); // Optimize name-based sorting
 leadSchema.index({ createdBy: 1 }); // Optimize filtering by creator
 leadSchema.index({ updatedAt: -1 }); // Track updates efficiently
 
-// Client network history indexes for better performance
-leadSchema.index({ "clientNetworkHistory.clientNetwork": 1 });
-leadSchema.index({ "clientNetworkHistory.orderId": 1 });
-leadSchema.index({ "clientNetworkHistory.clientNetwork": 1, "clientNetworkHistory.orderId": 1 });
-leadSchema.index({ "clientNetworkHistory.assignedAt": -1 });
+// Client broker history indexes for better performance
+leadSchema.index({ "clientBrokerHistory.clientBroker": 1 });
+leadSchema.index({ "clientBrokerHistory.orderId": 1 });
+leadSchema.index({ "clientBrokerHistory.clientBroker": 1, "clientBrokerHistory.orderId": 1 });
+leadSchema.index({ "clientBrokerHistory.assignedAt": -1 });
 
 // Compound indexes for common query patterns
 leadSchema.index({ leadType: 1, isAssigned: 1, status: 1 }); // Common filtering pattern
@@ -249,8 +248,6 @@ leadSchema.index(
     newEmail: "text",
     newPhone: "text",
     client: "text",
-    clientBroker: "text",
-    clientNetwork: "text",
   },
   {
     weights: {
@@ -259,8 +256,6 @@ leadSchema.index(
       newEmail: 5,
       newPhone: 5,
       client: 3,
-      clientBroker: 2,
-      clientNetwork: 1,
     },
     name: "lead_search_index",
   }
@@ -331,41 +326,44 @@ leadSchema.statics.getLeadStats = function () {
   ]);
 };
 
-// Check if lead is already assigned to a specific client network
-leadSchema.methods.isAssignedToClientNetwork = function (clientNetworkId) {
-  return this.clientNetworkHistory.some(
-    history => history.clientNetwork.toString() === clientNetworkId.toString()
-  );
-};
-
 // Check if lead is already assigned to a specific client broker
-leadSchema.methods.isAssignedToClientBroker = function (clientBroker) {
-  return this.clientNetworkHistory.some(
-    history => history.clientBroker === clientBroker
+leadSchema.methods.isAssignedToClientBroker = function (clientBrokerId) {
+  return this.assignedClientBrokers.some(
+    brokerId => brokerId.toString() === clientBrokerId.toString()
   );
 };
 
-// Add new client network assignment to history
-leadSchema.methods.addClientNetworkAssignment = function (clientNetworkId, assignedBy, orderId, clientBroker = null, domain = null) {
-  this.clientNetworkHistory.push({
-    clientNetwork: clientNetworkId,
-    clientBroker: clientBroker,
+// Assign a client broker to this lead
+leadSchema.methods.assignClientBroker = function (clientBrokerId, assignedBy, orderId, intermediaryClientNetwork = null, domain = null) {
+  // Add to current assignments if not already assigned
+  if (!this.isAssignedToClientBroker(clientBrokerId)) {
+    this.assignedClientBrokers.push(clientBrokerId);
+  }
+
+  // Add to history
+  this.clientBrokerHistory.push({
+    clientBroker: clientBrokerId,
     assignedBy: assignedBy,
     orderId: orderId,
+    intermediaryClientNetwork: intermediaryClientNetwork,
     domain: domain,
     injectionStatus: "pending"
   });
+};
 
-  // Update current assignment fields
-  this.clientNetwork = clientNetworkId;
-  if (clientBroker) {
-    this.clientBroker = clientBroker;
+// Unassign a client broker from this lead
+leadSchema.methods.unassignClientBroker = function (clientBrokerId) {
+  const index = this.assignedClientBrokers.findIndex(
+    brokerId => brokerId.toString() === clientBrokerId.toString()
+  );
+  if (index > -1) {
+    this.assignedClientBrokers.splice(index, 1);
   }
 };
 
 // Update injection status for a specific assignment
 leadSchema.methods.updateInjectionStatus = function (orderId, status, domain = null) {
-  const assignment = this.clientNetworkHistory.find(
+  const assignment = this.clientBrokerHistory.find(
     history => history.orderId && history.orderId.toString() === orderId.toString()
   );
 
@@ -373,23 +371,25 @@ leadSchema.methods.updateInjectionStatus = function (orderId, status, domain = n
     assignment.injectionStatus = status;
     if (domain) {
       assignment.domain = domain;
-      assignment.clientBroker = domain; // Set client broker based on domain
     }
   }
 };
 
-// Get all client brokers this lead has been assigned to
+// Get all client brokers this lead has been assigned to (returns ObjectIds)
 leadSchema.methods.getAssignedClientBrokers = function () {
-  return [...new Set(this.clientNetworkHistory
-    .filter(history => history.clientBroker)
-    .map(history => history.clientBroker))];
+  return this.assignedClientBrokers.map(id => id.toString());
 };
 
-// Check if lead can be assigned to a client network (not already assigned)
-leadSchema.statics.canAssignToClientNetwork = function (leadId, clientNetworkId) {
+// Get client broker assignment history
+leadSchema.methods.getClientBrokerHistory = function () {
+  return this.clientBrokerHistory;
+};
+
+// Check if lead can be assigned to a client broker (not already assigned)
+leadSchema.statics.canAssignToClientBroker = function (leadId, clientBrokerId) {
   return this.findById(leadId).then(lead => {
     if (!lead) return false;
-    return !lead.isAssignedToClientNetwork(clientNetworkId);
+    return !lead.isAssignedToClientBroker(clientBrokerId);
   });
 };
 

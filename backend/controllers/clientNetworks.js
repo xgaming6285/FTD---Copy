@@ -142,35 +142,9 @@ exports.createClientNetwork = async (req, res, next) => {
       { path: "createdBy", select: "fullName email" },
     ]);
 
-    // Wake up sleeping leads that might now have available brokers
-    const sleepingLeads = await Lead.findSleepingLeads();
-    let wokeUpCount = 0;
-
-    if (sleepingLeads.length > 0) {
-      for (const lead of sleepingLeads) {
-        // Check if this new network has brokers available for the lead
-        if (clientNetwork.clientBrokers && clientNetwork.clientBrokers.length > 0) {
-          const availableBrokers = clientNetwork.clientBrokers
-            .filter(broker => broker.isActive)
-            .map(broker => broker.domain || broker.name);
-
-          const assignedBrokers = lead.getAssignedClientBrokers();
-          const hasAvailableBrokers = availableBrokers.some(broker => !assignedBrokers.includes(broker));
-
-          if (hasAvailableBrokers) {
-            lead.wakeUp();
-            await lead.save();
-            wokeUpCount++;
-          }
-        }
-      }
-    }
-
-    console.log(`Woke up ${wokeUpCount} sleeping leads after creating new client network`);
-
     res.status(201).json({
       success: true,
-      message: `Client network created successfully. ${wokeUpCount} sleeping leads were woken up.`,
+      message: "Client network created successfully",
       data: clientNetwork,
     });
   } catch (error) {
@@ -280,156 +254,8 @@ exports.deleteClientNetwork = async (req, res, next) => {
   }
 };
 
-// @desc    Add client broker to network
-// @route   POST /api/client-networks/:id/brokers
-// @access  Private (Admin only)
-exports.addClientBroker = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errors.array(),
-      });
-    }
-
-    const { name, domain } = req.body;
-
-    const clientNetwork = await ClientNetwork.findById(req.params.id);
-    if (!clientNetwork) {
-      return res.status(404).json({
-        success: false,
-        message: "Client network not found",
-      });
-    }
-
-    // Check if broker already exists
-    const existingBroker = clientNetwork.clientBrokers.find(
-      (broker) => broker.name === name || broker.domain === domain
-    );
-
-    if (existingBroker) {
-      return res.status(400).json({
-        success: false,
-        message: "Client broker with this name or domain already exists",
-      });
-    }
-
-    clientNetwork.clientBrokers.push({
-      name,
-      domain,
-    });
-
-    await clientNetwork.save();
-
-    // Wake up sleeping leads that might now have available brokers
-    const sleepingLeads = await Lead.findSleepingLeads();
-
-    let wokeUpCount = 0;
-    for (const lead of sleepingLeads) {
-      // Check if this new broker is available for the lead
-      if (!lead.isAssignedToClientBroker(domain || name)) {
-        lead.wakeUp();
-        await lead.save();
-        wokeUpCount++;
-      }
-    }
-
-    console.log(`Woke up ${wokeUpCount} sleeping leads after adding new broker`);
-
-    res.status(201).json({
-      success: true,
-      message: `Client broker added successfully. ${wokeUpCount} sleeping leads were woken up.`,
-      data: clientNetwork,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Update client broker in network
-// @route   PUT /api/client-networks/:id/brokers/:brokerId
-// @access  Private (Admin only)
-exports.updateClientBroker = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errors.array(),
-      });
-    }
-
-    const { name, domain, isActive } = req.body;
-
-    const clientNetwork = await ClientNetwork.findById(req.params.id);
-    if (!clientNetwork) {
-      return res.status(404).json({
-        success: false,
-        message: "Client network not found",
-      });
-    }
-
-    const broker = clientNetwork.clientBrokers.id(req.params.brokerId);
-    if (!broker) {
-      return res.status(404).json({
-        success: false,
-        message: "Client broker not found",
-      });
-    }
-
-    // Update broker fields
-    if (name !== undefined) broker.name = name;
-    if (domain !== undefined) broker.domain = domain;
-    if (isActive !== undefined) broker.isActive = isActive;
-
-    await clientNetwork.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Client broker updated successfully",
-      data: clientNetwork,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Remove client broker from network
-// @route   DELETE /api/client-networks/:id/brokers/:brokerId
-// @access  Private (Admin only)
-exports.removeClientBroker = async (req, res, next) => {
-  try {
-    const clientNetwork = await ClientNetwork.findById(req.params.id);
-    if (!clientNetwork) {
-      return res.status(404).json({
-        success: false,
-        message: "Client network not found",
-      });
-    }
-
-    const broker = clientNetwork.clientBrokers.id(req.params.brokerId);
-    if (!broker) {
-      return res.status(404).json({
-        success: false,
-        message: "Client broker not found",
-      });
-    }
-
-    clientNetwork.clientBrokers.pull(req.params.brokerId);
-    await clientNetwork.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Client broker removed successfully",
-      data: clientNetwork,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+// Note: Client broker management has been moved to separate ClientBroker model
+// Client networks now serve as intermediaries only
 
 // @desc    Get client networks assigned to current affiliate manager
 // @route   GET /api/client-networks/my-networks
@@ -447,7 +273,7 @@ exports.getMyClientNetworks = async (req, res, next) => {
       assignedAffiliateManagers: req.user._id,
       isActive: true,
     })
-      .select("name description clientBrokers")
+      .select("name description")
       .sort({ name: 1 });
 
     res.status(200).json({

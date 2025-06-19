@@ -33,6 +33,8 @@ to all existing client brokers in the system, the status of the lead is somethin
 available client brokers", until in the system is added a new client broker, that the lead is not
 assigned to.
 
+! Right now client network save info about client brokers, client brokers are assigned to client networks. We don't need to track this, we need to assign client brokers to leads. 1 lead can have many client brokers. We don't care through what client network, the lead has gone through(only the session keeps track of this). The lead record save the data to which client brokers is he assigned. The client brokers records hold info to which leads they are connected. The client networks are something like intermediary.
+
 🔧 IMPLEMENTATION DETAILS:
 
 1. Enhanced Lead Model:

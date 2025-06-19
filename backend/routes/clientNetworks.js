@@ -6,9 +6,6 @@ const {
   createClientNetwork,
   updateClientNetwork,
   deleteClientNetwork,
-  addClientBroker,
-  updateClientBroker,
-  removeClientBroker,
   getMyClientNetworks,
 } = require("../controllers/clientNetworks");
 const { protect, isAdmin, authorize } = require("../middleware/auth");
@@ -98,58 +95,7 @@ router.put(
 // @access  Private (Admin only)
 router.delete("/:id", [protect, isAdmin], deleteClientNetwork);
 
-// Client Broker Management Routes
-
-// @route   POST /api/client-networks/:id/brokers
-// @desc    Add client broker to network
-// @access  Private (Admin only)
-router.post(
-  "/:id/brokers",
-  [
-    protect,
-    isAdmin,
-    body("name")
-      .trim()
-      .isLength({ min: 1, max: 100 })
-      .withMessage("Broker name is required and must be less than 100 characters"),
-    body("domain")
-      .optional()
-      .trim()
-      .isLength({ max: 200 })
-      .withMessage("Domain must be less than 200 characters"),
-  ],
-  addClientBroker
-);
-
-// @route   PUT /api/client-networks/:id/brokers/:brokerId
-// @desc    Update client broker in network
-// @access  Private (Admin only)
-router.put(
-  "/:id/brokers/:brokerId",
-  [
-    protect,
-    isAdmin,
-    body("name")
-      .optional()
-      .trim()
-      .isLength({ min: 1, max: 100 })
-      .withMessage("Broker name must be less than 100 characters"),
-    body("domain")
-      .optional()
-      .trim()
-      .isLength({ max: 200 })
-      .withMessage("Domain must be less than 200 characters"),
-    body("isActive")
-      .optional()
-      .isBoolean()
-      .withMessage("isActive must be a boolean"),
-  ],
-  updateClientBroker
-);
-
-// @route   DELETE /api/client-networks/:id/brokers/:brokerId
-// @desc    Remove client broker from network
-// @access  Private (Admin only)
-router.delete("/:id/brokers/:brokerId", [protect, isAdmin], removeClientBroker);
+// Note: Client broker management has been moved to /api/client-brokers routes
+// Client networks now serve as intermediaries only
 
 module.exports = router; 
