@@ -65,12 +65,12 @@ clientNetworkSchema.index({ isActive: 1 });
 
 // Virtual for assigned affiliate managers count
 clientNetworkSchema.virtual("assignedManagersCount").get(function () {
-  return this.assignedAffiliateManagers.length;
+  return this.assignedAffiliateManagers ? this.assignedAffiliateManagers.length : 0;
 });
 
 // Virtual for active client brokers count
 clientNetworkSchema.virtual("activeBrokersCount").get(function () {
-  return this.clientBrokers.filter((broker) => broker.isActive).length;
+  return this.clientBrokers ? this.clientBrokers.filter((broker) => broker.isActive).length : 0;
 });
 
 module.exports = mongoose.model("ClientNetwork", clientNetworkSchema); 

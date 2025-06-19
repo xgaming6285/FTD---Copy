@@ -394,6 +394,13 @@ exports.removeClientBroker = async (req, res, next) => {
 // @access  Private (Affiliate Manager only)
 exports.getMyClientNetworks = async (req, res, next) => {
   try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({
+        success: false,
+        message: "User not authenticated"
+      });
+    }
+
     const clientNetworks = await ClientNetwork.find({
       assignedAffiliateManagers: req.user._id,
       isActive: true,
@@ -406,6 +413,7 @@ exports.getMyClientNetworks = async (req, res, next) => {
       data: clientNetworks,
     });
   } catch (error) {
+    console.error('Error in getMyClientNetworks:', error);
     next(error);
   }
 }; 

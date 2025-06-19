@@ -906,6 +906,52 @@ const OrdersPage = () => {
                   </FormControl>
                 )}/>
               </Grid>
+              
+              {/* Client Network Selection - Only show for affiliate managers */}
+              {user?.role === 'affiliate_manager' && (
+                <Grid item xs={12}>
+                  <Controller 
+                    name="selectedClientNetwork" 
+                    control={control} 
+                    render={({ field }) => (
+                      <FormControl fullWidth size="small" error={!!errors.selectedClientNetwork}>
+                        <InputLabel>Client Network (Optional)</InputLabel>
+                        <Select
+                          {...field}
+                          label="Client Network (Optional)"
+                          value={field.value || ''}
+                          disabled={loadingClientNetworks}
+                        >
+                          <MenuItem value="">All Client Networks</MenuItem>
+                          {clientNetworks.map((network) => (
+                            <MenuItem key={network._id} value={network._id}>
+                              {network.name}
+                              {network.description && (
+                                <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                                  {network.description}
+                                </Typography>
+                              )}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                        {errors.selectedClientNetwork?.message && (
+                          <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+                            {errors.selectedClientNetwork.message}
+                          </Typography>
+                        )}
+                        {!errors.selectedClientNetwork?.message && (
+                          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
+                            {loadingClientNetworks 
+                              ? 'Loading client networks...' 
+                              : `${clientNetworks.length} client network(s) available`
+                            }
+                          </Typography>
+                        )}
+                      </FormControl>
+                    )}
+                  />
+                </Grid>
+              )}
               <Grid item xs={12}>
                 <Controller name="notes" control={control} render={({ field }) => <TextField {...field} fullWidth label="Notes" multiline rows={3} error={!!errors.notes} helperText={errors.notes?.message} size="small" />}/>
               </Grid>
