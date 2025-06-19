@@ -149,7 +149,8 @@ const OrdersPage = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  // Mass assignment state variables removed
+  const [assignClientDialogOpen, setAssignClientDialogOpen] = useState(false);
+  const [isAssigningClient, setIsAssigningClient] = useState(false);
 
   // Injection states
   const [injectionStatus, setInjectionStatus] = useState({});
@@ -582,6 +583,41 @@ const OrdersPage = () => {
       });
     }
   }, [fetchOrders]);
+
+  // Client assignment handlers
+  const handleOpenAssignClientDialog = useCallback((orderId) => {
+    setSelectedOrder({ _id: orderId });
+    setAssignClientDialogOpen(true);
+  }, []);
+
+  const handleAssignClientInfo = useCallback(async () => {
+    if (!selectedOrder?._id) return;
+
+    setIsAssigningClient(true);
+    try {
+      await api.put(`/orders/${selectedOrder._id}/assign-client-info`, {
+        client: clientInfo.client,
+        clientBroker: clientInfo.clientBroker,
+        clientNetwork: clientInfo.clientNetwork
+      });
+
+      setNotification({
+        message: 'Client information assigned to all leads successfully!',
+        severity: 'success'
+      });
+
+      setAssignClientDialogOpen(false);
+      setClientInfo({ client: '', clientBroker: '', clientNetwork: '' });
+      fetchOrders();
+    } catch (err) {
+      setNotification({
+        message: err.response?.data?.message || 'Failed to assign client information',
+        severity: 'error'
+      });
+    } finally {
+      setIsAssigningClient(false);
+    }
+  }, [selectedOrder, clientInfo, fetchOrders]);
 
   // Readability: Helper component for rendering lead counts
   const renderLeadCounts = (label, requested, fulfilled) => (
