@@ -108,6 +108,33 @@ const leadSchema = new mongoose.Schema(
         }
       },
     ],
+    // History of client network assignments
+    clientNetworkHistory: [
+      {
+        clientNetwork: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "ClientNetwork",
+          required: true,
+        },
+        clientBroker: {
+          type: String,
+          trim: true,
+        },
+        assignedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        assignedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        orderId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Order",
+        },
+      },
+    ],
     gender: {
       type: String,
       enum: ["male", "female", "not_defined"],
@@ -235,6 +262,12 @@ leadSchema.index({ "clientBrokerHistory.clientBroker": 1 });
 leadSchema.index({ "clientBrokerHistory.orderId": 1 });
 leadSchema.index({ "clientBrokerHistory.clientBroker": 1, "clientBrokerHistory.orderId": 1 });
 leadSchema.index({ "clientBrokerHistory.assignedAt": -1 });
+
+// Client network history indexes for better performance
+leadSchema.index({ "clientNetworkHistory.clientNetwork": 1 });
+leadSchema.index({ "clientNetworkHistory.orderId": 1 });
+leadSchema.index({ "clientNetworkHistory.clientNetwork": 1, "clientNetworkHistory.orderId": 1 });
+leadSchema.index({ "clientNetworkHistory.assignedAt": -1 });
 
 // Compound indexes for common query patterns
 leadSchema.index({ leadType: 1, isAssigned: 1, status: 1 }); // Common filtering pattern
@@ -414,6 +447,45 @@ leadSchema.statics.findSleepingLeads = function () {
   return this.find({
     brokerAvailabilityStatus: { $in: ["sleep", "not_available_brokers"] }
   });
+};
+
+// Check if lead is already assigned to a specific client network in a specific order
+leadSchema.methods.isAssignedToClientNetwork = function (clientNetworkId, orderId = null) {
+  return this.clientNetworkHistory.some(
+    history => {
+      const networkMatch = history.clientNetwork.toString() === clientNetworkId.toString();
+      if (orderId) {
+        return networkMatch && history.orderId && history.orderId.toString() === orderId.toString();
+      }
+      return networkMatch;
+    }
+  );
+};
+
+// Add client network assignment to history
+leadSchema.methods.addClientNetworkAssignment = function (clientNetworkId, assignedBy, orderId, clientBroker = null) {
+  // Check if already assigned to this network in this order
+  if (this.isAssignedToClientNetwork(clientNetworkId, orderId)) {
+    throw new Error('Lead is already assigned to this client network in this order');
+  }
+
+  // Add to history
+  this.clientNetworkHistory.push({
+    clientNetwork: clientNetworkId,
+    clientBroker: clientBroker,
+    assignedBy: assignedBy,
+    orderId: orderId
+  });
+};
+
+// Get client network assignment history
+leadSchema.methods.getClientNetworkHistory = function () {
+  return this.clientNetworkHistory;
+};
+
+// Get all client networks this lead has been assigned to
+leadSchema.methods.getAssignedClientNetworks = function () {
+  return [...new Set(this.clientNetworkHistory.map(history => history.clientNetwork.toString()))];
 };
 
 module.exports = mongoose.model("Lead", leadSchema);

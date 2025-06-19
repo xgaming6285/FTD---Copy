@@ -149,8 +149,7 @@ const OrdersPage = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [assignClientDialogOpen, setAssignClientDialogOpen] = useState(false);
-  const [isAssigningClient, setIsAssigningClient] = useState(false);
+
 
   // Injection states
   const [injectionStatus, setInjectionStatus] = useState({});
@@ -179,12 +178,7 @@ const OrdersPage = () => {
   // State for individual lead expansion within orders
   const [expandedLeads, setExpandedLeads] = useState({});
 
-  // Client info state for assignment dialog
-  const [clientInfo, setClientInfo] = useState({
-    client: '',
-    clientBroker: '',
-    clientNetwork: ''
-  });
+
 
   const {
     control,
@@ -584,40 +578,7 @@ const OrdersPage = () => {
     }
   }, [fetchOrders]);
 
-  // Client assignment handlers
-  const handleOpenAssignClientDialog = useCallback((orderId) => {
-    setSelectedOrder({ _id: orderId });
-    setAssignClientDialogOpen(true);
-  }, []);
 
-  const handleAssignClientInfo = useCallback(async () => {
-    if (!selectedOrder?._id) return;
-
-    setIsAssigningClient(true);
-    try {
-      await api.put(`/orders/${selectedOrder._id}/assign-client-info`, {
-        client: clientInfo.client,
-        clientBroker: clientInfo.clientBroker,
-        clientNetwork: clientInfo.clientNetwork
-      });
-
-      setNotification({
-        message: 'Client information assigned to all leads successfully!',
-        severity: 'success'
-      });
-
-      setAssignClientDialogOpen(false);
-      setClientInfo({ client: '', clientBroker: '', clientNetwork: '' });
-      fetchOrders();
-    } catch (err) {
-      setNotification({
-        message: err.response?.data?.message || 'Failed to assign client information',
-        severity: 'error'
-      });
-    } finally {
-      setIsAssigningClient(false);
-    }
-  }, [selectedOrder, clientInfo, fetchOrders]);
 
   // Readability: Helper component for rendering lead counts
   const renderLeadCounts = (label, requested, fulfilled) => (
@@ -770,9 +731,6 @@ const OrdersPage = () => {
                         <TableCell>
                           <IconButton size="small" onClick={() => handleViewOrder(order._id)} title="View Order"><ViewIcon fontSize="small" /></IconButton>
                           <IconButton size="small" onClick={() => handleExportLeads(order._id)} title="Export Leads as CSV"><DownloadIcon fontSize="small" /></IconButton>
-                          {order.leads && order.leads.length > 0 && (
-                            <IconButton size="small" onClick={() => handleOpenAssignClientDialog(order._id)} title="Assign Client Info to All Leads"><AssignmentIcon fontSize="small" /></IconButton>
-                          )}
 
                           {/* Injection Controls - only for admin/affiliate managers */}
                           {(user?.role === 'admin' || user?.role === 'affiliate_manager') && order.injectionSettings?.enabled && (
@@ -1323,45 +1281,7 @@ const OrdersPage = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Assign Client Info Dialog */}
-      <Dialog open={assignClientDialogOpen} onClose={() => setAssignClientDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Assign Client Information to All Leads</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            This will update client information for all leads in this order.
-          </Typography>
-          <TextField
-            fullWidth
-            label="Client Name"
-            value={clientInfo.client}
-            onChange={(e) => setClientInfo(prev => ({ ...prev, client: e.target.value }))}
-            sx={{ mb: 2 }}
-          />
-          <TextField
-            fullWidth
-            label="Client Broker"
-            value={clientInfo.clientBroker}
-            onChange={(e) => setClientInfo(prev => ({ ...prev, clientBroker: e.target.value }))}
-            sx={{ mb: 2 }}
-          />
-          <TextField
-            fullWidth
-            label="Client Network"
-            value={clientInfo.clientNetwork}
-            onChange={(e) => setClientInfo(prev => ({ ...prev, clientNetwork: e.target.value }))}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAssignClientDialogOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleAssignClientInfo}
-            disabled={isAssigningClient}
-          >
-            {isAssigningClient ? 'Assigning...' : 'Assign'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+
 
       {/* Broker Assignment Dialog */}
       <Dialog

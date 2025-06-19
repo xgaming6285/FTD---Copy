@@ -655,11 +655,15 @@ exports.createOrder = async (req, res, next) => {
 
       // Add client network assignment to history if specified
       if (selectedClientNetwork) {
-        lead.addClientNetworkAssignment(
-          selectedClientNetwork,
-          req.user._id,
-          order._id
-        );
+        try {
+          lead.addClientNetworkAssignment(
+            selectedClientNetwork,
+            req.user._id,
+            order._id
+          );
+        } catch (error) {
+          console.warn(`Could not assign client network to lead ${lead._id}: ${error.message}`);
+        }
       }
 
       await lead.save();
@@ -1688,14 +1692,18 @@ const injectSingleLead = async (lead, orderId) => {
         if (code === 0) {
           console.log(`Successfully injected lead ${lead._id} for order ${orderId}`);
 
-          // Add client network assignment to lead history
+          // Add client network assignment to lead history if available
           if (order.selectedClientNetwork) {
-            lead.addClientNetworkAssignment(
-              order.selectedClientNetwork._id,
-              order.requester,
-              orderId
-            );
-            await lead.save();
+            try {
+              lead.addClientNetworkAssignment(
+                order.selectedClientNetwork._id,
+                order.requester,
+                orderId
+              );
+              await lead.save();
+            } catch (error) {
+              console.warn(`Could not assign client network to lead ${lead._id}: ${error.message}`);
+            }
           }
 
           // Mark order as needing broker assignment
