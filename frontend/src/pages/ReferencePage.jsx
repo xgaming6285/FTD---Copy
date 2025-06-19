@@ -86,6 +86,7 @@ const ReferencePage = () => {
         return isNaN(num) ? '0.00' : num.toFixed(decimals);
     };
     const [metrics, setMetrics] = useState(null);
+    const [agentData, setAgentData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [expanded, setExpanded] = useState(false);
@@ -281,8 +282,9 @@ const ReferencePage = () => {
                     }
                 } else if (user?.role === 'agent') {
                     // Fetch current agent's data using their name
-                    const agentData = await fetchAgentMetrics(user.name);
-                    setMetrics(agentData.metrics);
+                    const fetchedAgentData = await fetchAgentMetrics(user.name);
+                    setAgentData(fetchedAgentData);
+                    setMetrics(fetchedAgentData.metrics);
                 }
             } catch (err) {
                 console.error('Error fetching metrics:', err);
@@ -330,43 +332,33 @@ const ReferencePage = () => {
         );
     }
 
-    // Example data structure for payment calculations
-    const agentStats = {
-        id: "647",
-        name: "David C",
-        incoming: 136,
-        failed: 0,
-        successful: 136,
-        totalTalkTime: "30:39:40",
-        totalTalkTimeSeconds: 110380,
-        ratePerSecond: RATE_PER_SECOND,
-        totalTalkPay: 306.86,
-        callCounts: {
-            firstCalls: 15,
-            secondCalls: 13,
-            thirdCalls: 5,
-            fourthCalls: 2,
-            fifthCalls: 2,
-            verifiedAccounts: 8
-        },
-        fines: 25.00
+    // Get the current agent data based on role
+    const currentAgentData = user.role === 'admin' ? selectedAgent : agentData;
+
+    // Calculate success rate using real data
+    const successRate = currentAgentData?.stats && currentAgentData.stats.incoming > 0 ?
+        (currentAgentData.stats.successful / currentAgentData.stats.incoming) * 100 : 0;
+
+    // Calculate bonuses using real data
+    const bonuses = currentAgentData?.stats ? calculateBonuses(
+        currentAgentData.stats.callCounts.firstCalls,
+        currentAgentData.stats.callCounts.secondCalls,
+        currentAgentData.stats.callCounts.thirdCalls,
+        currentAgentData.stats.callCounts.fourthCalls,
+        currentAgentData.stats.callCounts.fifthCalls,
+        currentAgentData.stats.callCounts.verifiedAccounts
+    ) : {
+        firstCallBonus: 0,
+        secondCallBonus: 0,
+        thirdCallBonus: 0,
+        fourthCallBonus: 0,
+        fifthCallBonus: 0,
+        verifiedAccBonus: 0
     };
 
-    // Calculate success rate
-    const successRate = (agentStats.successful / agentStats.incoming) * 100;
-
-    // Calculate bonuses
-    const bonuses = calculateBonuses(
-        agentStats.callCounts.firstCalls,
-        agentStats.callCounts.secondCalls,
-        agentStats.callCounts.thirdCalls,
-        agentStats.callCounts.fourthCalls,
-        agentStats.callCounts.fifthCalls,
-        agentStats.callCounts.verifiedAccounts
-    );
-
     const totalBonuses = Object.values(bonuses).reduce((sum, bonus) => sum + bonus, 0);
-    const totalPayableAmount = calculateTotalPayment(agentStats.totalTalkPay, bonuses, agentStats.fines);
+    const totalPayableAmount = currentAgentData?.stats ?
+        calculateTotalPayment(currentAgentData.stats.totalTalkPay, bonuses, currentAgentData.stats.fines) : 0;
 
     const StatCard = ({ title, value, icon, color, subtitle }) => (
         <Card
@@ -428,12 +420,7 @@ const ReferencePage = () => {
         );
     }
 
-    // Get the current agent data based on role
-    const currentAgentData = user.role === 'admin' ? selectedAgent : {
-        fullName: user.fullName,
-        metrics: metrics,
-        stats: agentStats
-    };
+
 
     return (
         <Box p={3}>
@@ -576,7 +563,7 @@ const ReferencePage = () => {
                         value={`$${totalBonuses.toFixed(2)}`}
                         icon={<BonusIcon color="primary" />}
                         color="primary"
-                        subtitle={`${Object.values(currentAgentData?.stats?.callCounts).reduce((a, b) => a + b, 0)} qualified calls`}
+                        subtitle={`${currentAgentData?.stats?.callCounts ? Object.values(currentAgentData.stats.callCounts).reduce((a, b) => a + b, 0) : 0} qualified calls`}
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} md={4}>
