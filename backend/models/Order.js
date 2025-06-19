@@ -46,7 +46,7 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
-    // Selected client network for this order
+    // Selected client network for this order (for reference only)
     selectedClientNetwork: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ClientNetwork",

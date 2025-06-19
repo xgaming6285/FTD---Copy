@@ -431,7 +431,7 @@ exports.createOrder = async (req, res, next) => {
       });
     }
 
-    // Validate client network access for affiliate managers
+    // Validate client network access for affiliate managers (for reference selection only)
     if (req.user.role === "affiliate_manager" && selectedClientNetwork) {
       const ClientNetwork = require("../models/ClientNetwork");
       const clientNetwork = await ClientNetwork.findOne({
@@ -1241,77 +1241,16 @@ exports.exportOrderLeads = async (req, res, next) => {
 
 // @desc    Assign client, broker, and network info to all leads in order
 // @route   PUT /api/orders/:id/assign-client-info
-// @access  Private (Admin, Manager - own orders only)
+// @access  DISABLED - This functionality has been removed
+// 
+// This endpoint has been disabled to prevent mass assignment of client info to all leads in an order.
+// Use individual lead assignment endpoints instead: PUT /api/leads/:id/assign-client-network
 exports.assignClientInfoToOrderLeads = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errors.array(),
-      });
-    }
-
-    const orderId = req.params.id;
-    const { client, clientBroker, clientNetwork } = req.body;
-
-    // Validate ObjectId
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid order ID",
-      });
-    }
-
-    // Get order and check ownership
-    const order = await Order.findById(orderId);
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
-    }
-
-    // Check if user can access this order (Admin or owns the order)
-    if (
-      req.user.role !== "admin" &&
-      order.requester.toString() !== req.user.id
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied",
-      });
-    }
-
-    // Build update object with only provided fields
-    const updateData = {};
-    if (client !== undefined) updateData.client = client;
-    if (clientBroker !== undefined) updateData.clientBroker = clientBroker;
-    if (clientNetwork !== undefined) updateData.clientNetwork = clientNetwork;
-
-    // Update all leads in the order
-    const updateResult = await Lead.updateMany(
-      { orderId: orderId },
-      { $set: updateData }
-    );
-
-    // Get updated leads count
-    const updatedLeadsCount = updateResult.modifiedCount;
-
-    res.status(200).json({
-      success: true,
-      message: `Successfully updated client information for ${updatedLeadsCount} leads in the order`,
-      data: {
-        orderId: orderId,
-        updatedLeadsCount: updatedLeadsCount,
-        clientInfo: updateData,
-      },
-    });
-  } catch (error) {
-    console.error("Assign client info error:", error);
-    next(error);
-  }
+  return res.status(410).json({
+    success: false,
+    message: "This functionality has been disabled. Please use individual lead assignment instead.",
+    details: "Use PUT /api/leads/:id/assign-client-network to assign client networks to individual leads."
+  });
 };
 
 

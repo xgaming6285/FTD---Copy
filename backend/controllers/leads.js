@@ -696,6 +696,255 @@ exports.unassignLeads = async (req, res, next) => {
   }
 };
 
+// @desc    Assign client network to individual lead
+// @route   PUT /api/leads/:id/assign-client-network
+// @access  Private (Admin, Affiliate Manager)
+exports.assignClientNetworkToLead = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors: errors.array(),
+      });
+    }
+
+    const leadId = req.params.id;
+    const { clientNetwork, clientBroker, client } = req.body;
+
+    // Find the lead
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    // Check if user has permission to assign client networks
+    if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can assign client networks.",
+      });
+    }
+
+    // Validate that clientNetwork is provided
+    if (!clientNetwork) {
+      return res.status(400).json({
+        success: false,
+        message: "Client network is required",
+      });
+    }
+
+    // Check if this lead has already been assigned to this client network within the same order
+    if (lead.orderId) {
+      const isAlreadyAssignedInOrder = lead.clientNetworkHistory.some(history => 
+        history.clientNetwork === clientNetwork && 
+        history.orderId && 
+        history.orderId.toString() === lead.orderId.toString()
+      );
+
+      if (isAlreadyAssignedInOrder) {
+        return res.status(400).json({
+          success: false,
+          message: `Lead "${lead.firstName} ${lead.lastName}" has already been assigned to client network "${clientNetwork}" within this order.`,
+          data: {
+            leadId: lead._id,
+            leadName: `${lead.firstName} ${lead.lastName}`,
+            clientNetwork: clientNetwork,
+            orderId: lead.orderId
+          }
+        });
+      }
+    }
+
+    // Create history entry
+    const historyEntry = {
+      clientNetwork: clientNetwork,
+      clientBroker: clientBroker || lead.clientBroker,
+      assignedAt: new Date(),
+      assignedBy: req.user.id,
+      orderId: lead.orderId
+    };
+
+    // Update the lead
+    const updateData = {
+      clientNetwork: clientNetwork,
+      $push: {
+        clientNetworkHistory: historyEntry
+      }
+    };
+
+    if (clientBroker !== undefined) updateData.clientBroker = clientBroker;
+    if (client !== undefined) updateData.client = client;
+
+    const updatedLead = await Lead.findByIdAndUpdate(
+      leadId,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('assignedTo', 'fullName fourDigitCode email');
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully assigned client network "${clientNetwork}" to lead "${lead.firstName} ${lead.lastName}"`,
+      data: updatedLead,
+    });
+  } catch (error) {
+    console.error("Assign client network to lead error:", error);
+    next(error);
+  }
+};
+
+// @desc    Get lead assignment history
+// @route   GET /api/leads/:id/assignment-history
+// @access  Private (Admin, Affiliate Manager)
+exports.getLeadAssignmentHistory = async (req, res, next) => {
+  try {
+    const leadId = req.params.id;
+
+    const lead = await Lead.findById(leadId)
+      .populate('clientNetworkHistory.assignedBy', 'fullName fourDigitCode email')
+      .populate('clientNetworkHistory.orderId', 'status createdAt');
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    // Check if user has permission to view assignment history
+    if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can view assignment history.",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        leadId: lead._id,
+        leadName: `${lead.firstName} ${lead.lastName}`,
+        currentAssignment: {
+          clientNetwork: lead.clientNetwork,
+          clientBroker: lead.clientBroker,
+          client: lead.client
+        },
+        assignmentHistory: lead.clientNetworkHistory.map(history => ({
+          clientNetwork: history.clientNetwork,
+          clientBroker: history.clientBroker,
+          assignedAt: history.assignedAt,
+          assignedBy: history.assignedBy,
+          orderId: history.orderId,
+          orderStatus: history.orderId ? history.orderId.status : null,
+          orderCreatedAt: history.orderId ? history.orderId.createdAt : null
+        }))
+      }
+    });
+  } catch (error) {
+    console.error("Get lead assignment history error:", error);
+    next(error);
+  }
+};
+
+// @desc    Get client network assignment analytics
+// @route   GET /api/leads/client-network-analytics
+// @access  Private (Admin, Affiliate Manager)
+exports.getClientNetworkAnalytics = async (req, res, next) => {
+  try {
+    const { orderId } = req.query;
+
+    // Check if user has permission
+    if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can view analytics.",
+      });
+    }
+
+    let matchStage = {};
+    if (orderId) {
+      if (!mongoose.Types.ObjectId.isValid(orderId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid order ID format",
+        });
+      }
+      matchStage.orderId = new mongoose.Types.ObjectId(orderId);
+    }
+
+    // Aggregate client network assignment data
+    const analytics = await Lead.aggregate([
+      { $match: matchStage },
+      { $unwind: { path: "$clientNetworkHistory", preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: {
+            clientNetwork: "$clientNetworkHistory.clientNetwork",
+            orderId: "$clientNetworkHistory.orderId"
+          },
+          totalAssignments: { $sum: 1 },
+          uniqueLeads: { $addToSet: "$_id" },
+          firstAssignment: { $min: "$clientNetworkHistory.assignedAt" },
+          lastAssignment: { $max: "$clientNetworkHistory.assignedAt" },
+          clientBrokers: { $addToSet: "$clientNetworkHistory.clientBroker" }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.clientNetwork",
+          totalAssignments: { $sum: "$totalAssignments" },
+          totalUniqueLeads: { $sum: { $size: "$uniqueLeads" } },
+          orderBreakdown: {
+            $push: {
+              orderId: "$_id.orderId",
+              assignments: "$totalAssignments",
+              uniqueLeads: { $size: "$uniqueLeads" },
+              firstAssignment: "$firstAssignment",
+              lastAssignment: "$lastAssignment",
+              clientBrokers: "$clientBrokers"
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          clientNetwork: "$_id",
+          totalAssignments: 1,
+          totalUniqueLeads: 1,
+          orderBreakdown: 1,
+          _id: 0
+        }
+      },
+      { $sort: { totalAssignments: -1 } }
+    ]);
+
+    // Get conflict summary if orderId is provided
+    let conflictSummary = null;
+    if (orderId) {
+      const { checkOrderClientNetworkConflicts } = require('../utils/clientNetworkValidator');
+      conflictSummary = await checkOrderClientNetworkConflicts(orderId);
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        analytics,
+        conflictSummary,
+        totalClientNetworks: analytics.length,
+        totalAssignments: analytics.reduce((sum, item) => sum + item.totalAssignments, 0),
+        totalUniqueLeads: analytics.reduce((sum, item) => sum + item.totalUniqueLeads, 0)
+      }
+    });
+  } catch (error) {
+    console.error("Get client network analytics error:", error);
+    next(error);
+  }
+};
+
 // @desc    Update lead information
 // @route   PUT /api/leads/:id
 // @access  Private (Admin, Affiliate Manager)
