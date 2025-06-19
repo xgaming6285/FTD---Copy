@@ -116,10 +116,6 @@ const leadSchema = new mongoose.Schema(
           ref: "ClientNetwork",
           required: true,
         },
-        clientBroker: {
-          type: String,
-          trim: true,
-        },
         assignedAt: {
           type: Date,
           default: Date.now,
@@ -463,7 +459,7 @@ leadSchema.methods.isAssignedToClientNetwork = function (clientNetworkId, orderI
 };
 
 // Add client network assignment to history
-leadSchema.methods.addClientNetworkAssignment = function (clientNetworkId, assignedBy, orderId, clientBroker = null) {
+leadSchema.methods.addClientNetworkAssignment = function (clientNetworkId, assignedBy, orderId) {
   // Check if already assigned to this network in this order
   if (this.isAssignedToClientNetwork(clientNetworkId, orderId)) {
     throw new Error('Lead is already assigned to this client network in this order');
@@ -472,7 +468,6 @@ leadSchema.methods.addClientNetworkAssignment = function (clientNetworkId, assig
   // Add to history
   this.clientNetworkHistory.push({
     clientNetwork: clientNetworkId,
-    clientBroker: clientBroker,
     assignedBy: assignedBy,
     orderId: orderId
   });
