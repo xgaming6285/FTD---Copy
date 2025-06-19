@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Lead = require("../models/Lead");
 const ClientNetwork = require("../models/ClientNetwork");
+const ClientBroker = require("../models/ClientBroker");
 
 /**
  * FILLER LEADS PHONE NUMBER REPETITION RULES
@@ -1482,7 +1483,6 @@ exports.getLeadsPendingBrokerAssignment = async (req, res, next) => {
     }
 
     // Get available client brokers for each lead
-    const ClientNetwork = require("../models/ClientNetwork");
     const leadsWithBrokers = [];
 
     for (const lead of order.leads) {
@@ -1639,7 +1639,6 @@ const injectSingleLead = async (lead, orderId) => {
     if (availableBrokers.length === 0) {
       const networkName = order.selectedClientNetwork ? order.selectedClientNetwork.name : 'any network';
       console.log(`No available client brokers for lead ${lead._id} in ${networkName}. Putting lead to sleep.`);
-      console.log(`[DEBUG] Client network ${networkName} has ${order.selectedClientNetwork ? order.selectedClientNetwork.clientBrokers.length : 0} total brokers`);
 
       lead.putToSleep(`No available client brokers for injection in ${networkName}`);
       await lead.save();
@@ -1734,42 +1733,25 @@ const injectSingleLead = async (lead, orderId) => {
 // Helper function to get available client brokers for a lead
 const getAvailableClientBrokers = async (lead, clientNetwork) => {
   try {
+    const ClientBroker = require("../models/ClientBroker");
     console.log(`[DEBUG] getAvailableClientBrokers called with clientNetwork: ${clientNetwork ? clientNetwork.name : 'null'}`);
 
-    if (!clientNetwork) {
-      // If no specific client network, get all available brokers
-      const allNetworks = await ClientNetwork.find({ isActive: true });
-      console.log(`[DEBUG] Found ${allNetworks.length} active client networks`);
+    // Get all active client brokers (since they are now separate entities)
+    const allBrokers = await ClientBroker.find({ isActive: true });
+    console.log(`[DEBUG] Found ${allBrokers.length} active client brokers`);
 
-      const allBrokers = [];
-      allNetworks.forEach(network => {
-        console.log(`[DEBUG] Network ${network.name} has ${network.clientBrokers.length} brokers`);
-        network.clientBrokers.forEach(broker => {
-          console.log(`[DEBUG] Broker: ${broker.name}, active: ${broker.isActive}, domain: ${broker.domain}`);
-          if (broker.isActive) {
-            allBrokers.push(broker.domain || broker.name);
-          }
-        });
-      });
-
-      console.log(`[DEBUG] Total active brokers found: ${allBrokers.length}`);
-
-      // Filter out brokers this lead has already been assigned to
-      const assignedBrokers = lead.getAssignedClientBrokers();
-      console.log(`[DEBUG] Lead already assigned to brokers: ${JSON.stringify(assignedBrokers)}`);
-      const availableBrokers = allBrokers.filter(broker => !assignedBrokers.includes(broker));
-      console.log(`[DEBUG] Available brokers after filtering: ${availableBrokers.length}`);
-      return availableBrokers;
-    } else {
-      // Get brokers from specific client network
-      const availableBrokers = clientNetwork.clientBrokers
-        .filter(broker => broker.isActive)
-        .map(broker => broker.domain || broker.name);
-
-      // Filter out brokers this lead has already been assigned to
-      const assignedBrokers = lead.getAssignedClientBrokers();
-      return availableBrokers.filter(broker => !assignedBrokers.includes(broker));
-    }
+    // Filter out brokers this lead has already been assigned to
+    const assignedBrokerIds = lead.getAssignedClientBrokers();
+    console.log(`[DEBUG] Lead already assigned to broker IDs: ${JSON.stringify(assignedBrokerIds)}`);
+    
+    // Filter out brokers that the lead is already assigned to
+    const availableBrokers = allBrokers.filter(broker => 
+      !assignedBrokerIds.includes(broker._id.toString())
+    );
+    
+    const availableBrokerDomains = availableBrokers.map(broker => broker.domain || broker.name);
+    console.log(`[DEBUG] Available brokers after filtering: ${availableBrokerDomains.length}`);
+    return availableBrokerDomains;
   } catch (error) {
     console.error('Error getting available client brokers:', error);
     return [];

@@ -113,7 +113,6 @@ const getLeadClientNetworkSummary = async (leadId) => {
       
       clientNetworkSummary[network].assignmentCount++;
       clientNetworkSummary[network].assignments.push({
-        clientBroker: history.clientBroker,
         assignedAt: history.assignedAt,
         orderId: history.orderId ? history.orderId._id : null,
         orderStatus: history.orderId ? history.orderId.status : null,
