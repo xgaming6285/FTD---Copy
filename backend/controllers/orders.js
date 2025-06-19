@@ -1825,15 +1825,17 @@ const injectSingleLead = async (lead, orderId) => {
     const path = require('path');
     const Order = require("../models/Order");
     const ClientNetwork = require("../models/ClientNetwork");
+    const DeviceAssignmentService = require("../services/deviceAssignmentService");
+    const ProxyManagementService = require("../services/proxyManagementService");
 
-    // Get order details to check client network
+    // Get order details with injection settings
     const order = await Order.findById(orderId).populate('selectedClientNetwork');
 
     console.log(`[DEBUG] Order selectedClientNetwork: ${order.selectedClientNetwork ? order.selectedClientNetwork.name : 'null'}`);
     console.log(`[DEBUG] Lead clientNetworkHistory: ${JSON.stringify(lead.clientNetworkHistory)}`);
 
     // Check if lead has already been successfully injected for this order
-    const existingAssignment = lead.clientNetworkHistory.find(
+    const existingAssignment = lead.clientBrokerHistory.find(
       history => history.orderId && history.orderId.toString() === orderId.toString() &&
         history.injectionStatus === 'successful'
     );
@@ -1844,35 +1846,143 @@ const injectSingleLead = async (lead, orderId) => {
       return true;
     }
 
-    // Wake up the lead if it's sleeping (since we'll create brokers automatically now)
+    // Wake up the lead if it's sleeping
     if (lead.brokerAvailabilityStatus === "sleep") {
-      console.log(`[DEBUG] Waking up sleeping lead ${lead._id} for auto-broker assignment`);
+      console.log(`[DEBUG] Waking up sleeping lead ${lead._id} for injection`);
       lead.wakeUp();
-      await lead.save(); // Save the wake-up status
+      await lead.save();
     }
 
-    // Note: We no longer check for available brokers before injection
-    // Instead, we'll create client brokers automatically based on final redirect domain
+    // Assign device fingerprint if not already assigned
+    if (!lead.fingerprint) {
+      try {
+        console.log(`[DEBUG] Assigning device fingerprint to lead ${lead._id}`);
+        
+        const deviceConfig = order.injectionSettings?.deviceConfig || {};
+        let deviceType = 'android'; // Default device type
+        
+        // Determine device type based on configuration
+        if (deviceConfig.selectionMode === 'bulk' && deviceConfig.bulkDeviceType) {
+          deviceType = deviceConfig.bulkDeviceType;
+        } else if (deviceConfig.selectionMode === 'individual' && deviceConfig.individualAssignments) {
+          const assignment = deviceConfig.individualAssignments.find(
+            assign => assign.leadId.toString() === lead._id.toString()
+          );
+          if (assignment) {
+            deviceType = assignment.deviceType;
+          }
+        } else if (deviceConfig.selectionMode === 'ratio' && deviceConfig.deviceRatio) {
+          // For ratio mode, we'll let the service handle it in batch
+          // For now, use random selection
+          const availableTypes = Object.keys(deviceConfig.deviceRatio).filter(
+            type => deviceConfig.deviceRatio[type] > 0
+          );
+          if (availableTypes.length > 0) {
+            deviceType = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+          }
+        } else {
+          // Random selection from available types
+          const availableTypes = deviceConfig.availableDeviceTypes || ['windows', 'android', 'ios', 'mac', 'linux'];
+          deviceType = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+        }
+        
+        await lead.assignFingerprint(deviceType, order.requester);
+        await lead.save();
+        
+        console.log(`[DEBUG] Assigned ${deviceType} device to lead ${lead._id}`);
+      } catch (error) {
+        console.error(`[ERROR] Failed to assign device fingerprint to lead ${lead._id}:`, error);
+        // Continue with injection using default fingerprint
+      }
+    }
 
-    const leadData = {
-      firstName: lead.firstName,
-      lastName: lead.lastName,
-      email: lead.newEmail,
-      phone: lead.newPhone,
-      country: lead.country,
-      country_code: lead.prefix || "1",
-      landingPage: "https://ftd-copy.vercel.app/landing",
-      password: "TPvBwkO8",
+    // Assign proxy for this lead
+    let proxyConfig = null;
+    try {
+      console.log(`[DEBUG] Assigning proxy to lead ${lead._id} for country ${lead.country}`);
+      
+      const proxyResults = await ProxyManagementService.assignProxiesToLeads(
+        [lead], 
+        order.injectionSettings?.proxyConfig || {}, 
+        order.requester
+      );
+      
+      if (proxyResults.successful.length > 0) {
+        const proxyAssignment = proxyResults.successful[0];
+        const Proxy = require("../models/Proxy");
+        const proxy = await Proxy.findById(proxyAssignment.proxyId);
+        
+        if (proxy) {
+          proxyConfig = {
+            server: proxy.config.server,
+            username: proxy.config.username,
+            password: proxy.config.password,
+            host: proxy.config.host,
+            port: proxy.config.port,
+            country: proxy.country
+          };
+          console.log(`[DEBUG] Assigned proxy ${proxy.proxyId} to lead ${lead._id}`);
+        }
+      } else {
+        console.error(`[ERROR] Failed to assign proxy to lead ${lead._id}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`[ERROR] Error assigning proxy to lead ${lead._id}:`, error);
+      return false;
+    }
+
+    // Get fingerprint configuration for injection
+    let fingerprintConfig = null;
+    if (lead.fingerprint) {
+      try {
+        const fingerprint = await lead.getFingerprint();
+        if (fingerprint) {
+          fingerprintConfig = {
+            deviceId: fingerprint.deviceId,
+            deviceType: fingerprint.deviceType,
+            browser: fingerprint.browser,
+            screen: fingerprint.screen,
+            navigator: fingerprint.navigator,
+            webgl: fingerprint.webgl,
+            canvasFingerprint: fingerprint.canvasFingerprint,
+            audioFingerprint: fingerprint.audioFingerprint,
+            timezone: fingerprint.timezone,
+            plugins: fingerprint.plugins,
+            mobile: fingerprint.mobile,
+            additional: fingerprint.additional
+          };
+          console.log(`[DEBUG] Using fingerprint ${fingerprint.deviceId} for lead ${lead._id}`);
+        }
+      } catch (error) {
+        console.error(`[ERROR] Failed to get fingerprint for lead ${lead._id}:`, error);
+      }
+    }
+
+    // Prepare enhanced injection data
+    const enhancedInjectionData = {
+      leadData: {
+        leadId: lead._id.toString(),
+        firstName: lead.firstName,
+        lastName: lead.lastName,
+        email: lead.newEmail,
+        phone: lead.newPhone,
+        country: lead.country,
+        country_code: lead.prefix || "1"
+      },
+      proxyConfig: proxyConfig,
+      fingerprintConfig: fingerprintConfig,
+      targetUrl: "https://ftd-copy.vercel.app/landing"
     };
 
-    const scriptPath = path.resolve(path.join(__dirname, '..', '..', 'injector_playwright.py'));
+    const scriptPath = path.resolve(path.join(__dirname, '..', '..', 'enhanced_injector_playwright.py'));
 
     console.log(`[DEBUG] Script path: ${scriptPath}`);
-    console.log(`[DEBUG] Lead data: ${JSON.stringify(leadData)}`);
+    console.log(`[DEBUG] Enhanced injection data: ${JSON.stringify(enhancedInjectionData, null, 2)}`);
     console.log(`[DEBUG] Working directory: ${process.cwd()}`);
 
     return new Promise((resolve, reject) => {
-      const pythonProcess = spawn("python", [scriptPath, JSON.stringify(leadData)], {
+      const pythonProcess = spawn("python", [scriptPath, JSON.stringify(enhancedInjectionData)], {
         cwd: path.resolve(path.join(__dirname, '..', '..')) // Set working directory to project root
       });
 
@@ -1895,6 +2005,16 @@ const injectSingleLead = async (lead, orderId) => {
         console.log(`[DEBUG] Python process closed with code: ${code}`);
         console.log(`[DEBUG] STDOUT: ${stdoutData}`);
         console.log(`[DEBUG] STDERR: ${stderrData}`);
+
+        // Complete proxy assignment regardless of success/failure
+        try {
+          const status = code === 0 ? 'completed' : 'failed';
+          lead.completeProxyAssignment(orderId, status);
+          await lead.save();
+          console.log(`[DEBUG] Marked proxy assignment as ${status} for lead ${lead._id}`);
+        } catch (error) {
+          console.error(`[ERROR] Failed to complete proxy assignment for lead ${lead._id}:`, error);
+        }
 
         if (code === 0) {
           console.log(`Successfully injected lead ${lead._id} for order ${orderId}`);
@@ -1927,12 +2047,20 @@ const injectSingleLead = async (lead, orderId) => {
               await assignClientBrokerByDomain(lead, finalDomain, order.requester, orderId);
               console.log(`[DEBUG] Successfully assigned client broker for domain: ${finalDomain}`);
 
+              // Update injection status in client broker history
+              lead.updateInjectionStatus(orderId, 'successful', finalDomain);
+              await lead.save();
+
               // Update broker assignment count
               await Order.findByIdAndUpdate(orderId, {
                 '$inc': { 'injectionProgress.brokersAssigned': 1 }
               });
             } catch (error) {
               console.error(`[ERROR] Failed to assign client broker for domain ${finalDomain}:`, error);
+              // Mark injection as failed in client broker history
+              lead.updateInjectionStatus(orderId, 'failed');
+              await lead.save();
+              
               // Mark order as needing manual broker assignment if auto-assignment fails
               await Order.findByIdAndUpdate(orderId, {
                 'injectionProgress.brokerAssignmentPending': true
@@ -1940,6 +2068,10 @@ const injectSingleLead = async (lead, orderId) => {
             }
           } else {
             console.warn(`[WARN] No final domain found in output, marking for manual broker assignment`);
+            // Mark injection as failed in client broker history
+            lead.updateInjectionStatus(orderId, 'failed');
+            await lead.save();
+            
             // Mark order as needing broker assignment
             await Order.findByIdAndUpdate(orderId, {
               'injectionProgress.brokerAssignmentPending': true
@@ -1950,6 +2082,15 @@ const injectSingleLead = async (lead, orderId) => {
           resolve(true);
         } else {
           console.error(`Failed to inject lead ${lead._id} for order ${orderId}:`, stderrData);
+          
+          // Mark injection as failed in client broker history
+          try {
+            lead.updateInjectionStatus(orderId, 'failed');
+            await lead.save();
+          } catch (error) {
+            console.error(`[ERROR] Failed to update injection status for lead ${lead._id}:`, error);
+          }
+          
           await updateOrderInjectionProgress(orderId, 1, 0); // Add 1 failed injection
           resolve(false);
         }

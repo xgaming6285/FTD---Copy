@@ -85,6 +85,60 @@ const orderSchema = new mongoose.Schema(
         filler: { type: Boolean, default: true },
         cold: { type: Boolean, default: true },
         live: { type: Boolean, default: true }
+      },
+      // Device configuration for injection
+      deviceConfig: {
+        // Device selection mode
+        selectionMode: {
+          type: String,
+          enum: ["individual", "bulk", "ratio", "random"],
+          default: "random"
+        },
+        // For bulk mode - apply same device type to all leads
+        bulkDeviceType: {
+          type: String,
+          enum: ["windows", "android", "ios", "mac", "linux"],
+          default: null
+        },
+        // For ratio mode - device distribution ratios
+        deviceRatio: {
+          windows: { type: Number, default: 0, min: 0, max: 10 },
+          android: { type: Number, default: 0, min: 0, max: 10 },
+          ios: { type: Number, default: 0, min: 0, max: 10 },
+          mac: { type: Number, default: 0, min: 0, max: 10 },
+          linux: { type: Number, default: 0, min: 0, max: 10 }
+        },
+        // For individual mode - specific device assignments per lead
+        individualAssignments: [{
+          leadId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Lead"
+          },
+          deviceType: {
+            type: String,
+            enum: ["windows", "android", "ios", "mac", "linux"],
+            required: true
+          }
+        }],
+        // Default device types for random selection
+        availableDeviceTypes: [{
+          type: String,
+          enum: ["windows", "android", "ios", "mac", "linux"]
+        }]
+      },
+      // Proxy configuration for injection
+      proxyConfig: {
+        // FTD proxy sharing settings
+        ftdProxySharing: {
+          enabled: { type: Boolean, default: true },
+          maxFTDsPerProxy: { type: Number, default: 3, min: 1, max: 10 },
+          shareByCountry: { type: Boolean, default: true }
+        },
+        // Proxy expiration handling
+        proxyExpiration: {
+          autoExpireHours: { type: Number, default: 24, min: 1, max: 168 }, // 1 hour to 1 week
+          healthCheckInterval: { type: Number, default: 300000, min: 60000, max: 1800000 } // 1 min to 30 min
+        }
       }
     },
 

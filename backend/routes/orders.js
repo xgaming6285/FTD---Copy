@@ -251,4 +251,219 @@ router.get("/:id/ftd-leads", [protect, isManager], getFTDLeadsForOrder);
 // @access  Private (Admin, Affiliate Manager)
 router.post("/:id/manual-ftd-injection", [protect, isManager], manualFTDInjection);
 
+// @desc    Assign devices to order leads
+// @route   POST /api/v1/orders/:id/assign-devices
+// @access  Private/Admin
+router.post("/:id/assign-devices", protect, authorize("admin", "affiliate_manager"), async (req, res) => {
+  try {
+    const { deviceConfig } = req.body;
+    const orderId = req.params.id;
+
+    const Order = require("../models/Order");
+    const Lead = require("../models/Lead");
+    const DeviceAssignmentService = require("../services/deviceAssignmentService");
+
+    // Validate device configuration
+    const validation = DeviceAssignmentService.validateDeviceConfig(deviceConfig);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error
+      });
+    }
+
+    // Get order and its leads
+    const order = await Order.findById(orderId).populate('leads');
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
+    }
+
+    // Assign devices to leads
+    const results = await DeviceAssignmentService.assignDevicesToLeads(
+      order.leads,
+      deviceConfig,
+      req.user.id
+    );
+
+    // Update order with device configuration
+    order.injectionSettings.deviceConfig = deviceConfig;
+    await order.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Device assignment completed",
+      data: {
+        results,
+        order: order
+      }
+    });
+
+  } catch (error) {
+    console.error("Error assigning devices to order:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during device assignment",
+      error: error.message
+    });
+  }
+});
+
+// @desc    Get device assignment statistics for order
+// @route   GET /api/v1/orders/:id/device-stats
+// @access  Private/Admin
+router.get("/:id/device-stats", protect, authorize("admin", "affiliate_manager"), async (req, res) => {
+  try {
+    const orderId = req.params.id;
+
+    const Order = require("../models/Order");
+    const DeviceAssignmentService = require("../services/deviceAssignmentService");
+
+    // Get order and its leads
+    const order = await Order.findById(orderId).populate('leads');
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
+    }
+
+    // Get device statistics
+    const stats = await DeviceAssignmentService.getDeviceStats(order.leads);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        stats,
+        deviceConfig: order.injectionSettings?.deviceConfig || null
+      }
+    });
+
+  } catch (error) {
+    console.error("Error getting device stats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error getting device statistics",
+      error: error.message
+    });
+  }
+});
+
+// @desc    Monitor proxy health
+// @route   POST /api/v1/orders/monitor-proxies
+// @access  Private/Admin
+router.post("/monitor-proxies", protect, authorize("admin", "affiliate_manager"), async (req, res) => {
+  try {
+    const ProxyManagementService = require("../services/proxyManagementService");
+
+    console.log("Starting proxy health monitoring...");
+    const results = await ProxyManagementService.monitorProxyHealth();
+
+    res.status(200).json({
+      success: true,
+      message: "Proxy health monitoring completed",
+      data: results
+    });
+
+  } catch (error) {
+    console.error("Error monitoring proxy health:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during proxy monitoring",
+      error: error.message
+    });
+  }
+});
+
+// @desc    Get proxy statistics
+// @route   GET /api/v1/orders/proxy-stats
+// @access  Private/Admin
+router.get("/proxy-stats", protect, authorize("admin", "affiliate_manager"), async (req, res) => {
+  try {
+    const ProxyManagementService = require("../services/proxyManagementService");
+
+    const stats = await ProxyManagementService.getProxyStats();
+
+    res.status(200).json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    console.error("Error getting proxy stats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error getting proxy statistics",
+      error: error.message
+    });
+  }
+});
+
+// @desc    Handle expired proxies
+// @route   POST /api/v1/orders/handle-expired-proxies
+// @access  Private/Admin
+router.post("/handle-expired-proxies", protect, authorize("admin", "affiliate_manager"), async (req, res) => {
+  try {
+    const ProxyManagementService = require("../services/proxyManagementService");
+
+    console.log("Handling expired proxies...");
+    const count = await ProxyManagementService.handleExpiredProxies();
+
+    res.status(200).json({
+      success: true,
+      message: `Handled ${count} expired proxies`,
+      data: { expiredProxiesHandled: count }
+    });
+
+  } catch (error) {
+    console.error("Error handling expired proxies:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error handling expired proxies",
+      error: error.message
+    });
+  }
+});
+
+// @desc    Update lead device type
+// @route   PUT /api/v1/orders/leads/:leadId/device
+// @access  Private/Admin
+router.put("/leads/:leadId/device", protect, authorize("admin", "affiliate_manager"), async (req, res) => {
+  try {
+    const { deviceType } = req.body;
+    const leadId = req.params.leadId;
+
+    if (!deviceType || !['windows', 'android', 'ios', 'mac', 'linux'].includes(deviceType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid device type is required"
+      });
+    }
+
+    const DeviceAssignmentService = require("../services/deviceAssignmentService");
+
+    const result = await DeviceAssignmentService.updateLeadDevice(
+      leadId,
+      deviceType,
+      req.user.id
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Updated lead device to ${deviceType}`,
+      data: result
+    });
+
+  } catch (error) {
+    console.error("Error updating lead device:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error updating lead device",
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
