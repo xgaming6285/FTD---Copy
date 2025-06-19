@@ -66,26 +66,26 @@ const orderSchema = new mongoose.Schema(
       enabled: { type: Boolean, default: false },
       mode: {
         type: String,
-        enum: ["manual", "bulk", "scheduled"],
-        default: "manual"
+        enum: ["bulk", "scheduled"],
+        default: "bulk",
       },
       // For scheduled injection
       scheduledTime: {
         startTime: { type: String }, // e.g., "10:00"
-        endTime: { type: String },   // e.g., "12:00"
+        endTime: { type: String }, // e.g., "12:00"
       },
       // Injection status tracking
       status: {
         type: String,
         enum: ["pending", "in_progress", "completed", "failed", "paused"],
-        default: "pending"
+        default: "pending",
       },
       // Track which lead types to inject (FTDs are always manual)
       includeTypes: {
         filler: { type: Boolean, default: true },
         cold: { type: Boolean, default: true },
-        live: { type: Boolean, default: true }
-      }
+        live: { type: Boolean, default: true },
+      },
     },
 
     // FTD handling tracking
@@ -93,11 +93,11 @@ const orderSchema = new mongoose.Schema(
       status: {
         type: String,
         enum: ["pending", "skipped", "manual_fill_required", "completed"],
-        default: "pending"
+        default: "pending",
       },
       skippedAt: { type: Date },
       completedAt: { type: Date },
-      notes: { type: String }
+      notes: { type: String },
     },
 
     // Injection progress tracking
@@ -111,7 +111,7 @@ const orderSchema = new mongoose.Schema(
       completedAt: { type: Date },
       // Track client broker assignment after injection
       brokersAssigned: { type: Number, default: 0 },
-      brokerAssignmentPending: { type: Boolean, default: false }
+      brokerAssignmentPending: { type: Boolean, default: false },
     },
 
     // Client broker assignment tracking
@@ -119,14 +119,14 @@ const orderSchema = new mongoose.Schema(
       status: {
         type: String,
         enum: ["pending", "in_progress", "completed", "skipped"],
-        default: "pending"
+        default: "pending",
       },
       assignedBy: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "User"
+        ref: "User",
       },
       assignedAt: { type: Date },
-      notes: { type: String }
+      notes: { type: String },
     },
 
     // Completion tracking

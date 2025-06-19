@@ -81,7 +81,9 @@ router.post(
           return true;
         }
         if (!mongoose.Types.ObjectId.isValid(value)) {
-          throw new Error("selectedClientNetwork must be a valid MongoDB ObjectId");
+          throw new Error(
+            "selectedClientNetwork must be a valid MongoDB ObjectId"
+          );
         }
         return true;
       }),
@@ -95,8 +97,8 @@ router.post(
       .withMessage("injectionSettings.enabled must be a boolean"),
     body("injectionSettings.mode")
       .optional()
-      .isIn(["manual", "bulk", "scheduled"])
-      .withMessage("injectionSettings.mode must be 'manual', 'bulk', or 'scheduled'"),
+      .isIn(["bulk", "scheduled"])
+      .withMessage("injectionSettings.mode must be 'bulk' or 'scheduled'"),
     body("injectionSettings.includeTypes")
       .optional()
       .isObject()
@@ -121,25 +123,29 @@ router.post(
       .optional()
       .custom((value) => {
         // Accept either ISO8601 format or HH:MM format
-        if (typeof value === 'string' && value.match(/^\d{2}:\d{2}$/)) {
+        if (typeof value === "string" && value.match(/^\d{2}:\d{2}$/)) {
           return true; // HH:MM format
         }
-        if (typeof value === 'string' && !isNaN(Date.parse(value))) {
+        if (typeof value === "string" && !isNaN(Date.parse(value))) {
           return true; // ISO8601 format
         }
-        throw new Error("injectionSettings.scheduledTime.startTime must be either HH:MM format or ISO8601 date");
+        throw new Error(
+          "injectionSettings.scheduledTime.startTime must be either HH:MM format or ISO8601 date"
+        );
       }),
     body("injectionSettings.scheduledTime.endTime")
       .optional()
       .custom((value) => {
         // Accept either ISO8601 format or HH:MM format
-        if (typeof value === 'string' && value.match(/^\d{2}:\d{2}$/)) {
+        if (typeof value === "string" && value.match(/^\d{2}:\d{2}$/)) {
           return true; // HH:MM format
         }
-        if (typeof value === 'string' && !isNaN(Date.parse(value))) {
+        if (typeof value === "string" && !isNaN(Date.parse(value))) {
           return true; // ISO8601 format
         }
-        throw new Error("injectionSettings.scheduledTime.endTime must be either HH:MM format or ISO8601 date");
+        throw new Error(
+          "injectionSettings.scheduledTime.endTime must be either HH:MM format or ISO8601 date"
+        );
       }),
   ],
   createOrder
@@ -234,12 +240,20 @@ router.post("/:id/assign-brokers", [protect, isManager], assignClientBrokers);
 // @route   GET /api/orders/:id/pending-broker-assignment
 // @desc    Get leads pending broker assignment for an order
 // @access  Private (Admin, Manager)
-router.get("/:id/pending-broker-assignment", [protect, isManager], getLeadsPendingBrokerAssignment);
+router.get(
+  "/:id/pending-broker-assignment",
+  [protect, isManager],
+  getLeadsPendingBrokerAssignment
+);
 
 // @route   POST /api/orders/:id/skip-broker-assignment
 // @desc    Skip broker assignment for leads in an order
 // @access  Private (Admin, Manager)
-router.post("/:id/skip-broker-assignment", [protect, isManager], skipBrokerAssignment);
+router.post(
+  "/:id/skip-broker-assignment",
+  [protect, isManager],
+  skipBrokerAssignment
+);
 
 // @route   GET /api/orders/:id/ftd-leads
 // @desc    Get FTD leads for manual injection
@@ -249,6 +263,10 @@ router.get("/:id/ftd-leads", [protect, isManager], getFTDLeadsForOrder);
 // @route   POST /api/orders/:id/manual-ftd-injection
 // @desc    Manual FTD injection
 // @access  Private (Admin, Affiliate Manager)
-router.post("/:id/manual-ftd-injection", [protect, isManager], manualFTDInjection);
+router.post(
+  "/:id/manual-ftd-injection",
+  [protect, isManager],
+  manualFTDInjection
+);
 
 module.exports = router;

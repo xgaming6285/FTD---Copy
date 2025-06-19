@@ -69,9 +69,8 @@ const orderSchema = yup.object({
   notes: yup.string(),
   country: yup.string().nullable(),
   gender: yup.string().oneOf(['', 'male', 'female', 'not_defined'], 'Invalid gender').nullable().default(''),
-  // New injection fields
-  enableInjection: yup.boolean().default(false),
-  injectionMode: yup.string().oneOf(['manual', 'bulk', 'scheduled'], 'Invalid injection mode').default('manual'),
+  // Injection fields - injection is always enabled
+  injectionMode: yup.string().oneOf(['bulk', 'scheduled'], 'Invalid injection mode').default('bulk'),
   injectionStartTime: yup.string().when('injectionMode', {
     is: 'scheduled',
     then: schema => schema.required('Start time is required for scheduled injection'),
@@ -82,16 +81,8 @@ const orderSchema = yup.object({
     then: schema => schema.required('End time is required for scheduled injection'),
     otherwise: schema => schema
   }),
-  injectFiller: yup.boolean().default(true),
-  injectCold: yup.boolean().default(true),
-  injectLive: yup.boolean().default(true),
 }).test('at-least-one', 'At least one lead type must be requested', (value) => {
   return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
-}).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
-  if (value.enableInjection) {
-    return value.injectFiller || value.injectCold || value.injectLive;
-  }
-  return true;
 });
 
 // Helper functions for status/priority colors
@@ -286,8 +277,8 @@ const OrdersPage = () => {
         country: data.country || null,
         gender: data.gender || null,
         selectedClientNetwork: data.selectedClientNetwork || undefined,
-        // Include injection settings
-        injectionSettings: data.enableInjection ? {
+        // Include injection settings - always enabled for all lead types
+        injectionSettings: {
           enabled: true,
           mode: data.injectionMode,
           scheduledTime: data.injectionMode === 'scheduled' ? {
@@ -295,12 +286,10 @@ const OrdersPage = () => {
             endTime: data.injectionEndTime
           } : undefined,
           includeTypes: {
-            filler: data.injectFiller,
-            cold: data.injectCold,
-            live: data.injectLive
+            filler: true,
+            cold: true,
+            live: true
           }
-        } : {
-          enabled: false
         }
       };
 
@@ -602,9 +591,9 @@ const OrdersPage = () => {
   }, []);
 
   const handleFTDInjectionSuccess = useCallback(() => {
-    setNotification({ 
-      message: 'FTD leads injected successfully!', 
-      severity: 'success' 
+    setNotification({
+      message: 'FTD leads injected successfully!',
+      severity: 'success'
     });
     fetchOrders(); // Refresh orders to show updated status
   }, [fetchOrders]);
@@ -759,19 +748,15 @@ const OrdersPage = () => {
                         <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{`${order.fulfilled?.ftd || 0}/${order.fulfilled?.filler || 0}/${order.fulfilled?.cold || 0}/${order.fulfilled?.live || 0}`}</TableCell>
                         <TableCell><Chip label={order.status} color={getStatusColor(order.status)} size="small" /></TableCell>
                         <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
-                          {order.injectionSettings?.enabled ? (
-                            <Chip
-                              label={order.injectionSettings.status || 'pending'}
-                              color={
-                                order.injectionSettings.status === 'completed' ? 'success' :
-                                  order.injectionSettings.status === 'in_progress' ? 'warning' :
-                                    order.injectionSettings.status === 'failed' ? 'error' : 'default'
-                              }
-                              size="small"
-                            />
-                          ) : (
-                            <Chip label="disabled" color="default" size="small" />
-                          )}
+                          <Chip
+                            label={order.injectionSettings?.status || 'pending'}
+                            color={
+                              order.injectionSettings?.status === 'completed' ? 'success' :
+                                order.injectionSettings?.status === 'in_progress' ? 'warning' :
+                                  order.injectionSettings?.status === 'failed' ? 'error' : 'default'
+                            }
+                            size="small"
+                          />
                         </TableCell>
                         <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}><Chip label={order.priority} color={getPriorityColor(order.priority)} size="small" /></TableCell>
                         <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{new Date(order.createdAt).toLocaleDateString()}</TableCell>
@@ -780,7 +765,7 @@ const OrdersPage = () => {
                           <IconButton size="small" onClick={() => handleExportLeads(order._id)} title="Export Leads as CSV"><DownloadIcon fontSize="small" /></IconButton>
 
                           {/* Injection Controls - only for admin/affiliate managers */}
-                          {(user?.role === 'admin' || user?.role === 'affiliate_manager') && order.injectionSettings?.enabled && (
+                          {(user?.role === 'admin' || user?.role === 'affiliate_manager') && (
                             <>
                               {order.injectionSettings.status === 'pending' && (
                                 <IconButton
@@ -1082,137 +1067,74 @@ const OrdersPage = () => {
                   Lead Injection Settings
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Configure automatic injection for non-FTD leads. FTD leads are always manually filled by affiliate managers/admins.
+                  All non-FTD leads (Filler, Cold, Live) will be automatically injected. FTD leads require manual injection.
                 </Typography>
               </Grid>
 
-              <Grid item xs={12}>
+              {/* Injection mode selection */}
+              <Grid item xs={12} sm={6}>
                 <Controller
-                  name="enableInjection"
+                  name="injectionMode"
                   control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Checkbox {...field} checked={field.value} />}
-                      label="Enable Lead Injection"
-                    />
+                  render={({ field: modeField }) => (
+                    <FormControl fullWidth size="small" error={!!errors.injectionMode}>
+                      <InputLabel>Injection Mode</InputLabel>
+                      <Select {...modeField} label="Injection Mode">
+                        <MenuItem value="bulk">Auto Inject (Bulk)</MenuItem>
+                        <MenuItem value="scheduled">Auto Inject (Scheduled)</MenuItem>
+                      </Select>
+                      {errors.injectionMode && (
+                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+                          {errors.injectionMode.message}
+                        </Typography>
+                      )}
+                    </FormControl>
                   )}
                 />
               </Grid>
 
-              {/* Injection mode selection - only show if injection is enabled */}
+              {/* Scheduled time inputs - only show for scheduled mode */}
               <Controller
-                name="enableInjection"
+                name="injectionMode"
                 control={control}
-                render={({ field }) => (
-                  field.value && (
+                render={({ field: modeField }) => (
+                  modeField.value === 'scheduled' && (
                     <>
-                      <Grid item xs={12} sm={6}>
+                      <Grid item xs={12} sm={3}>
                         <Controller
-                          name="injectionMode"
+                          name="injectionStartTime"
                           control={control}
-                          render={({ field: modeField }) => (
-                            <FormControl fullWidth size="small" error={!!errors.injectionMode}>
-                              <InputLabel>Injection Mode</InputLabel>
-                              <Select {...modeField} label="Injection Mode">
-                                <MenuItem value="manual">Manual Injection</MenuItem>
-                                <MenuItem value="bulk">Auto Inject (Bulk)</MenuItem>
-                                <MenuItem value="scheduled">Auto Inject (Scheduled)</MenuItem>
-                              </Select>
-                              {errors.injectionMode && (
-                                <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                                  {errors.injectionMode.message}
-                                </Typography>
-                              )}
-                            </FormControl>
+                          render={({ field: timeField }) => (
+                            <TextField
+                              {...timeField}
+                              fullWidth
+                              label="Start Time"
+                              type="time"
+                              InputLabelProps={{ shrink: true }}
+                              size="small"
+                              error={!!errors.injectionStartTime}
+                              helperText={errors.injectionStartTime?.message}
+                            />
                           )}
                         />
                       </Grid>
-
-                      {/* Scheduled time inputs - only show for scheduled mode */}
-                      <Controller
-                        name="injectionMode"
-                        control={control}
-                        render={({ field: modeField }) => (
-                          modeField.value === 'scheduled' && (
-                            <>
-                              <Grid item xs={12} sm={3}>
-                                <Controller
-                                  name="injectionStartTime"
-                                  control={control}
-                                  render={({ field: timeField }) => (
-                                    <TextField
-                                      {...timeField}
-                                      fullWidth
-                                      label="Start Time"
-                                      type="time"
-                                      InputLabelProps={{ shrink: true }}
-                                      size="small"
-                                      error={!!errors.injectionStartTime}
-                                      helperText={errors.injectionStartTime?.message}
-                                    />
-                                  )}
-                                />
-                              </Grid>
-                              <Grid item xs={12} sm={3}>
-                                <Controller
-                                  name="injectionEndTime"
-                                  control={control}
-                                  render={({ field: timeField }) => (
-                                    <TextField
-                                      {...timeField}
-                                      fullWidth
-                                      label="End Time"
-                                      type="time"
-                                      InputLabelProps={{ shrink: true }}
-                                      size="small"
-                                      error={!!errors.injectionEndTime}
-                                      helperText={errors.injectionEndTime?.message}
-                                    />
-                                  )}
-                                />
-                              </Grid>
-                            </>
-                          )
-                        )}
-                      />
-
-                      {/* Lead types to inject */}
-                      <Grid item xs={12}>
-                        <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                          Lead Types to Inject (FTDs are always manual):
-                        </Typography>
-                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                          <Controller
-                            name="injectFiller"
-                            control={control}
-                            render={({ field }) => (
-                              <FormControlLabel
-                                control={<Checkbox {...field} checked={field.value} />}
-                                label="Filler Leads"
-                              />
-                            )}
-                          />
-                          <Controller
-                            name="injectCold"
-                            control={control}
-                            render={({ field }) => (
-                              <FormControlLabel
-                                control={<Checkbox {...field} checked={field.value} />}
-                                label="Cold Leads"
-                              />
-                            )}
-                          />
-                          <Controller
-                            name="injectLive"
-                            control={control}
-                            render={({ field }) => (
-                              <FormControlLabel
-                                control={<Checkbox {...field} checked={field.value} />}
-                                label="Live Leads"
-                              />
-                            )}
-                          />
-                        </Box>
+                      <Grid item xs={12} sm={3}>
+                        <Controller
+                          name="injectionEndTime"
+                          control={control}
+                          render={({ field: timeField }) => (
+                            <TextField
+                              {...timeField}
+                              fullWidth
+                              label="End Time"
+                              type="time"
+                              InputLabelProps={{ shrink: true }}
+                              size="small"
+                              error={!!errors.injectionEndTime}
+                              helperText={errors.injectionEndTime?.message}
+                            />
+                          )}
+                        />
                       </Grid>
                     </>
                   )
