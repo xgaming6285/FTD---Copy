@@ -2,6 +2,7 @@ const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Lead = require("../models/Lead");
+const ClientNetwork = require("../models/ClientNetwork");
 
 /**
  * FILLER LEADS PHONE NUMBER REPETITION RULES
@@ -172,8 +173,7 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
       ) {
         selectedLeads.push(leadsWithoutValidPhone[leadsWithoutPhoneIndex]);
         console.log(
-          `[FILLER-DEBUG] Added lead without valid phone pattern: ${
-            leadsWithoutPhoneIndex + 1
+          `[FILLER-DEBUG] Added lead without valid phone pattern: ${leadsWithoutPhoneIndex + 1
           }`
         );
         leadsWithoutPhoneIndex++;
@@ -183,8 +183,7 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
       for (let i = 0; i < requestedCount; i++) {
         selectedLeads.push(phoneGroups[uniquePatterns[i]][0]);
         console.log(
-          `[FILLER-DEBUG] Selected lead ${i + 1} with pattern ${
-            uniquePatterns[i]
+          `[FILLER-DEBUG] Selected lead ${i + 1} with pattern ${uniquePatterns[i]
           }`
         );
       }
@@ -232,18 +231,14 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
           if (wouldCreatePair) {
             totalPairs++;
             console.log(
-              `[FILLER-DEBUG] Added lead #${
-                currentCount + 1
-              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${
-                selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${currentCount + 1
+              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${selectedLeads.length
               })`
             );
           } else {
             console.log(
-              `[FILLER-DEBUG] Added lead #${
-                currentCount + 1
-              } from pattern ${pattern} (no pair), total leads: ${
-                selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${currentCount + 1
+              } from pattern ${pattern} (no pair), total leads: ${selectedLeads.length
               }`
             );
           }
@@ -314,18 +309,14 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
           if (wouldCreatePair) {
             totalPairs++;
             console.log(
-              `[FILLER-DEBUG] Added lead #${
-                currentCount + 1
-              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${
-                selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${currentCount + 1
+              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${selectedLeads.length
               })`
             );
           } else {
             console.log(
-              `[FILLER-DEBUG] Added lead #${
-                currentCount + 1
-              } from pattern ${pattern} (no pair), total leads: ${
-                selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${currentCount + 1
+              } from pattern ${pattern} (no pair), total leads: ${selectedLeads.length
               }`
             );
           }
@@ -403,8 +394,11 @@ const getMaxRepetitionsForFillerCount = (count) => {
 // @access  Private (Admin, Manager with canCreateOrders permission)
 exports.createOrder = async (req, res, next) => {
   try {
+    console.log('[CREATE-ORDER-DEBUG] Received request body:', JSON.stringify(req.body, null, 2));
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('[CREATE-ORDER-DEBUG] Validation errors:', errors.array());
       return res.status(400).json({
         success: false,
         message: "Validation error",
@@ -433,7 +427,6 @@ exports.createOrder = async (req, res, next) => {
 
     // Validate client network access for affiliate managers
     if (req.user.role === "affiliate_manager" && selectedClientNetwork) {
-      const ClientNetwork = require("../models/ClientNetwork");
       const clientNetwork = await ClientNetwork.findOne({
         _id: selectedClientNetwork,
         assignedAffiliateManagers: req.user._id,
@@ -455,13 +448,36 @@ exports.createOrder = async (req, res, next) => {
     const countryFilter = country ? { country: new RegExp(country, "i") } : {};
     const genderFilter = gender ? { gender } : {};
 
-    // Pull FTD leads
-    if (ftd > 0) {
-      const ftdLeads = await Lead.find({
-        leadType: "ftd",
+    // Helper function to get available leads with client network checking
+    const getAvailableLeadsWithNetworkCheck = async (leadType, requestedCount) => {
+      let query = {
+        leadType,
+        isAssigned: false,
+        brokerAvailabilityStatus: { $ne: "sleep" }, // Exclude sleeping leads
         ...countryFilter,
         ...genderFilter,
-      }).limit(ftd);
+      };
+
+      // For FTD leads, ensure they have required documents
+      if (leadType === "ftd") {
+        query["documents.0"] = { $exists: true };
+      }
+
+      let availableLeads = await Lead.find(query).limit(requestedCount * 2); // Get more than needed for filtering
+
+      // If client network is specified, filter out leads already assigned to this network
+      if (selectedClientNetwork) {
+        availableLeads = availableLeads.filter(lead =>
+          !lead.isAssignedToClientNetwork(selectedClientNetwork)
+        );
+      }
+
+      return availableLeads.slice(0, requestedCount);
+    };
+
+    // Pull FTD leads
+    if (ftd > 0) {
+      const ftdLeads = await getAvailableLeadsWithNetworkCheck("ftd", ftd);
 
       if (ftdLeads.length > 0) {
         pulledLeads.push(...ftdLeads);
@@ -529,11 +545,7 @@ exports.createOrder = async (req, res, next) => {
 
     // Pull Cold leads
     if (cold > 0) {
-      const coldLeads = await Lead.find({
-        leadType: "cold",
-        ...countryFilter,
-        ...genderFilter,
-      }).limit(cold);
+      const coldLeads = await getAvailableLeadsWithNetworkCheck("cold", cold);
 
       if (coldLeads.length > 0) {
         pulledLeads.push(...coldLeads);
@@ -543,11 +555,7 @@ exports.createOrder = async (req, res, next) => {
 
     // Pull Live leads
     if (live > 0) {
-      const liveLeads = await Lead.find({
-        leadType: "live",
-        ...countryFilter,
-        ...genderFilter,
-      }).limit(live);
+      const liveLeads = await getAvailableLeadsWithNetworkCheck("live", live);
 
       if (liveLeads.length > 0) {
         pulledLeads.push(...liveLeads);
@@ -609,7 +617,7 @@ exports.createOrder = async (req, res, next) => {
       countryFilter: country || null,
       genderFilter: gender || null,
       selectedClientNetwork: selectedClientNetwork || null,
-      
+
       // Add injection settings
       injectionSettings: {
         enabled: injectionSettings.enabled,
@@ -637,69 +645,30 @@ exports.createOrder = async (req, res, next) => {
 
     await order.save();
 
-    // Then update leads with the order ID
-    if (pulledLeads.length > 0) {
-      // Get current state of leads to check existing assignments
-      const existingLeads = await Lead.find({ 
-        _id: { $in: pulledLeads.map((l) => l._id) }
-      }).select('_id assignedTo isAssigned assignedAt');
+    // Set lead assignments and update isAssigned status
+    const leadIds = [];
+    for (const lead of pulledLeads) {
+      lead.isAssigned = true;
+      lead.assignedTo = req.user._id;
+      lead.orderId = order._id;
+      lead.createdBy = req.user._id;
 
-      // Separate leads that are already assigned vs unassigned
-      const alreadyAssignedLeads = existingLeads.filter(lead => lead.isAssigned && lead.assignedTo);
-      const unassignedLeads = existingLeads.filter(lead => !lead.isAssigned || !lead.assignedTo);
-
-      console.log(`[ORDER-ASSIGNMENT] Processing ${pulledLeads.length} leads for order ${order._id}`);
-      console.log(`[ORDER-ASSIGNMENT] - ${alreadyAssignedLeads.length} leads already assigned to agents (preserving assignments)`);
-      console.log(`[ORDER-ASSIGNMENT] - ${unassignedLeads.length} leads unassigned (will assign to order creator: ${req.user.role})`);
-
-      // For already assigned leads, only update orderId (preserve agent assignment)
-      if (alreadyAssignedLeads.length > 0) {
-        await Lead.updateMany(
-          { _id: { $in: alreadyAssignedLeads.map(l => l._id) } },
-          {
-            $set: {
-              orderId: order._id,
-            },
-          }
-        );
-        console.log(`[ORDER-ASSIGNMENT] Successfully preserved agent assignments for ${alreadyAssignedLeads.length} leads`);
-      }
-
-      // For unassigned leads, assign to order creator and set orderId
-      if (unassignedLeads.length > 0) {
-        await Lead.updateMany(
-          { _id: { $in: unassignedLeads.map(l => l._id) } },
-          {
-            $set: {
-              assignedTo: req.user._id,
-              assignedAt: new Date(),
-              isAssigned: true,
-              orderId: order._id,
-            },
-          }
-        );
-        console.log(`[ORDER-ASSIGNMENT] Successfully assigned ${unassignedLeads.length} unassigned leads to order creator`);
-      }
-
-      // Verify the update was successful
-      const updatedLeads = await Lead.find({
-        _id: { $in: pulledLeads.map((l) => l._id) },
-      });
-
-      // Check if any leads weren't properly updated
-      const notUpdated = updatedLeads.filter(
-        (lead) =>
-          !lead.orderId || lead.orderId.toString() !== order._id.toString()
-      );
-
-      if (notUpdated.length > 0) {
-        // If any leads weren't updated, delete the order and throw an error
-        await Order.findByIdAndDelete(order._id);
-        throw new Error(
-          `Failed to update orderId for ${notUpdated.length} leads`
+      // Add client network assignment to history if specified
+      if (selectedClientNetwork) {
+        lead.addClientNetworkAssignment(
+          selectedClientNetwork,
+          req.user._id,
+          order._id
         );
       }
+
+      await lead.save();
+      leadIds.push(lead._id);
     }
+
+    // Update order with actual lead IDs
+    order.leads = leadIds;
+    await order.save();
 
     // Populate the order for response
     await order.populate([
@@ -1224,9 +1193,8 @@ exports.exportOrderLeads = async (req, res, next) => {
     ].join("\n");
 
     // Set response headers for file download
-    const filename = `order_${orderId}_leads_${
-      new Date().toISOString().split("T")[0]
-    }.csv`;
+    const filename = `order_${orderId}_leads_${new Date().toISOString().split("T")[0]
+      }.csv`;
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Cache-Control", "no-cache");
@@ -1313,8 +1281,6 @@ exports.assignClientInfoToOrderLeads = async (req, res, next) => {
     next(error);
   }
 };
-
-
 
 // @desc    Start order injection
 // @route   POST /api/orders/:id/start-injection
@@ -1485,11 +1451,154 @@ exports.skipOrderFTDs = async (req, res, next) => {
   }
 };
 
+// @desc    Assign client broker to leads after injection
+// @route   POST /api/orders/:id/assign-brokers
+// @access  Private (Admin, Affiliate Manager)
+exports.assignClientBrokers = async (req, res, next) => {
+  try {
+    const { brokerAssignments } = req.body; // Array of { leadId, clientBroker, domain }
+
+    if (!brokerAssignments || !Array.isArray(brokerAssignments)) {
+      return res.status(400).json({
+        success: false,
+        message: "Broker assignments array is required",
+      });
+    }
+
+    const order = await Order.findById(req.params.id).populate('leads');
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check permission
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can assign brokers.",
+      });
+    }
+
+    const Lead = require("../models/Lead");
+    let assignedCount = 0;
+
+    for (const assignment of brokerAssignments) {
+      const { leadId, clientBroker, domain } = assignment;
+
+      const lead = await Lead.findById(leadId);
+      if (lead) {
+        // Update the injection status and assign broker
+        lead.updateInjectionStatus(order._id, "successful", domain);
+        lead.clientBroker = clientBroker;
+        await lead.save();
+        assignedCount++;
+      }
+    }
+
+    // Update order broker assignment status
+    order.clientBrokerAssignment.status = "completed";
+    order.clientBrokerAssignment.assignedBy = req.user._id;
+    order.clientBrokerAssignment.assignedAt = new Date();
+    order.injectionProgress.brokersAssigned = assignedCount;
+    order.injectionProgress.brokerAssignmentPending = false;
+
+    await order.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully assigned brokers to ${assignedCount} leads`,
+      data: order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get leads pending broker assignment for an order
+// @route   GET /api/orders/:id/pending-broker-assignment
+// @access  Private (Admin, Affiliate Manager)
+exports.getLeadsPendingBrokerAssignment = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id).populate({
+      path: 'leads',
+      match: {
+        leadType: { $ne: 'ftd' }, // Exclude FTDs as they are manual
+        'clientNetworkHistory.orderId': req.params.id,
+        'clientNetworkHistory.injectionStatus': 'pending'
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Get available client brokers for each lead
+    const ClientNetwork = require("../models/ClientNetwork");
+    const leadsWithBrokers = [];
+
+    for (const lead of order.leads) {
+      const availableBrokers = await getAvailableClientBrokers(lead, order.selectedClientNetwork);
+      leadsWithBrokers.push({
+        lead: lead,
+        availableBrokers: availableBrokers
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        order: order,
+        leadsWithBrokers: leadsWithBrokers
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Skip broker assignment for an order
+// @route   POST /api/orders/:id/skip-broker-assignment
+// @access  Private (Admin, Affiliate Manager)
+exports.skipBrokerAssignment = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    order.clientBrokerAssignment.status = "skipped";
+    order.clientBrokerAssignment.assignedBy = req.user._id;
+    order.clientBrokerAssignment.assignedAt = new Date();
+    order.clientBrokerAssignment.notes = "Broker assignment skipped by user";
+    order.injectionProgress.brokerAssignmentPending = false;
+
+    await order.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Broker assignment skipped successfully",
+      data: order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Helper functions for injection processing
 const startBulkInjection = async (order) => {
   try {
     console.log(`Starting bulk injection for order ${order._id}`);
-    
+
     // Get leads that should be injected (non-FTD leads based on settings)
     const Lead = require("../models/Lead");
     const leadsToInject = await Lead.find({
@@ -1508,7 +1617,7 @@ const startBulkInjection = async (order) => {
 
     // Update order status when completed
     await updateOrderInjectionProgress(order._id, leadsToInject.length, leadsToInject.length);
-    
+
   } catch (error) {
     console.error(`Error in bulk injection for order ${order._id}:`, error);
     // Update order status to failed
@@ -1521,7 +1630,7 @@ const startBulkInjection = async (order) => {
 const startScheduledInjection = async (order) => {
   try {
     console.log(`Starting scheduled injection for order ${order._id}`);
-    
+
     // Get leads that should be injected
     const Lead = require("../models/Lead");
     const leadsToInject = await Lead.find({
@@ -1531,7 +1640,7 @@ const startScheduledInjection = async (order) => {
 
     // Schedule injections at random intervals within the specified time window
     scheduleRandomInjections(leadsToInject, order);
-    
+
   } catch (error) {
     console.error(`Error in scheduled injection for order ${order._id}:`, error);
     await Order.findByIdAndUpdate(order._id, {
@@ -1553,6 +1662,29 @@ const injectSingleLead = async (lead, orderId) => {
   try {
     const { spawn } = require("child_process");
     const path = require('path');
+    const Order = require("../models/Order");
+    const ClientNetwork = require("../models/ClientNetwork");
+
+    // Get order details to check client network
+    const order = await Order.findById(orderId).populate('selectedClientNetwork');
+
+    // Check if lead can be assigned to this client network
+    if (order.selectedClientNetwork && lead.isAssignedToClientNetwork(order.selectedClientNetwork._id)) {
+      console.log(`Lead ${lead._id} already assigned to client network ${order.selectedClientNetwork.name}`);
+      await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed
+      return false;
+    }
+
+    // Check available client brokers for this lead
+    const availableBrokers = await getAvailableClientBrokers(lead, order.selectedClientNetwork);
+
+    if (availableBrokers.length === 0) {
+      console.log(`No available client brokers for lead ${lead._id}. Putting lead to sleep.`);
+      lead.putToSleep("No available client brokers for injection");
+      await lead.save();
+      await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed
+      return false;
+    }
 
     const leadData = {
       firstName: lead.firstName,
@@ -1584,6 +1716,22 @@ const injectSingleLead = async (lead, orderId) => {
       pythonProcess.on("close", async (code) => {
         if (code === 0) {
           console.log(`Successfully injected lead ${lead._id} for order ${orderId}`);
+
+          // Add client network assignment to lead history
+          if (order.selectedClientNetwork) {
+            lead.addClientNetworkAssignment(
+              order.selectedClientNetwork._id,
+              order.requester,
+              orderId
+            );
+            await lead.save();
+          }
+
+          // Mark order as needing broker assignment
+          await Order.findByIdAndUpdate(orderId, {
+            'injectionProgress.brokerAssignmentPending': true
+          });
+
           await updateOrderInjectionProgress(orderId, 0, 1); // Add 1 successful injection
           resolve(true);
         } else {
@@ -1604,6 +1752,41 @@ const injectSingleLead = async (lead, orderId) => {
   }
 };
 
+// Helper function to get available client brokers for a lead
+const getAvailableClientBrokers = async (lead, clientNetwork) => {
+  try {
+    if (!clientNetwork) {
+      // If no specific client network, get all available brokers
+      const allNetworks = await ClientNetwork.find({ isActive: true });
+
+      const allBrokers = [];
+      allNetworks.forEach(network => {
+        network.clientBrokers.forEach(broker => {
+          if (broker.isActive) {
+            allBrokers.push(broker.domain || broker.name);
+          }
+        });
+      });
+
+      // Filter out brokers this lead has already been assigned to
+      const assignedBrokers = lead.getAssignedClientBrokers();
+      return allBrokers.filter(broker => !assignedBrokers.includes(broker));
+    } else {
+      // Get brokers from specific client network
+      const availableBrokers = clientNetwork.clientBrokers
+        .filter(broker => broker.isActive)
+        .map(broker => broker.domain || broker.name);
+
+      // Filter out brokers this lead has already been assigned to
+      const assignedBrokers = lead.getAssignedClientBrokers();
+      return availableBrokers.filter(broker => !assignedBrokers.includes(broker));
+    }
+  } catch (error) {
+    console.error('Error getting available client brokers:', error);
+    return [];
+  }
+};
+
 const updateOrderInjectionProgress = async (orderId, failedCount = 0, successCount = 0) => {
   try {
     const update = {};
@@ -1613,13 +1796,13 @@ const updateOrderInjectionProgress = async (orderId, failedCount = 0, successCou
     if (successCount > 0) {
       update['$inc'] = { ...update['$inc'], 'injectionProgress.successfulInjections': successCount };
     }
-    
+
     await Order.findByIdAndUpdate(orderId, update);
-    
+
     // Check if injection is complete
     const order = await Order.findById(orderId);
     const totalProcessed = order.injectionProgress.successfulInjections + order.injectionProgress.failedInjections;
-    
+
     if (totalProcessed >= order.injectionProgress.totalToInject) {
       await Order.findByIdAndUpdate(orderId, {
         'injectionSettings.status': 'completed',
@@ -1636,21 +1819,21 @@ const scheduleRandomInjections = (leads, order) => {
   // Parse start and end times
   const [startHour, startMinute] = order.injectionSettings.scheduledTime.startTime.split(':').map(Number);
   const [endHour, endMinute] = order.injectionSettings.scheduledTime.endTime.split(':').map(Number);
-  
+
   const startTimeMs = (startHour * 60 + startMinute) * 60 * 1000;
   const endTimeMs = (endHour * 60 + endMinute) * 60 * 1000;
   const windowMs = endTimeMs - startTimeMs;
-  
+
   if (windowMs <= 0) {
     console.error('Invalid time window for scheduled injection');
     return;
   }
-  
+
   leads.forEach((lead, index) => {
     // Generate random delay within the time window
     const randomDelay = Math.random() * windowMs;
     const totalDelay = startTimeMs + randomDelay;
-    
+
     setTimeout(async () => {
       // Check if injection is still active before proceeding
       const currentOrder = await Order.findById(order._id);

@@ -2,6 +2,7 @@ const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 const ClientNetwork = require("../models/ClientNetwork");
 const User = require("../models/User");
+const Lead = require("../models/Lead");
 
 // @desc    Get all client networks
 // @route   GET /api/client-networks
@@ -141,9 +142,35 @@ exports.createClientNetwork = async (req, res, next) => {
       { path: "createdBy", select: "fullName email" },
     ]);
 
+    // Wake up sleeping leads that might now have available brokers
+    const sleepingLeads = await Lead.findSleepingLeads();
+    let wokeUpCount = 0;
+
+    if (sleepingLeads.length > 0) {
+      for (const lead of sleepingLeads) {
+        // Check if this new network has brokers available for the lead
+        if (clientNetwork.clientBrokers && clientNetwork.clientBrokers.length > 0) {
+          const availableBrokers = clientNetwork.clientBrokers
+            .filter(broker => broker.isActive)
+            .map(broker => broker.domain || broker.name);
+
+          const assignedBrokers = lead.getAssignedClientBrokers();
+          const hasAvailableBrokers = availableBrokers.some(broker => !assignedBrokers.includes(broker));
+
+          if (hasAvailableBrokers) {
+            lead.wakeUp();
+            await lead.save();
+            wokeUpCount++;
+          }
+        }
+      }
+    }
+
+    console.log(`Woke up ${wokeUpCount} sleeping leads after creating new client network`);
+
     res.status(201).json({
       success: true,
-      message: "Client network created successfully",
+      message: `Client network created successfully. ${wokeUpCount} sleeping leads were woken up.`,
       data: clientNetwork,
     });
   } catch (error) {
@@ -277,15 +304,15 @@ exports.addClientBroker = async (req, res, next) => {
       });
     }
 
-    // Check if broker name already exists in this network
+    // Check if broker already exists
     const existingBroker = clientNetwork.clientBrokers.find(
-      (broker) => broker.name.toLowerCase() === name.toLowerCase()
+      (broker) => broker.name === name || broker.domain === domain
     );
 
     if (existingBroker) {
       return res.status(400).json({
         success: false,
-        message: "Client broker already exists in this network",
+        message: "Client broker with this name or domain already exists",
       });
     }
 
@@ -296,9 +323,24 @@ exports.addClientBroker = async (req, res, next) => {
 
     await clientNetwork.save();
 
+    // Wake up sleeping leads that might now have available brokers
+    const sleepingLeads = await Lead.findSleepingLeads();
+
+    let wokeUpCount = 0;
+    for (const lead of sleepingLeads) {
+      // Check if this new broker is available for the lead
+      if (!lead.isAssignedToClientBroker(domain || name)) {
+        lead.wakeUp();
+        await lead.save();
+        wokeUpCount++;
+      }
+    }
+
+    console.log(`Woke up ${wokeUpCount} sleeping leads after adding new broker`);
+
     res.status(201).json({
       success: true,
-      message: "Client broker added successfully",
+      message: `Client broker added successfully. ${wokeUpCount} sleeping leads were woken up.`,
       data: clientNetwork,
     });
   } catch (error) {

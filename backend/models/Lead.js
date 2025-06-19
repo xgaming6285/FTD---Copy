@@ -76,9 +76,9 @@ const leadSchema = new mongoose.Schema(
     clientNetworkHistory: [
       {
         clientNetwork: {
-          type: String,
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "ClientNetwork",
           required: true,
-          trim: true,
         },
         clientBroker: {
           type: String,
@@ -97,6 +97,15 @@ const leadSchema = new mongoose.Schema(
           type: mongoose.Schema.Types.ObjectId,
           ref: "Order",
         },
+        injectionStatus: {
+          type: String,
+          enum: ["pending", "successful", "failed"],
+          default: "pending"
+        },
+        domain: {
+          type: String,
+          trim: true,
+        }
       },
     ],
     gender: {
@@ -182,6 +191,20 @@ const leadSchema = new mongoose.Schema(
       type: String,
       enum: ["active", "contacted", "converted", "inactive"],
       default: "active",
+    },
+
+    // Current assignment status for broker availability
+    brokerAvailabilityStatus: {
+      type: String,
+      enum: ["available", "sleep", "not_available_brokers"],
+      default: "available"
+    },
+
+    // Track when lead was put to sleep due to no available brokers
+    sleepDetails: {
+      putToSleepAt: { type: Date },
+      reason: { type: String },
+      lastCheckedAt: { type: Date }
     },
   },
   {
@@ -300,6 +323,91 @@ leadSchema.statics.getLeadStats = function () {
       },
     },
   ]);
+};
+
+// Check if lead is already assigned to a specific client network
+leadSchema.methods.isAssignedToClientNetwork = function (clientNetworkId) {
+  return this.clientNetworkHistory.some(
+    history => history.clientNetwork.toString() === clientNetworkId.toString()
+  );
+};
+
+// Check if lead is already assigned to a specific client broker
+leadSchema.methods.isAssignedToClientBroker = function (clientBroker) {
+  return this.clientNetworkHistory.some(
+    history => history.clientBroker === clientBroker
+  );
+};
+
+// Add new client network assignment to history
+leadSchema.methods.addClientNetworkAssignment = function (clientNetworkId, assignedBy, orderId, clientBroker = null, domain = null) {
+  this.clientNetworkHistory.push({
+    clientNetwork: clientNetworkId,
+    clientBroker: clientBroker,
+    assignedBy: assignedBy,
+    orderId: orderId,
+    domain: domain,
+    injectionStatus: "pending"
+  });
+
+  // Update current assignment fields
+  this.clientNetwork = clientNetworkId;
+  if (clientBroker) {
+    this.clientBroker = clientBroker;
+  }
+};
+
+// Update injection status for a specific assignment
+leadSchema.methods.updateInjectionStatus = function (orderId, status, domain = null) {
+  const assignment = this.clientNetworkHistory.find(
+    history => history.orderId && history.orderId.toString() === orderId.toString()
+  );
+
+  if (assignment) {
+    assignment.injectionStatus = status;
+    if (domain) {
+      assignment.domain = domain;
+      assignment.clientBroker = domain; // Set client broker based on domain
+    }
+  }
+};
+
+// Get all client brokers this lead has been assigned to
+leadSchema.methods.getAssignedClientBrokers = function () {
+  return [...new Set(this.clientNetworkHistory
+    .filter(history => history.clientBroker)
+    .map(history => history.clientBroker))];
+};
+
+// Check if lead can be assigned to a client network (not already assigned)
+leadSchema.statics.canAssignToClientNetwork = function (leadId, clientNetworkId) {
+  return this.findById(leadId).then(lead => {
+    if (!lead) return false;
+    return !lead.isAssignedToClientNetwork(clientNetworkId);
+  });
+};
+
+// Put lead to sleep when no available brokers
+leadSchema.methods.putToSleep = function (reason = "No available client brokers") {
+  this.brokerAvailabilityStatus = "sleep";
+  this.sleepDetails = {
+    putToSleepAt: new Date(),
+    reason: reason,
+    lastCheckedAt: new Date()
+  };
+};
+
+// Wake up lead when new brokers become available
+leadSchema.methods.wakeUp = function () {
+  this.brokerAvailabilityStatus = "available";
+  this.sleepDetails = {};
+};
+
+// Static method to find leads that need to be woken up when new brokers are added
+leadSchema.statics.findSleepingLeads = function () {
+  return this.find({
+    brokerAvailabilityStatus: { $in: ["sleep", "not_available_brokers"] }
+  });
 };
 
 module.exports = mongoose.model("Lead", leadSchema);

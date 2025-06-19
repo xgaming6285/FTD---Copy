@@ -6,6 +6,7 @@ const csvParser = require("csv-parser");
 const { Readable } = require("stream");
 const { spawn } = require("child_process");
 const express = require("express");
+const ClientNetwork = require("../models/ClientNetwork");
 
 // @desc    Get all leads with filtering and pagination
 // @route   GET /api/leads
@@ -1368,7 +1369,7 @@ exports.injectLead = async (req, res) => {
 
     // Launch the Python script with properly encoded JSON
     const pythonProcess = spawn("python", [
-      scriptPath, 
+      scriptPath,
       JSON.stringify(leadData)
     ]);
 
@@ -1479,6 +1480,62 @@ exports.bulkDeleteLeads = async (req, res, next) => {
       data: {
         deletedCount: result.deletedCount,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Check and wake up sleeping leads
+// @route   POST /api/leads/wake-up-sleeping
+// @access  Private (Admin only)
+exports.wakeUpSleepingLeads = async (req, res, next) => {
+  try {
+    const Lead = require("../models/Lead");
+    const ClientNetwork = require("../models/ClientNetwork");
+
+    const sleepingLeads = await Lead.findSleepingLeads();
+    let wokeUpCount = 0;
+
+    if (sleepingLeads.length > 0) {
+      // Get all active client networks with their brokers
+      const clientNetworks = await ClientNetwork.find({ isActive: true });
+
+      for (const lead of sleepingLeads) {
+        let hasAvailableBrokers = false;
+
+        // Check if any brokers are now available for this lead
+        for (const network of clientNetworks) {
+          if (network.clientBrokers && network.clientBrokers.length > 0) {
+            const availableBrokers = network.clientBrokers
+              .filter(broker => broker.isActive)
+              .map(broker => broker.domain || broker.name);
+
+            const assignedBrokers = lead.getAssignedClientBrokers();
+            const hasNewBrokers = availableBrokers.some(broker => !assignedBrokers.includes(broker));
+
+            if (hasNewBrokers) {
+              hasAvailableBrokers = true;
+              break;
+            }
+          }
+        }
+
+        if (hasAvailableBrokers) {
+          lead.wakeUp();
+          await lead.save();
+          wokeUpCount++;
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Checked ${sleepingLeads.length} sleeping leads and woke up ${wokeUpCount}`,
+      data: {
+        totalSleepingLeads: sleepingLeads.length,
+        wokeUpCount: wokeUpCount
+      }
     });
   } catch (error) {
     next(error);

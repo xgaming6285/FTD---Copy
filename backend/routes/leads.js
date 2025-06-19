@@ -26,6 +26,7 @@ const {
   getColdLeads,
   updateLeadType,
   bulkDeleteLeads,
+  wakeUpSleepingLeads,
 } = require("../controllers/leads");
 
 const router = express.Router();
@@ -304,6 +305,15 @@ router.post(
   "/:id/inject",
   [protect, authorize("admin", "affiliate_manager")],
   injectLead
+);
+
+// @route   POST /api/leads/wake-up
+// @desc    Wake up sleeping leads
+// @access  Private (Admin, Affiliate Manager)
+router.post(
+  "/wake-up",
+  [protect, authorize("admin", "affiliate_manager")],
+  wakeUpSleepingLeads
 );
 
 module.exports = router;
