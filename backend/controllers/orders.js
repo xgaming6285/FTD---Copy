@@ -1990,6 +1990,15 @@ const injectSingleLead = async (lead, orderId) => {
             availableTypes[Math.floor(Math.random() * availableTypes.length)];
         }
 
+        // Validate deviceType before assignment
+        const validDeviceTypes = ["windows", "android", "ios", "mac", "linux"];
+        if (!deviceType || !validDeviceTypes.includes(deviceType)) {
+          console.log(`[WARN] Invalid deviceType '${deviceType}', using default 'android'`);
+          deviceType = "android";
+        }
+
+        console.log(`[DEBUG] Using deviceType: ${deviceType} for lead ${lead._id}`);
+        
         await lead.assignFingerprint(deviceType, order.requester);
         await lead.save();
 

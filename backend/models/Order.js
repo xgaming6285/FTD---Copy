@@ -97,7 +97,7 @@ const orderSchema = new mongoose.Schema(
         // For bulk mode - apply same device type to all leads
         bulkDeviceType: {
           type: String,
-          enum: ["windows", "android", "ios", "mac", "linux"],
+          enum: ["windows", "android", "ios", "mac", "linux", null],
           default: null,
         },
         // For ratio mode - device distribution ratios

@@ -531,18 +531,30 @@ leadSchema.methods.getAssignedClientNetworks = function () {
 leadSchema.methods.assignFingerprint = async function (deviceType, createdBy) {
   const Fingerprint = require('./Fingerprint');
   
+  // Validate parameters
+  if (!deviceType) {
+    throw new Error('deviceType is required for fingerprint assignment');
+  }
+  if (!createdBy) {
+    throw new Error('createdBy is required for fingerprint assignment');
+  }
+  
   // Check if lead already has a fingerprint
   if (this.fingerprint) {
     throw new Error('Lead already has a fingerprint assigned');
   }
   
   try {
+    console.log(`[DEBUG] Creating fingerprint for lead ${this._id} with deviceType: ${deviceType}`);
+    
     // Create new fingerprint for this lead
     const fingerprint = await Fingerprint.createForLead(this._id, deviceType, createdBy);
     
     // Update lead with fingerprint reference and device type
     this.fingerprint = fingerprint._id;
     this.deviceType = deviceType;
+    
+    console.log(`[DEBUG] Successfully assigned fingerprint ${fingerprint.deviceId} to lead ${this._id}`);
     
     return fingerprint;
   } catch (error) {

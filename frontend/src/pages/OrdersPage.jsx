@@ -1419,7 +1419,7 @@ const OrdersPage = () => {
                           control={control}
                           render={({ field: deviceField }) => (
                             <FormControlLabel
-                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
                               label="Windows"
                             />
                           )}
@@ -1429,7 +1429,7 @@ const OrdersPage = () => {
                           control={control}
                           render={({ field: deviceField }) => (
                             <FormControlLabel
-                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
                               label="Android"
                             />
                           )}
@@ -1439,7 +1439,7 @@ const OrdersPage = () => {
                           control={control}
                           render={({ field: deviceField }) => (
                             <FormControlLabel
-                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
                               label="iOS"
                             />
                           )}
@@ -1449,7 +1449,7 @@ const OrdersPage = () => {
                           control={control}
                           render={({ field: deviceField }) => (
                             <FormControlLabel
-                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
                               label="Mac"
                             />
                           )}
@@ -1459,7 +1459,7 @@ const OrdersPage = () => {
                           control={control}
                           render={({ field: deviceField }) => (
                             <FormControlLabel
-                              control={<Checkbox {...deviceField} checked={field.value} />}
+                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
                               label="Linux"
                             />
                           )}

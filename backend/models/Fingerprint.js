@@ -371,6 +371,23 @@ fingerprintSchema.statics.generateFingerprint = function(deviceType, createdBy) 
 
 // Static method to create fingerprint for a lead
 fingerprintSchema.statics.createForLead = async function(leadId, deviceType, createdBy) {
+  // Validate required parameters
+  if (!leadId) {
+    throw new Error("leadId is required");
+  }
+  if (!deviceType) {
+    throw new Error("deviceType is required");
+  }
+  if (!createdBy) {
+    throw new Error("createdBy is required");
+  }
+  
+  // Validate deviceType
+  const validDeviceTypes = ["windows", "android", "ios", "mac", "linux"];
+  if (!validDeviceTypes.includes(deviceType)) {
+    throw new Error(`Invalid deviceType: ${deviceType}. Must be one of: ${validDeviceTypes.join(", ")}`);
+  }
+  
   // Check if fingerprint already exists for this lead
   const existing = await this.findOne({ leadId });
   if (existing) {
