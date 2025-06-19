@@ -45,6 +45,7 @@ import {
   Pause as PauseIcon,
   Stop as StopIcon,
   SkipNext as SkipNextIcon,
+  Send as SendIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -53,6 +54,7 @@ import api from '../services/api';
 import { selectUser } from '../store/slices/authSlice';
 import { getSortedCountries } from '../constants/countries';
 import LeadDetailCard from '../components/LeadDetailCard';
+import ManualFTDInjectionModal from '../components/ManualFTDInjectionModal';
 
 // --- Best Practice: Define constants and schemas outside the component ---
 // This prevents them from being recreated on every render.
@@ -198,6 +200,12 @@ const OrdersPage = () => {
   });
   const [brokerAssignments, setBrokerAssignments] = useState({});
   const [assigningBrokers, setAssigningBrokers] = useState(false);
+
+  // Manual FTD injection states
+  const [ftdInjectionModal, setFtdInjectionModal] = useState({
+    open: false,
+    order: null
+  });
 
   // --- Optimization: `useCallback` to memoize functions ---
   const fetchOrders = useCallback(async () => {
@@ -578,6 +586,29 @@ const OrdersPage = () => {
     }
   }, [fetchOrders]);
 
+  // Manual FTD injection handlers
+  const handleOpenFTDInjection = useCallback((order) => {
+    setFtdInjectionModal({
+      open: true,
+      order: order
+    });
+  }, []);
+
+  const handleCloseFTDInjection = useCallback(() => {
+    setFtdInjectionModal({
+      open: false,
+      order: null
+    });
+  }, []);
+
+  const handleFTDInjectionSuccess = useCallback(() => {
+    setNotification({ 
+      message: 'FTD leads injected successfully!', 
+      severity: 'success' 
+    });
+    fetchOrders(); // Refresh orders to show updated status
+  }, [fetchOrders]);
+
 
 
   // Readability: Helper component for rendering lead counts
@@ -759,9 +790,14 @@ const OrdersPage = () => {
                               )}
 
                               {order.injectionSettings.status === 'completed' && order.ftdHandling?.status === 'manual_fill_required' && (
-                                <IconButton size="small" onClick={() => handleSkipFTDs(order._id)} title="Skip FTDs" color="info">
-                                  <SkipNextIcon fontSize="small" />
-                                </IconButton>
+                                <>
+                                  <IconButton size="small" onClick={() => handleOpenFTDInjection(order)} title="Manual FTD Injection" color="primary">
+                                    <SendIcon fontSize="small" />
+                                  </IconButton>
+                                  <IconButton size="small" onClick={() => handleSkipFTDs(order._id)} title="Skip FTDs" color="info">
+                                    <SkipNextIcon fontSize="small" />
+                                  </IconButton>
+                                </>
                               )}
                             </>
                           )}
@@ -1360,6 +1396,14 @@ const OrdersPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Manual FTD Injection Modal */}
+      <ManualFTDInjectionModal
+        open={ftdInjectionModal.open}
+        onClose={handleCloseFTDInjection}
+        order={ftdInjectionModal.order}
+        onSuccess={handleFTDInjectionSuccess}
+      />
     </Box>
   );
 };

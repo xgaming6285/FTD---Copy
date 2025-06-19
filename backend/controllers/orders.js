@@ -1537,6 +1537,209 @@ exports.skipBrokerAssignment = async (req, res, next) => {
   }
 };
 
+// @desc    Get FTD leads for manual injection
+// @route   GET /api/orders/:id/ftd-leads
+// @access  Private (Admin, Affiliate Manager)
+exports.getFTDLeadsForOrder = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id).populate({
+      path: 'leads',
+      match: {
+        leadType: 'ftd'
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission (only admins and affiliate managers)
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can access FTD leads.",
+      });
+    }
+
+    // Filter FTD leads that haven't been injected yet
+    const ftdLeads = order.leads.filter(lead => {
+      // Check if lead has been injected for this order
+      const networkHistory = lead.clientNetworkHistory?.find(
+        history => history.orderId?.toString() === order._id.toString()
+      );
+      return !networkHistory || networkHistory.injectionStatus === 'pending';
+    });
+
+    res.status(200).json({
+      success: true,
+      data: ftdLeads,
+      message: `Found ${ftdLeads.length} FTD lead(s) requiring manual injection`
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Manual FTD injection
+// @route   POST /api/orders/:id/manual-ftd-injection
+// @access  Private (Admin, Affiliate Manager)
+exports.manualFTDInjection = async (req, res, next) => {
+  try {
+    const { leadIds, clientBroker, domain, notes } = req.body;
+
+    if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Lead IDs are required",
+      });
+    }
+
+    if (!clientBroker || !domain) {
+      return res.status(400).json({
+        success: false,
+        message: "Client broker and domain are required",
+      });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission (only admins and affiliate managers)
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
+      });
+    }
+
+    // Verify client broker exists
+    const ClientBroker = require("../models/ClientBroker");
+    const broker = await ClientBroker.findById(clientBroker);
+    if (!broker) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid client broker",
+      });
+    }
+
+    // Process each FTD lead
+    const Lead = require("../models/Lead");
+    const processedLeads = [];
+    const failedLeads = [];
+
+    for (const leadId of leadIds) {
+      try {
+        const lead = await Lead.findById(leadId);
+        if (!lead || lead.leadType !== 'ftd') {
+          failedLeads.push({ leadId, reason: 'Lead not found or not FTD type' });
+          continue;
+        }
+
+        // Check if lead belongs to this order
+        if (!order.leads.includes(leadId)) {
+          failedLeads.push({ leadId, reason: 'Lead does not belong to this order' });
+          continue;
+        }
+
+        // Update lead's client network history
+        const networkHistoryEntry = {
+          clientNetwork: order.selectedClientNetwork,
+          clientBroker: clientBroker,
+          orderId: order._id,
+          assignedAt: new Date(),
+          domain: domain,
+          injectionStatus: 'completed',
+          injectionType: 'manual_ftd',
+          injectionNotes: notes || 'Manual FTD injection by affiliate manager/admin'
+        };
+
+        // Check if entry already exists for this order
+        const existingHistoryIndex = lead.clientNetworkHistory?.findIndex(
+          history => history.orderId?.toString() === order._id.toString()
+        );
+
+        if (existingHistoryIndex >= 0) {
+          // Update existing entry
+          lead.clientNetworkHistory[existingHistoryIndex] = networkHistoryEntry;
+        } else {
+          // Add new entry
+          if (!lead.clientNetworkHistory) {
+            lead.clientNetworkHistory = [];
+          }
+          lead.clientNetworkHistory.push(networkHistoryEntry);
+        }
+
+        // Mark lead as assigned
+        lead.isAssigned = true;
+        lead.lastAssignedAt = new Date();
+
+        await lead.save();
+        processedLeads.push(lead);
+
+      } catch (error) {
+        console.error(`Error processing lead ${leadId}:`, error);
+        failedLeads.push({ leadId, reason: error.message });
+      }
+    }
+
+    // Update order FTD handling status
+    if (processedLeads.length > 0) {
+      // Check if all FTD leads in this order have been injected
+      const allFTDLeads = await Lead.find({
+        _id: { $in: order.leads },
+        leadType: 'ftd'
+      });
+
+      const allFTDsInjected = allFTDLeads.every(lead => {
+        const networkHistory = lead.clientNetworkHistory?.find(
+          history => history.orderId?.toString() === order._id.toString()
+        );
+        return networkHistory && networkHistory.injectionStatus === 'completed';
+      });
+
+      if (allFTDsInjected) {
+        order.ftdHandling.status = 'completed';
+        order.ftdHandling.completedAt = new Date();
+        order.ftdHandling.notes = `All FTD leads manually injected. ${notes || ''}`.trim();
+      }
+
+      // Update injection progress
+      order.injectionProgress.ftdsPendingManualFill = Math.max(0, 
+        order.injectionProgress.ftdsPendingManualFill - processedLeads.length
+      );
+
+      await order.save();
+    }
+
+    const response = {
+      success: true,
+      message: `Successfully injected ${processedLeads.length} FTD lead(s)`,
+      data: {
+        processedLeads: processedLeads.length,
+        failedLeads: failedLeads.length,
+        failures: failedLeads,
+        order: order
+      }
+    };
+
+    if (failedLeads.length > 0) {
+      response.message += `. ${failedLeads.length} lead(s) failed to process.`;
+    }
+
+    res.status(200).json(response);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Helper functions for injection processing
 const startBulkInjection = async (order) => {
   try {
