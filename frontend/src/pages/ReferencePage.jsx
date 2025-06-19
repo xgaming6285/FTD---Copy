@@ -58,6 +58,19 @@ import {
 } from '@mui/icons-material';
 import { selectUser } from '../store/slices/authSlice';
 import { BONUS_RATES, RATE_PER_SECOND, calculateBonuses, calculateTotalPayment } from '../services/payroll/calculations';
+import {
+    ResponsiveContainer,
+    BarChart,
+    Bar,
+    PieChart,
+    Pie,
+    Cell,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip as RechartsTooltip,
+    Legend
+} from 'recharts';
 
 import { fetchAgentMetrics, fetchAllAgentsMetrics } from '../services/agents';
 
@@ -66,13 +79,19 @@ const ReferencePage = () => {
     const theme = useTheme();
     const user = useSelector(selectUser);
     const navigate = useNavigate();
+
+    // Helper function to safely format numbers
+    const safeToFixed = (value, decimals = 2) => {
+        const num = Number(value);
+        return isNaN(num) ? '0.00' : num.toFixed(decimals);
+    };
     const [metrics, setMetrics] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [selectedAgent, setSelectedAgent] = useState(null);
     const [agents, setAgents] = useState([]);
-    
+
     // New state variables for payments enhancements
     const [paymentPeriodFilter, setPaymentPeriodFilter] = useState('all');
     const [paymentStatusFilter, setPaymentStatusFilter] = useState('all');
@@ -81,6 +100,61 @@ const ReferencePage = () => {
     const [paymentTablePage, setPaymentTablePage] = useState(0);
     const [paymentTableRowsPerPage, setPaymentTableRowsPerPage] = useState(10);
     const [showForecast, setShowForecast] = useState(false);
+
+    // Mock payment history data - in a real app this would come from your backend
+    const [paymentHistory] = useState([
+        {
+            id: 1,
+            period: '2024-12',
+            startDate: '2024-12-01',
+            endDate: '2024-12-31',
+            totalCalls: 450,
+            successfulCalls: 360,
+            successRate: 80.0,
+            talkTimeHours: 45.5,
+            basePay: 456.84,
+            bonuses: 395.00,
+            fines: 25.00,
+            totalPaid: 826.84,
+            status: 'Paid',
+            paidDate: '2024-12-31',
+            growthRate: 15.2
+        },
+        {
+            id: 2,
+            period: '2024-11',
+            startDate: '2024-11-01',
+            endDate: '2024-11-30',
+            totalCalls: 380,
+            successfulCalls: 285,
+            successRate: 75.0,
+            talkTimeHours: 38.2,
+            basePay: 383.52,
+            bonuses: 332.50,
+            fines: 15.00,
+            totalPaid: 701.02,
+            status: 'Paid',
+            paidDate: '2024-11-30',
+            growthRate: 12.8
+        },
+        {
+            id: 3,
+            period: '2024-10',
+            startDate: '2024-10-01',
+            endDate: '2024-10-31',
+            totalCalls: 320,
+            successfulCalls: 240,
+            successRate: 75.0,
+            talkTimeHours: 32.1,
+            basePay: 322.08,
+            bonuses: 280.00,
+            fines: 10.00,
+            totalPaid: 592.08,
+            status: 'Paid',
+            paidDate: '2024-10-31',
+            growthRate: 8.5
+        }
+    ]);
 
     // Add logging to see user object
     useEffect(() => {
@@ -141,29 +215,29 @@ const ReferencePage = () => {
                 return a[paymentSortField] < b[paymentSortField] ? 1 : -1;
             }
         });
-    
+
     const paginatedPayments = filteredPayments.slice(
         paymentTablePage * paymentTableRowsPerPage,
         paymentTablePage * paymentTableRowsPerPage + paymentTableRowsPerPage
     );
-    
+
     // Payment forecast calculation
     const calculateForecast = () => {
         if (paymentHistory.length < 2) return null;
-        
+
         const lastTwoMonths = paymentHistory.slice(0, 2);
         const avgGrowthRate = lastTwoMonths.reduce((acc, curr) => acc + curr.growthRate, 0) / lastTwoMonths.length;
         const lastMonthTotal = lastTwoMonths[0].totalPaid;
-        
+
         return {
             estimatedTotal: lastMonthTotal * (1 + avgGrowthRate / 100),
             growthRate: avgGrowthRate,
             basedOn: lastTwoMonths.map(month => month.period).join(', ')
         };
     };
-    
+
     const paymentForecast = calculateForecast();
-    
+
     // Chart data preparation
     const preparePaymentBreakdownData = () => {
         // Assuming we're using the current agent's stats
@@ -174,7 +248,7 @@ const ReferencePage = () => {
         ];
         return currentMonthData;
     };
-    
+
     const preparePaymentHistoryData = () => {
         return paymentHistory.map(payment => ({
             name: payment.period,
@@ -485,7 +559,7 @@ const ReferencePage = () => {
                     </Button>
                 </Box>
             </Box>
-            
+
             <Grid container spacing={3} sx={{ mb: 4 }}>
                 <Grid item xs={12} sm={6} md={4}>
                     <StatCard
@@ -511,11 +585,11 @@ const ReferencePage = () => {
                         value={`$${totalPayableAmount.toFixed(2)}`}
                         icon={<MoneyIcon color="info" />}
                         color="info"
-                        subtitle={currentAgentData?.stats?.fines > 0 ? `Fines: -$${currentAgentData.stats.fines.toFixed(2)}` : 'No fines'}
+                        subtitle={currentAgentData?.stats?.fines > 0 ? `Fines: -$${safeToFixed(currentAgentData.stats.fines)}` : 'No fines'}
                     />
                 </Grid>
             </Grid>
-            
+
             {/* Payment Breakdown Visualization */}
             <Grid container spacing={3} sx={{ mb: 4 }}>
                 <Grid item xs={12} md={5}>
@@ -546,27 +620,27 @@ const ReferencePage = () => {
                             <Grid container spacing={1}>
                                 <Grid item xs={4}>
                                     <Box display="flex" alignItems="center">
-                                        <Box width={12} height={12} bgcolor={theme.palette.primary.main} mr={1} borderRadius={1}/>
-                                        <Typography variant="body2">Base Pay: ${currentAgentData?.stats?.totalTalkPay.toFixed(2)}</Typography>
+                                        <Box width={12} height={12} bgcolor={theme.palette.primary.main} mr={1} borderRadius={1} />
+                                        <Typography variant="body2">Base Pay: ${safeToFixed(currentAgentData?.stats?.totalTalkPay)}</Typography>
                                     </Box>
                                 </Grid>
                                 <Grid item xs={4}>
                                     <Box display="flex" alignItems="center">
-                                        <Box width={12} height={12} bgcolor={theme.palette.success.main} mr={1} borderRadius={1}/>
+                                        <Box width={12} height={12} bgcolor={theme.palette.success.main} mr={1} borderRadius={1} />
                                         <Typography variant="body2">Bonuses: ${totalBonuses.toFixed(2)}</Typography>
                                     </Box>
                                 </Grid>
                                 <Grid item xs={4}>
                                     <Box display="flex" alignItems="center">
-                                        <Box width={12} height={12} bgcolor={theme.palette.error.main} mr={1} borderRadius={1}/>
-                                        <Typography variant="body2">Fines: ${currentAgentData?.stats?.fines.toFixed(2)}</Typography>
+                                        <Box width={12} height={12} bgcolor={theme.palette.error.main} mr={1} borderRadius={1} />
+                                        <Typography variant="body2">Fines: ${safeToFixed(currentAgentData?.stats?.fines)}</Typography>
                                     </Box>
                                 </Grid>
                             </Grid>
                         </Box>
                     </Paper>
                 </Grid>
-                
+
                 <Grid item xs={12} md={7}>
                     {!showForecast ? (
                         <Paper elevation={2} sx={{ p: 2, height: '100%' }}>
@@ -577,11 +651,11 @@ const ReferencePage = () => {
                                         Call Bonuses
                                     </Typography>
                                     <Box pl={2}>
-                                        <Typography variant="body2">1st Calls ({currentAgentData?.stats?.callCounts.firstCalls}): ${bonuses.firstCallBonus.toFixed(2)}</Typography>
-                                        <Typography variant="body2">2nd Calls ({currentAgentData?.stats?.callCounts.secondCalls}): ${bonuses.secondCallBonus.toFixed(2)}</Typography>
-                                        <Typography variant="body2">3rd Calls ({currentAgentData?.stats?.callCounts.thirdCalls}): ${bonuses.thirdCallBonus.toFixed(2)}</Typography>
-                                        <Typography variant="body2">4th Calls ({currentAgentData?.stats?.callCounts.fourthCalls}): ${bonuses.fourthCallBonus.toFixed(2)}</Typography>
-                                        <Typography variant="body2">5th Calls ({currentAgentData?.stats?.callCounts.fifthCalls}): ${bonuses.fifthCallBonus.toFixed(2)}</Typography>
+                                        <Typography variant="body2">1st Calls ({currentAgentData?.stats?.callCounts?.firstCalls || 0}): ${safeToFixed(bonuses.firstCallBonus)}</Typography>
+                                        <Typography variant="body2">2nd Calls ({currentAgentData?.stats?.callCounts?.secondCalls || 0}): ${safeToFixed(bonuses.secondCallBonus)}</Typography>
+                                        <Typography variant="body2">3rd Calls ({currentAgentData?.stats?.callCounts?.thirdCalls || 0}): ${safeToFixed(bonuses.thirdCallBonus)}</Typography>
+                                        <Typography variant="body2">4th Calls ({currentAgentData?.stats?.callCounts?.fourthCalls || 0}): ${safeToFixed(bonuses.fourthCallBonus)}</Typography>
+                                        <Typography variant="body2">5th Calls ({currentAgentData?.stats?.callCounts?.fifthCalls || 0}): ${safeToFixed(bonuses.fifthCallBonus)}</Typography>
                                     </Box>
                                 </Grid>
                                 <Grid item xs={12} md={6}>
@@ -590,7 +664,7 @@ const ReferencePage = () => {
                                     </Typography>
                                     <Box pl={2}>
                                         <Typography variant="body2">
-                                            Verified Accounts ({currentAgentData?.stats?.callCounts.verifiedAccounts}): ${bonuses.verifiedAccBonus.toFixed(2)}
+                                            Verified Accounts ({currentAgentData?.stats?.callCounts?.verifiedAccounts || 0}): ${safeToFixed(bonuses.verifiedAccBonus)}
                                         </Typography>
                                     </Box>
                                     <Divider sx={{ my: 2 }} />
@@ -598,7 +672,7 @@ const ReferencePage = () => {
                                         Deductions
                                     </Typography>
                                     <Box pl={2}>
-                                        <Typography variant="body2">Fines: -${currentAgentData?.stats?.fines.toFixed(2)}</Typography>
+                                        <Typography variant="body2">Fines: -${safeToFixed(currentAgentData?.stats?.fines)}</Typography>
                                     </Box>
                                 </Grid>
                             </Grid>
@@ -638,10 +712,10 @@ const ReferencePage = () => {
                             </Box>
                             {paymentForecast ? (
                                 <>
-                                    <Box 
-                                        sx={{ 
-                                            p: 2, 
-                                            borderRadius: 2, 
+                                    <Box
+                                        sx={{
+                                            p: 2,
+                                            borderRadius: 2,
                                             backgroundColor: alpha(theme.palette.primary.main, 0.05),
                                             display: 'flex',
                                             alignItems: 'center',
@@ -660,10 +734,10 @@ const ReferencePage = () => {
                                                 Based on: {paymentForecast.basedOn}
                                             </Typography>
                                         </Box>
-                                        <Box 
-                                            sx={{ 
-                                                display: 'flex', 
-                                                alignItems: 'center', 
+                                        <Box
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
                                                 bgcolor: alpha(theme.palette.success.main, 0.1),
                                                 color: theme.palette.success.main,
                                                 p: 1,
@@ -681,19 +755,19 @@ const ReferencePage = () => {
                                         <Grid item xs={12} sm={6}>
                                             <Typography variant="body2" color="textSecondary">Call Success Rate</Typography>
                                             <Box display="flex" alignItems="center">
-                                                <LinearProgress 
-                                                    variant="determinate" 
-                                                    value={successRate} 
-                                                    sx={{ 
-                                                        flexGrow: 1, 
-                                                        mr: 1, 
-                                                        height: 8, 
+                                                <LinearProgress
+                                                    variant="determinate"
+                                                    value={successRate}
+                                                    sx={{
+                                                        flexGrow: 1,
+                                                        mr: 1,
+                                                        height: 8,
                                                         borderRadius: 1,
                                                         bgcolor: alpha(theme.palette.success.main, 0.2),
                                                         '& .MuiLinearProgress-bar': {
                                                             bgcolor: theme.palette.success.main
                                                         }
-                                                    }} 
+                                                    }}
                                                 />
                                                 <Typography variant="body2">{successRate.toFixed(1)}%</Typography>
                                             </Box>
@@ -701,21 +775,21 @@ const ReferencePage = () => {
                                         <Grid item xs={12} sm={6}>
                                             <Typography variant="body2" color="textSecondary">Bonus Conversion</Typography>
                                             <Box display="flex" alignItems="center">
-                                                <LinearProgress 
-                                                    variant="determinate" 
-                                                    value={(totalBonuses / (currentAgentData?.stats?.totalTalkPay || 1)) * 100} 
-                                                    sx={{ 
-                                                        flexGrow: 1, 
-                                                        mr: 1, 
-                                                        height: 8, 
+                                                <LinearProgress
+                                                    variant="determinate"
+                                                    value={(totalBonuses / (Number(currentAgentData?.stats?.totalTalkPay) || 1)) * 100}
+                                                    sx={{
+                                                        flexGrow: 1,
+                                                        mr: 1,
+                                                        height: 8,
                                                         borderRadius: 1,
                                                         bgcolor: alpha(theme.palette.primary.main, 0.2),
                                                         '& .MuiLinearProgress-bar': {
                                                             bgcolor: theme.palette.primary.main
                                                         }
-                                                    }} 
+                                                    }}
                                                 />
-                                                <Typography variant="body2">{((totalBonuses / (currentAgentData?.stats?.totalTalkPay || 1)) * 100).toFixed(1)}%</Typography>
+                                                <Typography variant="body2">{safeToFixed((totalBonuses / (Number(currentAgentData?.stats?.totalTalkPay) || 1)) * 100, 1)}%</Typography>
                                             </Box>
                                         </Grid>
                                     </Grid>
@@ -822,9 +896,9 @@ const ReferencePage = () => {
                                     <MenuItem value="Pending">Pending</MenuItem>
                                 </Select>
                             </FormControl>
-                            
+
                             <Box flexGrow={1} />
-                            
+
                             <IconButton size="small">
                                 <PrintIcon fontSize="small" />
                             </IconButton>
@@ -832,7 +906,7 @@ const ReferencePage = () => {
                                 <DownloadIcon fontSize="small" />
                             </IconButton>
                         </Box>
-                        
+
                         {/* Table with sort and pagination */}
                         <TableContainer>
                             <Table>
@@ -945,9 +1019,9 @@ const ReferencePage = () => {
                                             </TableCell>
                                             <TableCell>{payment.paidDate}</TableCell>
                                             <TableCell align="right">
-                                                <Box 
-                                                    sx={{ 
-                                                        display: 'flex', 
+                                                <Box
+                                                    sx={{
+                                                        display: 'flex',
                                                         alignItems: 'center',
                                                         justifyContent: 'flex-end',
                                                         color: payment.growthRate > 0 ? theme.palette.success.main : 'inherit'
@@ -969,7 +1043,7 @@ const ReferencePage = () => {
                                 </TableBody>
                             </Table>
                         </TableContainer>
-                        
+
                         <TablePagination
                             component="div"
                             count={filteredPayments.length}
