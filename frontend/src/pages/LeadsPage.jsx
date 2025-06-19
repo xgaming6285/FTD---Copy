@@ -80,6 +80,91 @@ import { getSortedCountries } from "../constants/countries";
 import ImportLeadsDialog from "../components/ImportLeadsDialog";
 import EditLeadForm from "../components/EditLeadForm";
 
+// --- Glassmorphism Styles ---
+const glassMorphismStyles = {
+  bgcolor: 'rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(10px)',
+  borderRadius: 2,
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  transition: 'all 0.3s ease-in-out',
+  '&:hover': {
+    bgcolor: 'rgba(255, 255, 255, 0.15)',
+    backdropFilter: 'blur(15px)',
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+  },
+  '& .MuiButton-root': {
+    bgcolor: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    '&:hover': {
+      bgcolor: 'rgba(255, 255, 255, 0.15)',
+      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+    },
+  },
+  '& .MuiInputBase-root': {
+    bgcolor: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    '&:hover': {
+      bgcolor: 'rgba(255, 255, 255, 0.15)',
+      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+    },
+    '&.Mui-focused': {
+      boxShadow: '0 0 0 3px rgba(100, 181, 246, 0.3)',
+      borderColor: 'primary.main',
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    '&:hover .MuiOutlinedInput-notchedOutline': {
+      borderColor: 'primary.light',
+    },
+    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+      borderColor: 'primary.main',
+    },
+  },
+};
+
+// --- Glassmorphism Styles for Buttons ---
+const buttonGlassMorphismStyles = {
+  bgcolor: 'rgba(255, 255, 255, 0.15)',
+  backdropFilter: 'blur(10px)',
+  border: '1px solid rgba(255, 255, 255, 0.3)',
+  color: 'text.primary',
+  transition: 'all 0.3s ease-in-out',
+  '&:hover': {
+    bgcolor: 'rgba(255, 255, 255, 0.25)',
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+  },
+};
+
+// --- Glassmorphism Styles for Input Fields ---
+const inputGlassMorphismStyles = {
+  bgcolor: 'rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(8px)',
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  borderRadius: 2,
+  '& .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'transparent',
+  },
+  '&:hover .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'primary.main',
+    boxShadow: '0 0 0 3px rgba(100, 181, 246, 0.3)',
+  },
+  '& .MuiInputBase-input': {
+    color: 'text.primary',
+  },
+  '& .MuiInputLabel-root': {
+    color: 'text.secondary',
+  },
+  '& .MuiInputLabel-root.Mui-focused': {
+    color: 'primary.main',
+  },
+};
+
 // --- Constants ---
 const ROLES = {
   ADMIN: "admin",
@@ -1061,10 +1146,15 @@ const LeadsPage = () => {
                 borderRadius: 2,
                 px: 3,
                 py: 1,
-                transition: 'all 0.2s',
+                transition: 'all 0.3s ease-in-out',
+                bgcolor: 'rgba(255, 255, 255, 0.15)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                color: 'text.primary',
                 '&:hover': {
                   transform: 'translateY(-2px)',
-                  boxShadow: 4,
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+                  bgcolor: 'rgba(255, 255, 255, 0.25)',
                 },
               }}
             >
@@ -1135,80 +1225,116 @@ const LeadsPage = () => {
               <Paper
                 elevation={0}
                 sx={{
-                  p: 2,
-                  bgcolor: 'primary.light',
+                  p: 3,
+                  bgcolor: 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(10px)',
                   borderRadius: 2,
-                  color: 'primary.contrastText',
-                  transition: 'transform 0.2s',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  color: 'text.primary',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease-in-out',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(240, 245, 255, 0.8) 100%)',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
                   '&:hover': {
                     transform: 'translateY(-4px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(15px)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 245, 255, 0.9) 100%)',
                   },
                 }}
               >
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
                   {leadStats.leads.overall.total}
                 </Typography>
-                <Typography variant="subtitle2">Total Leads</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Total Leads</Typography>
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
               <Paper
                 elevation={0}
                 sx={{
-                  p: 2,
-                  bgcolor: 'success.light',
+                  p: 3,
+                  bgcolor: 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(10px)',
                   borderRadius: 2,
-                  color: 'success.contrastText',
-                  transition: 'transform 0.2s',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  color: 'text.primary',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease-in-out',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(245, 255, 245, 0.8) 100%)',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
                   '&:hover': {
                     transform: 'translateY(-4px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(15px)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 255, 245, 0.9) 100%)',
                   },
                 }}
               >
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
                   {leadStats.leads.overall.assigned}
                 </Typography>
-                <Typography variant="subtitle2">Assigned Leads</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Assigned Leads</Typography>
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
               <Paper
                 elevation={0}
                 sx={{
-                  p: 2,
-                  bgcolor: 'warning.light',
+                  p: 3,
+                  bgcolor: 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(10px)',
                   borderRadius: 2,
-                  color: 'warning.contrastText',
-                  transition: 'transform 0.2s',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  color: 'text.primary',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease-in-out',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 250, 240, 0.8) 100%)',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
                   '&:hover': {
                     transform: 'translateY(-4px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(15px)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 250, 240, 0.9) 100%)',
                   },
                 }}
               >
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
                   {leadStats.leads.overall.available}
                 </Typography>
-                <Typography variant="subtitle2">Available Leads</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Available Leads</Typography>
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
               <Paper
                 elevation={0}
                 sx={{
-                  p: 2,
-                  bgcolor: 'info.light',
+                  p: 3,
+                  bgcolor: 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(10px)',
                   borderRadius: 2,
-                  color: 'info.contrastText',
-                  transition: 'transform 0.2s',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  color: 'text.primary',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease-in-out',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(250, 245, 255, 0.8) 100%)',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
                   '&:hover': {
                     transform: 'translateY(-4px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(15px)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(250, 245, 255, 0.9) 100%)',
                   },
                 }}
               >
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
                   {leadStats.leads.ftd.total}
                 </Typography>
-                <Typography variant="subtitle2">FTD Leads</Typography>
+                <Typography variant="subtitle2" color="text.secondary">FTD Leads</Typography>
               </Paper>
             </Grid>
           </Grid>
