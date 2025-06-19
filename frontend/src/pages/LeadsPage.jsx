@@ -59,7 +59,6 @@ import {
   Visibility as VisibilityIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Send as InjectIcon,
   Contacts as ContactsIcon,
   Info as InfoIcon,
   AssignmentInd as AssignmentIndIcon,
@@ -80,6 +79,91 @@ import { selectUser } from "../store/slices/authSlice";
 import { getSortedCountries } from "../constants/countries";
 import ImportLeadsDialog from "../components/ImportLeadsDialog";
 import EditLeadForm from "../components/EditLeadForm";
+
+// --- Glassmorphism Styles ---
+const glassMorphismStyles = {
+  bgcolor: 'rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(10px)',
+  borderRadius: 2,
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  transition: 'all 0.3s ease-in-out',
+  '&:hover': {
+    bgcolor: 'rgba(255, 255, 255, 0.15)',
+    backdropFilter: 'blur(15px)',
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+  },
+  '& .MuiButton-root': {
+    bgcolor: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    '&:hover': {
+      bgcolor: 'rgba(255, 255, 255, 0.15)',
+      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+    },
+  },
+  '& .MuiInputBase-root': {
+    bgcolor: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    '&:hover': {
+      bgcolor: 'rgba(255, 255, 255, 0.15)',
+      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+    },
+    '&.Mui-focused': {
+      boxShadow: '0 0 0 3px rgba(100, 181, 246, 0.3)',
+      borderColor: 'primary.main',
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    '&:hover .MuiOutlinedInput-notchedOutline': {
+      borderColor: 'primary.light',
+    },
+    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+      borderColor: 'primary.main',
+    },
+  },
+};
+
+// --- Glassmorphism Styles for Buttons ---
+const buttonGlassMorphismStyles = {
+  bgcolor: 'rgba(255, 255, 255, 0.15)',
+  backdropFilter: 'blur(10px)',
+  border: '1px solid rgba(255, 255, 255, 0.3)',
+  color: 'text.primary',
+  transition: 'all 0.3s ease-in-out',
+  '&:hover': {
+    bgcolor: 'rgba(255, 255, 255, 0.25)',
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+  },
+};
+
+// --- Glassmorphism Styles for Input Fields ---
+const inputGlassMorphismStyles = {
+  bgcolor: 'rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(8px)',
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  borderRadius: 2,
+  '& .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'transparent',
+  },
+  '&:hover .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+    borderColor: 'primary.main',
+    boxShadow: '0 0 0 3px rgba(100, 181, 246, 0.3)',
+  },
+  '& .MuiInputBase-input': {
+    color: 'text.primary',
+  },
+  '& .MuiInputLabel-root': {
+    color: 'text.secondary',
+  },
+  '& .MuiInputLabel-root.Mui-focused': {
+    color: 'primary.main',
+  },
+};
 
 // --- Constants ---
 const ROLES = {
@@ -222,15 +306,15 @@ const LeadDetails = React.memo(({ lead }) => (
               </Typography>
             </Box>
             <Stack direction="row" spacing={1}>
-              <Chip 
-                label={lead.leadType?.toUpperCase() || 'UNKNOWN'} 
-                color={getLeadTypeColor(lead.leadType)} 
+              <Chip
+                label={lead.leadType?.toUpperCase() || 'UNKNOWN'}
+                color={getLeadTypeColor(lead.leadType)}
                 size="small"
                 sx={{ fontWeight: 'medium' }}
               />
-              <Chip 
-                label={lead.status.charAt(0).toUpperCase() + lead.status.slice(1)} 
-                color={getStatusColor(lead.status)} 
+              <Chip
+                label={lead.status.charAt(0).toUpperCase() + lead.status.slice(1)}
+                color={getStatusColor(lead.status)}
                 size="small"
                 sx={{ fontWeight: 'medium' }}
               />
@@ -280,7 +364,7 @@ const LeadDetails = React.memo(({ lead }) => (
             <Box>
               <Typography variant="caption" color="text.secondary">Address</Typography>
               <Typography variant="body2">
-                {typeof lead.address === 'string' ? lead.address : 
+                {typeof lead.address === 'string' ? lead.address :
                   lead.address ? `${lead.address.street || ''}, ${lead.address.city || ''} ${lead.address.postalCode || ''}`.trim() : 'N/A'}
               </Typography>
             </Box>
@@ -734,8 +818,6 @@ const LeadsPage = () => {
   });
   const [showFilters, setShowFilters] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
-  const [isInjecting, setIsInjecting] = useState(false);
-  const [injectionStatus, setInjectionStatus] = useState({ success: null, message: "" });
 
   // --- Derived State & Roles (Memoized) ---
   const isAdminOrManager = useMemo(
@@ -747,7 +829,6 @@ const LeadsPage = () => {
   const isAgent = useMemo(() => user?.role === ROLES.AGENT, [user?.role]);
   const canAssignLeads = useMemo(() => isAdminOrManager, [isAdminOrManager]);
   const canDeleteLeads = useMemo(() => user?.role === ROLES.ADMIN, [user?.role]);
-  const canInjectLeads = useMemo(() => user?.role === ROLES.ADMIN || user?.role === ROLES.AFFILIATE_MANAGER, [user?.role]);
   const numSelected = useMemo(() => selectedLeads.size, [selectedLeads]);
 
   // --- Forms ---
@@ -897,25 +978,6 @@ const LeadsPage = () => {
       setError(err.response?.data?.message || 'Failed to delete lead');
     }
   }, [fetchLeads, fetchLeadStats, setSuccess, setError]);
-
-  const handleInjectLead = async (leadId) => {
-    setIsInjecting(true);
-    setInjectionStatus({ success: null, message: "Starting injection..." });
-    try {
-      const landingPageUrl = `${window.location.origin}/landing`;
-      const res = await api.post(`/leads/${leadId}/inject`, { landingPage: landingPageUrl });
-      if (res.status === 200) {
-        setInjectionStatus({ success: true, message: "Injection process started successfully!" });
-      }
-    } catch (error) {
-      const message = error.response?.data?.message || "Failed to start injection.";
-      setInjectionStatus({ success: false, message });
-    } finally {
-      setIsInjecting(false);
-      // Hide the message after a few seconds
-      setTimeout(() => setInjectionStatus({ success: null, message: "" }), 5000);
-    }
-  };
 
   const handleBulkDelete = async () => {
     try {
@@ -1084,10 +1146,15 @@ const LeadsPage = () => {
                 borderRadius: 2,
                 px: 3,
                 py: 1,
-                transition: 'all 0.2s',
+                transition: 'all 0.3s ease-in-out',
+                bgcolor: 'rgba(255, 255, 255, 0.15)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                color: 'text.primary',
                 '&:hover': {
                   transform: 'translateY(-2px)',
-                  boxShadow: 4,
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+                  bgcolor: 'rgba(255, 255, 255, 0.25)',
                 },
               }}
             >
@@ -1150,12 +1217,6 @@ const LeadsPage = () => {
       {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>{success}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
-      {injectionStatus.message && (
-        <Alert severity={injectionStatus.success === true ? "success" : (injectionStatus.success === false ? "error" : "info")} sx={{ mb: 2 }}>
-          {injectionStatus.message}
-        </Alert>
-      )}
-
       {/* Stats Section */}
       {leadStats && (
         <Box sx={{ mb: 4 }}>
@@ -1164,80 +1225,116 @@ const LeadsPage = () => {
               <Paper
                 elevation={0}
                 sx={{
-                  p: 2,
-                  bgcolor: 'primary.light',
+                  p: 3,
+                  bgcolor: 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(10px)',
                   borderRadius: 2,
-                  color: 'primary.contrastText',
-                  transition: 'transform 0.2s',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  color: 'text.primary',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease-in-out',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(240, 245, 255, 0.8) 100%)',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
                   '&:hover': {
                     transform: 'translateY(-4px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(15px)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 245, 255, 0.9) 100%)',
                   },
                 }}
               >
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
                   {leadStats.leads.overall.total}
                 </Typography>
-                <Typography variant="subtitle2">Total Leads</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Total Leads</Typography>
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
               <Paper
                 elevation={0}
                 sx={{
-                  p: 2,
-                  bgcolor: 'success.light',
+                  p: 3,
+                  bgcolor: 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(10px)',
                   borderRadius: 2,
-                  color: 'success.contrastText',
-                  transition: 'transform 0.2s',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  color: 'text.primary',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease-in-out',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(245, 255, 245, 0.8) 100%)',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
                   '&:hover': {
                     transform: 'translateY(-4px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(15px)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 255, 245, 0.9) 100%)',
                   },
                 }}
               >
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
                   {leadStats.leads.overall.assigned}
                 </Typography>
-                <Typography variant="subtitle2">Assigned Leads</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Assigned Leads</Typography>
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
               <Paper
                 elevation={0}
                 sx={{
-                  p: 2,
-                  bgcolor: 'warning.light',
+                  p: 3,
+                  bgcolor: 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(10px)',
                   borderRadius: 2,
-                  color: 'warning.contrastText',
-                  transition: 'transform 0.2s',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  color: 'text.primary',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease-in-out',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 250, 240, 0.8) 100%)',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
                   '&:hover': {
                     transform: 'translateY(-4px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(15px)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 250, 240, 0.9) 100%)',
                   },
                 }}
               >
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
                   {leadStats.leads.overall.available}
                 </Typography>
-                <Typography variant="subtitle2">Available Leads</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Available Leads</Typography>
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
               <Paper
                 elevation={0}
                 sx={{
-                  p: 2,
-                  bgcolor: 'info.light',
+                  p: 3,
+                  bgcolor: 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(10px)',
                   borderRadius: 2,
-                  color: 'info.contrastText',
-                  transition: 'transform 0.2s',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  color: 'text.primary',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease-in-out',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(250, 245, 255, 0.8) 100%)',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
                   '&:hover': {
                     transform: 'translateY(-4px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(15px)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(250, 245, 255, 0.9) 100%)',
                   },
                 }}
               >
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
                   {leadStats.leads.ftd.total}
                 </Typography>
-                <Typography variant="subtitle2">FTD Leads</Typography>
+                <Typography variant="subtitle2" color="text.secondary">FTD Leads</Typography>
               </Paper>
             </Grid>
           </Grid>
@@ -1447,9 +1544,6 @@ const LeadsPage = () => {
                           lead={lead}
                           canAssignLeads={canAssignLeads}
                           canDeleteLeads={canDeleteLeads}
-                          canInjectLeads={canInjectLeads}
-                          isInjecting={isInjecting}
-                          onInjectLead={handleInjectLead}
                           isAdminOrManager={isAdminOrManager}
                           isLeadManager={isLeadManager}
                           userId={user?.id}
@@ -1492,9 +1586,6 @@ const LeadsPage = () => {
                     lead={lead}
                     canAssignLeads={canAssignLeads}
                     canDeleteLeads={canDeleteLeads}
-                    canInjectLeads={canInjectLeads}
-                    isInjecting={isInjecting}
-                    onInjectLead={handleInjectLead}
                     selectedLeads={selectedLeads}
                     expandedRows={expandedRows}
                     onSelectLead={handleSelectLead}
@@ -1712,7 +1803,7 @@ const LeadsPage = () => {
 };
 
 // --- Memoized Row Component for Desktop Table ---
-const LeadRow = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLeads, isInjecting, onInjectLead, isAdminOrManager, isLeadManager, userId, selectedLeads, expandedRows, onSelectLead, onUpdateStatus, onComment, onToggleExpansion, onFilterByOrder, onDeleteLead, user, handleEditLead }) => {
+const LeadRow = React.memo(({ lead, canAssignLeads, canDeleteLeads, isAdminOrManager, isLeadManager, userId, selectedLeads, expandedRows, onSelectLead, onUpdateStatus, onComment, onToggleExpansion, onFilterByOrder, onDeleteLead, user, handleEditLead }) => {
   const isOwner = !isLeadManager || lead.createdBy === userId;
 
   const handleRowClick = (event) => {
@@ -1763,13 +1854,6 @@ const LeadRow = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLea
               <DeleteIcon sx={{ fontSize: '1.25rem' }} />
             </IconButton>
           )}
-          {canInjectLeads && (
-            <Tooltip title="Inject Lead">
-              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onInjectLead(lead._id); }} disabled={isInjecting}>
-                <InjectIcon sx={{ fontSize: '1.25rem' }} />
-              </IconButton>
-            </Tooltip>
-          )}
           <IconButton size="small" onClick={(e) => { e.stopPropagation(); onToggleExpansion(lead._id); }}>
             {expandedRows.has(lead._id) ? <ExpandLessIcon sx={{ fontSize: '1.25rem' }} /> : <ExpandMoreIcon sx={{ fontSize: '1.25rem' }} />}
           </IconButton>
@@ -1780,7 +1864,7 @@ const LeadRow = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLea
 });
 
 // --- Memoized Card Component for Mobile View ---
-const LeadCard = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLeads, isInjecting, onInjectLead, selectedLeads, expandedRows, onSelectLead, onUpdateStatus, onComment, onToggleExpansion, onDeleteLead, user, isLeadManager, handleEditLead }) => {
+const LeadCard = React.memo(({ lead, canAssignLeads, canDeleteLeads, selectedLeads, expandedRows, onSelectLead, onUpdateStatus, onComment, onToggleExpansion, onDeleteLead, user, isLeadManager, handleEditLead }) => {
   const handleCardClick = (event) => {
     if (event.target.closest('button, input, select, [role="combobox"], .MuiSelect-select, .MuiMenuItem-root')) {
       return;
@@ -1831,15 +1915,15 @@ const LeadCard = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLe
               </Box>
             </Stack>
             <Stack direction="row" spacing={1} alignItems="center">
-              <Chip 
-                label={(lead.leadType || 'unknown').toUpperCase()} 
-                color={getLeadTypeColor(lead.leadType)} 
+              <Chip
+                label={(lead.leadType || 'unknown').toUpperCase()}
+                color={getLeadTypeColor(lead.leadType)}
                 size="small"
                 sx={{ fontWeight: 'medium' }}
               />
-              <Chip 
-                label={lead.status.charAt(0).toUpperCase() + lead.status.slice(1)} 
-                color={getStatusColor(lead.status)} 
+              <Chip
+                label={lead.status.charAt(0).toUpperCase() + lead.status.slice(1)}
+                color={getStatusColor(lead.status)}
                 size="small"
                 sx={{ fontWeight: 'medium' }}
               />
@@ -1886,13 +1970,6 @@ const LeadCard = React.memo(({ lead, canAssignLeads, canDeleteLeads, canInjectLe
               >
                 <DeleteIcon />
               </IconButton>
-            )}
-            {canInjectLeads && (
-              <Tooltip title="Inject Lead">
-                <IconButton size="small" onClick={(e) => { e.stopPropagation(); onInjectLead(lead._id); }} disabled={isInjecting}>
-                  <InjectIcon />
-                </IconButton>
-              </Tooltip>
             )}
             {canAssignLeads && <Checkbox checked={selectedLeads.has(lead._id)} onChange={onSelectLead(lead._id)} size="small" />}
           </Stack>

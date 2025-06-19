@@ -22,6 +22,7 @@ import DashboardPage from './pages/DashboardPage.jsx';
 import OrdersPage from './pages/OrdersPage.jsx';
 import LeadsPage from './pages/LeadsPage.jsx';
 import UsersPage from './pages/UsersPage.jsx';
+import ClientNetworksPage from './pages/ClientNetworksPage.jsx';
 import PerformancePage from './pages/PerformancePage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import PayrollPage from './pages/PayrollPage.jsx';
@@ -124,6 +125,7 @@ function AppContent() {
             <Route path="orders" element={<OrdersPage />} />
             <Route path="leads" element={<LeadsPage />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="client-networks" element={<ClientNetworksPage />} />
             <Route path="performance" element={<PerformancePage />} />
             <Route path="payroll" element={<PayrollPage />} />
             <Route path="profile" element={<ProfilePage />} />

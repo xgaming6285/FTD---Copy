@@ -46,18 +46,11 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
-    // Exclusion filters used when creating this order
-    excludeClients: {
-      type: [String],
-      default: undefined,
-    },
-    excludeBrokers: {
-      type: [String],
-      default: undefined,
-    },
-    excludeNetworks: {
-      type: [String],
-      default: undefined,
+    // Selected client network for this order
+    selectedClientNetwork: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ClientNetwork",
+      default: null,
     },
 
     // Fulfillment tracking
@@ -66,6 +59,56 @@ const orderSchema = new mongoose.Schema(
       filler: { type: Number, default: 0 },
       cold: { type: Number, default: 0 },
       live: { type: Number, default: 0 },
+    },
+
+    // Injection settings and tracking
+    injectionSettings: {
+      enabled: { type: Boolean, default: false },
+      mode: {
+        type: String,
+        enum: ["manual", "bulk", "scheduled"],
+        default: "manual"
+      },
+      // For scheduled injection
+      scheduledTime: {
+        startTime: { type: String }, // e.g., "10:00"
+        endTime: { type: String },   // e.g., "12:00"
+      },
+      // Injection status tracking
+      status: {
+        type: String,
+        enum: ["pending", "in_progress", "completed", "failed", "paused"],
+        default: "pending"
+      },
+      // Track which lead types to inject (FTDs are always manual)
+      includeTypes: {
+        filler: { type: Boolean, default: true },
+        cold: { type: Boolean, default: true },
+        live: { type: Boolean, default: true }
+      }
+    },
+
+    // FTD handling tracking
+    ftdHandling: {
+      status: {
+        type: String,
+        enum: ["pending", "skipped", "manual_fill_required", "completed"],
+        default: "pending"
+      },
+      skippedAt: { type: Date },
+      completedAt: { type: Date },
+      notes: { type: String }
+    },
+
+    // Injection progress tracking
+    injectionProgress: {
+      totalToInject: { type: Number, default: 0 },
+      totalInjected: { type: Number, default: 0 },
+      successfulInjections: { type: Number, default: 0 },
+      failedInjections: { type: Number, default: 0 },
+      ftdsPendingManualFill: { type: Number, default: 0 },
+      lastInjectionAt: { type: Date },
+      completedAt: { type: Date }
     },
 
     // Completion tracking

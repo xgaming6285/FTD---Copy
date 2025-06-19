@@ -1,0 +1,35 @@
+FTDs can't have inject, only affiliate manager or admin should have an option to inject a FTD by
+manually filling the form
+
+The current implementation allow inject button, add also inject in the orders's page(if the
+affiliate manager or admin create an order he should be able to select an option to inject
+leads(every lead except FTD is auto filled in the form by the script) or to select "auto inject"(the
+same logic but the injection begins either now(bulk injection) or leads are injected from time to
+time f.e from 10am to 12am(at random intervals(1 lead at 10:05, other at 11:43)). That doesn't
+apply for FTD's, they are always manually filled by the affiliate manage or the admin. If the order
+contains FTD's the program continue doing the injection for the other lead roles and when
+finished, the affiliate manager or the admin is asked to skip ftd's and fill them later. The order
+should contain that information(if the lead injection was successful or not, and if the affiliate
+manager or the admin decides to skip the ftd's and fill them later or they are filled).
+
+Admin should have an option to add client networks and assign them to
+specific affiliate manager. Affiliate manager sees these client networks when
+making orders. Affiliate manager doesn't have an option to add new client networks, only to
+select them. 
+
+Leads should have a history of assigned client networks and client brokers. If one lead is already
+assigned by affiliate manager or admin to client network he cannot be assigned to that specific
+client network twice(if exists in one order, he can exist to another, but can't be assigned to the
+same client network), but he can on another.
+
+When making an order either by affiliate manager or admin, only the client network is specified.
+The client broker is specified lately when the injection is over(the domain of the final link is taken
+and assigned as client broker(manually by the affiliate manager or the admin)).
+
+One lead can have many client networks and many client brokers(unique). One client network
+can have many client brokers. At every injection the system checks if that lead is already
+injected at that specific client broker). If is not - proceed with the injection, if it is - the affiliate
+manager or the admin is asked to switch the lead or the system auto select). If lead is assigned
+to all existing client brokers in the system, the status of the lead is something like “sleep” or “Not
+available client brokers”, until in the system is added a new client broker, that the lead is not
+assigned to.

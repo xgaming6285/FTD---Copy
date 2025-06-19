@@ -29,7 +29,8 @@ import {
   Analytics as PerformanceIcon,
   AccountCircle as AccountIcon,
   Logout as LogoutIcon,
-  AttachMoney as PaymentIcon
+  AttachMoney as PaymentIcon,
+  Hub as NetworkIcon
 } from '@mui/icons-material';
 import { logout, selectUser } from '../store/slices/authSlice';
 import Footer from './Footer';
@@ -84,6 +85,7 @@ const MainLayout = () => {
         { text: 'Orders', icon: <OrdersIcon />, path: '/orders' },
         { text: 'Leads', icon: <LeadsIcon />, path: '/leads' },
         { text: 'Users', icon: <UsersIcon />, path: '/users' },
+        { text: 'Client Networks', icon: <NetworkIcon />, path: '/client-networks' },
         { text: 'Performance', icon: <PerformanceIcon />, path: '/performance' },
         { text: 'Payment', icon: <PaymentIcon />, path: '/reference' }
 

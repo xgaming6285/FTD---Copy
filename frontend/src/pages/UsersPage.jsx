@@ -419,29 +419,7 @@ const UsersPage = () => {
     }
   }, [dialogState.user, fetchUsers, handleDialogClose]);
 
-  const handleAssignLeadManager = useCallback(async () => {
-    clearMessages();
-    try {
-      await api.put(`/users/${dialogState.user._id}/assign-lead-manager`, { assignAsLeadManager: true });
-      showSuccess('User assigned as lead manager successfully.');
-      handleDialogClose();
-      fetchUsers();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to assign lead manager.');
-    }
-  }, [dialogState.user, fetchUsers, handleDialogClose]);
 
-  const handleApproveLeadManager = useCallback(async (approved, reason = '') => {
-    clearMessages();
-    try {
-      await api.put(`/users/${dialogState.user._id}/approve-lead-manager`, { approved, reason });
-      showSuccess(approved ? 'Lead manager approved.' : 'Lead manager rejected.');
-      handleDialogClose();
-      fetchUsers();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to process lead manager approval.');
-    }
-  }, [dialogState.user, fetchUsers, handleDialogClose]);
 
   const handleChangePage = useCallback((_, newPage) => setPage(newPage), []);
 
@@ -688,28 +666,8 @@ const UsersPage = () => {
                                   </AnimatedIconButton>
                                 </Tooltip>
                               )}
-                              {user.role !== 'admin' && user.leadManagerStatus === 'not_applicable' && (
-                                <Tooltip title="Assign as Lead Manager" arrow>
-                                  <AnimatedIconButton 
-                                    size="small" 
-                                    onClick={() => setDialogState({ type: 'assignLeadManager', user })} 
-                                    color="secondary"
-                                  >
-                                    <LeadManagerIcon />
-                                  </AnimatedIconButton>
-                                </Tooltip>
-                              )}
-                              {user.leadManagerStatus === 'pending' && (
-                                <Tooltip title="Approve Lead Manager Request" arrow>
-                                  <AnimatedIconButton 
-                                    size="small" 
-                                    onClick={() => setDialogState({ type: 'approveLeadManager', user })} 
-                                    color="warning"
-                                  >
-                                    <CheckCircleIcon />
-                                  </AnimatedIconButton>
-                                </Tooltip>
-                              )}
+
+
                             </Stack>
                           </TableCell>
                         </StyledTableRow>
@@ -774,8 +732,6 @@ const UsersPage = () => {
       </Dialog>
 
       <Dialog open={dialogState.type === 'approve'} onClose={handleDialogClose} maxWidth="xs"><DialogTitle>Approve User</DialogTitle><DialogContent><Typography>Approve "{dialogState.user?.fullName}" and assign a role:</Typography><Stack spacing={1} sx={{ mt: 2 }}>{Object.entries(ROLES).filter(([key]) => !['pending_approval'].includes(key)).map(([key, { label, icon }]) => (<Button key={key} variant="outlined" onClick={() => handleApproveUser(key)} startIcon={icon}>{label}</Button>))}</Stack></DialogContent><DialogActions><Button onClick={handleDialogClose}>Cancel</Button></DialogActions></Dialog>
-      <Dialog open={dialogState.type === 'assignLeadManager'} onClose={handleDialogClose} maxWidth="xs"><DialogTitle>Assign Lead Manager</DialogTitle><DialogContent><Typography>Assign "{dialogState.user?.fullName}" to be a Lead Manager? This will require admin approval.</Typography></DialogContent><DialogActions><Button onClick={handleDialogClose}>Cancel</Button><Button onClick={handleAssignLeadManager} color="secondary" variant="contained">Assign</Button></DialogActions></Dialog>
-      <Dialog open={dialogState.type === 'approveLeadManager'} onClose={handleDialogClose} maxWidth="xs"><DialogTitle>Approve Lead Manager</DialogTitle><DialogContent><Typography>Approve or reject "{dialogState.user?.fullName}"'s request to be a Lead Manager.</Typography></DialogContent><DialogActions><Button onClick={handleDialogClose}>Cancel</Button><Button onClick={() => handleApproveLeadManager(false, 'Rejected by admin')} color="error">Reject</Button><Button onClick={() => handleApproveLeadManager(true)} color="success" variant="contained">Approve</Button></DialogActions></Dialog>
     </Box>
   );
 };
