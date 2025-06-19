@@ -1552,12 +1552,7 @@ exports.skipBrokerAssignment = async (req, res, next) => {
 // @access  Private (Admin, Affiliate Manager)
 exports.getFTDLeadsForOrder = async (req, res, next) => {
   try {
-    const order = await Order.findById(req.params.id).populate({
-      path: 'leads',
-      match: {
-        leadType: 'ftd'
-      }
-    });
+    const order = await Order.findById(req.params.id).populate('leads');
 
     if (!order) {
       return res.status(404).json({
@@ -1574,14 +1569,20 @@ exports.getFTDLeadsForOrder = async (req, res, next) => {
       });
     }
 
-    // Filter FTD leads that haven't been injected yet
-    const ftdLeads = order.leads.filter(lead => {
-      // Check if lead has been injected for this order
-      const networkHistory = lead.clientNetworkHistory?.find(
-        history => history.orderId?.toString() === order._id.toString()
-      );
-      return !networkHistory || networkHistory.injectionStatus === 'pending';
-    });
+    // Filter for FTD leads first, then check injection status
+    const ftdLeads = (order.leads || [])
+      .filter(lead => lead && lead.leadType === 'ftd')
+      .filter(lead => {
+        // Check if lead has been injected for this order
+        const networkHistory = lead.clientNetworkHistory?.find(
+          history => history.orderId?.toString() === order._id.toString()
+        );
+        // Include leads that:
+        // 1. Have no network history for this order (never injected)
+        // 2. Have network history but injection status is 'pending'
+        // Exclude leads that have been successfully injected (status: 'completed')
+        return !networkHistory || networkHistory.injectionStatus !== 'completed';
+      });
 
     res.status(200).json({
       success: true,
