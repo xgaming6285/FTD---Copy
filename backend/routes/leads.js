@@ -27,6 +27,9 @@ const {
   updateLeadType,
   bulkDeleteLeads,
   wakeUpSleepingLeads,
+  assignClientNetworkToLead,
+  getLeadAssignmentHistory,
+  getClientNetworkAnalytics,
 } = require("../controllers/leads");
 
 const router = express.Router();
@@ -121,6 +124,22 @@ router.get(
   getLeadStats
 );
 
+// @route   GET /api/leads/client-network-analytics
+// @desc    Get client network assignment analytics
+// @access  Private (Admin, Affiliate Manager)
+router.get(
+  "/client-network-analytics",
+  [
+    protect,
+    authorize("admin", "affiliate_manager"),
+    query("orderId")
+      .optional()
+      .isMongoId()
+      .withMessage("Invalid order ID format"),
+  ],
+  getClientNetworkAnalytics
+);
+
 // @route   GET /api/leads/:id
 // @desc    Get lead by ID
 // @access  Private (Admin or assigned agent)
@@ -161,6 +180,37 @@ router.put(
       .withMessage("Status must be active, contacted, converted, or inactive"),
   ],
   updateLeadStatus
+);
+
+// @route   PUT /api/leads/:id/assign-client-network
+// @desc    Assign client network to individual lead
+// @access  Private (Admin, Affiliate Manager)
+router.put(
+  "/:id/assign-client-network",
+  [
+    protect,
+    authorize("admin", "affiliate_manager"),
+    body("clientNetwork")
+      .trim()
+      .notEmpty()
+      .withMessage("Client network is required"),
+    body("clientBroker")
+      .optional()
+      .trim(),
+    body("client")
+      .optional()
+      .trim(),
+  ],
+  assignClientNetworkToLead
+);
+
+// @route   GET /api/leads/:id/assignment-history
+// @desc    Get lead assignment history
+// @access  Private (Admin, Affiliate Manager)
+router.get(
+  "/:id/assignment-history",
+  [protect, authorize("admin", "affiliate_manager")],
+  getLeadAssignmentHistory
 );
 
 // @route   POST /api/leads/assign

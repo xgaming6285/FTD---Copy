@@ -148,10 +148,8 @@ const OrdersPage = () => {
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [assignClientDialogOpen, setAssignClientDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [selectedOrderForClient, setSelectedOrderForClient] = useState(null);
-  const [isAssigningClient, setIsAssigningClient] = useState(false);
+  // Mass assignment state variables removed
 
   // Injection states
   const [injectionStatus, setInjectionStatus] = useState({});
@@ -433,47 +431,10 @@ const OrdersPage = () => {
     setPage(0);
   }, []);
 
-  // Client assignment handlers
-  const handleOpenAssignClientDialog = useCallback(async (orderId) => {
-    try {
-      const response = await api.get(`/orders/${orderId}`);
-      setSelectedOrderForClient(response.data.data);
-      setAssignClientDialogOpen(true);
-    } catch (err) {
-      setNotification({
-        message: err.response?.data?.message || 'Failed to fetch order details',
-        severity: 'error',
-      });
-    }
-  }, []);
+  // Mass client assignment functionality has been removed
+  // Use individual lead assignment instead: PUT /api/leads/:id/assign-client-network
 
-  const handleAssignClientInfo = useCallback(async (clientData) => {
-    if (!selectedOrderForClient) return;
-
-    setIsAssigningClient(true);
-    try {
-      const response = await api.put(`/orders/${selectedOrderForClient._id}/assign-client-info`, clientData);
-      setNotification({
-        message: response.data.message || 'Client information assigned successfully!',
-        severity: 'success'
-      });
-      setAssignClientDialogOpen(false);
-      setSelectedOrderForClient(null);
-      fetchOrders(); // Refresh the orders list
-    } catch (err) {
-      setNotification({
-        message: err.response?.data?.message || 'Failed to assign client information',
-        severity: 'error',
-      });
-    } finally {
-      setIsAssigningClient(false);
-    }
-  }, [selectedOrderForClient, fetchOrders]);
-
-  const handleCloseAssignClientDialog = useCallback(() => {
-    setAssignClientDialogOpen(false);
-    setSelectedOrderForClient(null);
-  }, []);
+  // Mass assignment dialog handlers removed
 
   // Handle opening create dialog and fetching exclusion options
   const handleOpenCreateDialog = useCallback(() => {

@@ -231,6 +231,12 @@ leadSchema.index({ firstName: 1, lastName: 1 }); // Optimize name-based sorting
 leadSchema.index({ createdBy: 1 }); // Optimize filtering by creator
 leadSchema.index({ updatedAt: -1 }); // Track updates efficiently
 
+// Client network history indexes for better performance
+leadSchema.index({ "clientNetworkHistory.clientNetwork": 1 });
+leadSchema.index({ "clientNetworkHistory.orderId": 1 });
+leadSchema.index({ "clientNetworkHistory.clientNetwork": 1, "clientNetworkHistory.orderId": 1 });
+leadSchema.index({ "clientNetworkHistory.assignedAt": -1 });
+
 // Compound indexes for common query patterns
 leadSchema.index({ leadType: 1, isAssigned: 1, status: 1 }); // Common filtering pattern
 leadSchema.index({ assignedTo: 1, status: 1 }); // Agent's leads by status
