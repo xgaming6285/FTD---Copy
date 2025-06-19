@@ -899,6 +899,18 @@ const LeadsPage = () => {
   }, [fetchLeads, fetchLeadStats, setSuccess, setError]);
 
   const handleInjectLead = async (leadId) => {
+    const lead = leads.find(l => l._id === leadId);
+    
+    // Check if it's an FTD lead - these cannot be auto-injected
+    if (lead?.leadType === 'ftd') {
+      setInjectionStatus({ 
+        success: false, 
+        message: "FTD leads cannot be auto-injected. Please fill them manually using the landing page form." 
+      });
+      setTimeout(() => setInjectionStatus({ success: null, message: "" }), 5000);
+      return;
+    }
+
     setIsInjecting(true);
     setInjectionStatus({ success: null, message: "Starting injection..." });
     try {

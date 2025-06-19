@@ -31,6 +31,8 @@ import {
   CircularProgress,
   useMediaQuery,
   useTheme,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -39,6 +41,9 @@ import {
   Visibility as ViewIcon,
   Download as DownloadIcon,
   Assignment as AssignmentIcon,
+  PlayArrow as InjectIcon,
+  Pause as PauseIcon,
+  Stop as StopIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -65,8 +70,29 @@ const orderSchema = yup.object({
   excludeClients: yup.array().of(yup.string()).default([]),
   excludeBrokers: yup.array().of(yup.string()).default([]),
   excludeNetworks: yup.array().of(yup.string()).default([]),
+  // New injection fields
+  enableInjection: yup.boolean().default(false),
+  injectionMode: yup.string().oneOf(['manual', 'bulk', 'scheduled'], 'Invalid injection mode').default('manual'),
+  injectionStartTime: yup.string().when('injectionMode', {
+    is: 'scheduled',
+    then: schema => schema.required('Start time is required for scheduled injection'),
+    otherwise: schema => schema
+  }),
+  injectionEndTime: yup.string().when('injectionMode', {
+    is: 'scheduled',
+    then: schema => schema.required('End time is required for scheduled injection'),
+    otherwise: schema => schema
+  }),
+  injectFiller: yup.boolean().default(true),
+  injectCold: yup.boolean().default(true),
+  injectLive: yup.boolean().default(true),
 }).test('at-least-one', 'At least one lead type must be requested', (value) => {
   return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
+}).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
+  if (value.enableInjection) {
+    return value.injectFiller || value.injectCold || value.injectLive;
+  }
+  return true;
 });
 
 // Helper functions for status/priority colors
@@ -129,6 +155,10 @@ const OrdersPage = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedOrderForClient, setSelectedOrderForClient] = useState(null);
   const [isAssigningClient, setIsAssigningClient] = useState(false);
+
+  // Injection states
+  const [injectionStatus, setInjectionStatus] = useState({});
+  const [isInjecting, setIsInjecting] = useState({});
 
   // Exclusion options state
   const [exclusionOptions, setExclusionOptions] = useState({
@@ -246,6 +276,22 @@ const OrdersPage = () => {
         excludeClients: data.excludeClients || [],
         excludeBrokers: data.excludeBrokers || [],
         excludeNetworks: data.excludeNetworks || [],
+        // Include injection settings
+        injectionSettings: data.enableInjection ? {
+          enabled: true,
+          mode: data.injectionMode,
+          scheduledTime: data.injectionMode === 'scheduled' ? {
+            startTime: data.injectionStartTime,
+            endTime: data.injectionEndTime
+          } : undefined,
+          includeTypes: {
+            filler: data.injectFiller,
+            cold: data.injectCold,
+            live: data.injectLive
+          }
+        } : {
+          enabled: false
+        }
       };
 
       await api.post('/orders', orderData);
@@ -426,6 +472,56 @@ const OrdersPage = () => {
     fetchExclusionOptions();
   }, [fetchExclusionOptions]);
 
+  // Injection handlers
+  const handleStartInjection = useCallback(async (orderId) => {
+    setIsInjecting(prev => ({ ...prev, [orderId]: true }));
+    setInjectionStatus(prev => ({ ...prev, [orderId]: { success: null, message: "Starting injection..." } }));
+    
+    try {
+      const response = await api.post(`/orders/${orderId}/start-injection`);
+      setInjectionStatus(prev => ({ ...prev, [orderId]: { success: true, message: "Injection started successfully!" } }));
+      fetchOrders(); // Refresh to show updated injection status
+    } catch (err) {
+      setInjectionStatus(prev => ({ ...prev, [orderId]: { success: false, message: err.response?.data?.message || "Failed to start injection" } }));
+    } finally {
+      setIsInjecting(prev => ({ ...prev, [orderId]: false }));
+      // Clear message after 5 seconds
+      setTimeout(() => {
+        setInjectionStatus(prev => ({ ...prev, [orderId]: { success: null, message: "" } }));
+      }, 5000);
+    }
+  }, [fetchOrders]);
+
+  const handlePauseInjection = useCallback(async (orderId) => {
+    try {
+      await api.post(`/orders/${orderId}/pause-injection`);
+      setNotification({ message: 'Injection paused successfully!', severity: 'success' });
+      fetchOrders();
+    } catch (err) {
+      setNotification({ message: err.response?.data?.message || 'Failed to pause injection', severity: 'error' });
+    }
+  }, [fetchOrders]);
+
+  const handleStopInjection = useCallback(async (orderId) => {
+    try {
+      await api.post(`/orders/${orderId}/stop-injection`);
+      setNotification({ message: 'Injection stopped successfully!', severity: 'success' });
+      fetchOrders();
+    } catch (err) {
+      setNotification({ message: err.response?.data?.message || 'Failed to stop injection', severity: 'error' });
+    }
+  }, [fetchOrders]);
+
+  const handleSkipFTDs = useCallback(async (orderId) => {
+    try {
+      await api.post(`/orders/${orderId}/skip-ftds`);
+      setNotification({ message: 'FTDs marked for manual filling later!', severity: 'info' });
+      fetchOrders();
+    } catch (err) {
+      setNotification({ message: err.response?.data?.message || 'Failed to skip FTDs', severity: 'error' });
+    }
+  }, [fetchOrders]);
+
   // Readability: Helper component for rendering lead counts
   const renderLeadCounts = (label, requested, fulfilled) => (
     <Typography variant="body2">
@@ -470,6 +566,21 @@ const OrdersPage = () => {
           </Alert>
         </Collapse>
       )}
+
+      {/* Individual Injection Status Alerts */}
+      {Object.entries(injectionStatus).map(([orderId, status]) => (
+        status.message && (
+          <Collapse key={orderId} in={!!status.message}>
+            <Alert
+              severity={status.success === true ? "success" : (status.success === false ? "error" : "info")}
+              sx={{ mb: 1 }}
+              onClose={() => setInjectionStatus(prev => ({ ...prev, [orderId]: { success: null, message: "" } }))}
+            >
+              <strong>Order {orderId.slice(-8)}:</strong> {status.message}
+            </Alert>
+          </Collapse>
+        )
+      ))}
 
       {/* Filters Card */}
       <Card sx={{ mb: 3 }}>
@@ -565,6 +676,57 @@ const OrdersPage = () => {
                           {order.leads && order.leads.length > 0 && (
                             <IconButton size="small" onClick={() => handleOpenAssignClientDialog(order._id)} title="Assign Client Info to All Leads"><AssignmentIcon fontSize="small" /></IconButton>
                           )}
+                          
+                          {/* Injection Controls - only for admin/affiliate managers */}
+                          {(user?.role === 'admin' || user?.role === 'affiliate_manager') && order.injectionSettings?.enabled && (
+                            <>
+                              {order.injectionSettings.status === 'pending' && (
+                                <IconButton 
+                                  size="small" 
+                                  onClick={() => handleStartInjection(order._id)} 
+                                  title="Start Injection"
+                                  disabled={isInjecting[order._id]}
+                                  color="primary"
+                                >
+                                  {isInjecting[order._id] ? <CircularProgress size={16} /> : <InjectIcon fontSize="small" />}
+                                </IconButton>
+                              )}
+                              
+                              {order.injectionSettings.status === 'in_progress' && (
+                                <>
+                                  <IconButton size="small" onClick={() => handlePauseInjection(order._id)} title="Pause Injection" color="warning">
+                                    <PauseIcon fontSize="small" />
+                                  </IconButton>
+                                  <IconButton size="small" onClick={() => handleStopInjection(order._id)} title="Stop Injection" color="error">
+                                    <StopIcon fontSize="small" />
+                                  </IconButton>
+                                </>
+                              )}
+                              
+                              {order.injectionSettings.status === 'paused' && (
+                                <>
+                                  <IconButton size="small" onClick={() => handleStartInjection(order._id)} title="Resume Injection" color="primary">
+                                    <InjectIcon fontSize="small" />
+                                  </IconButton>
+                                  <IconButton size="small" onClick={() => handleStopInjection(order._id)} title="Stop Injection" color="error">
+                                    <StopIcon fontSize="small" />
+                                  </IconButton>
+                                </>
+                              )}
+                              
+                              {order.ftdHandling?.status === 'manual_fill_required' && order.injectionProgress?.ftdsPendingManualFill > 0 && (
+                                <IconButton 
+                                  size="small" 
+                                  onClick={() => handleSkipFTDs(order._id)} 
+                                  title="Skip FTDs - Fill Later"
+                                  color="secondary"
+                                >
+                                  <Typography variant="caption" sx={{ fontSize: '10px' }}>Skip FTDs</Typography>
+                                </IconButton>
+                              )}
+                            </>
+                          )}
+                          
                           <IconButton size="small" onClick={() => toggleRowExpansion(order._id)} title={isExpanded ? "Collapse" : "Expand"}>
                             {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                           </IconButton>
@@ -754,6 +916,149 @@ const OrdersPage = () => {
               <Grid item xs={12}>
                 <Controller name="notes" control={control} render={({ field }) => <TextField {...field} fullWidth label="Notes" multiline rows={3} error={!!errors.notes} helperText={errors.notes?.message} size="small" />}/>
               </Grid>
+
+              {/* Injection Settings Section */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                  Lead Injection Settings
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Configure automatic injection for non-FTD leads. FTD leads are always manually filled by affiliate managers/admins.
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12}>
+                <Controller
+                  name="enableInjection"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControlLabel
+                      control={<Checkbox {...field} checked={field.value} />}
+                      label="Enable Lead Injection"
+                    />
+                  )}
+                />
+              </Grid>
+
+              {/* Injection mode selection - only show if injection is enabled */}
+              <Controller
+                name="enableInjection"
+                control={control}
+                render={({ field }) => (
+                  field.value && (
+                    <>
+                      <Grid item xs={12} sm={6}>
+                        <Controller
+                          name="injectionMode"
+                          control={control}
+                          render={({ field: modeField }) => (
+                            <FormControl fullWidth size="small" error={!!errors.injectionMode}>
+                              <InputLabel>Injection Mode</InputLabel>
+                              <Select {...modeField} label="Injection Mode">
+                                <MenuItem value="manual">Manual Injection</MenuItem>
+                                <MenuItem value="bulk">Auto Inject (Bulk)</MenuItem>
+                                <MenuItem value="scheduled">Auto Inject (Scheduled)</MenuItem>
+                              </Select>
+                              {errors.injectionMode && (
+                                <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+                                  {errors.injectionMode.message}
+                                </Typography>
+                              )}
+                            </FormControl>
+                          )}
+                        />
+                      </Grid>
+
+                      {/* Scheduled time inputs - only show for scheduled mode */}
+                      <Controller
+                        name="injectionMode"
+                        control={control}
+                        render={({ field: modeField }) => (
+                          modeField.value === 'scheduled' && (
+                            <>
+                              <Grid item xs={12} sm={3}>
+                                <Controller
+                                  name="injectionStartTime"
+                                  control={control}
+                                  render={({ field: timeField }) => (
+                                    <TextField
+                                      {...timeField}
+                                      fullWidth
+                                      label="Start Time"
+                                      type="time"
+                                      InputLabelProps={{ shrink: true }}
+                                      size="small"
+                                      error={!!errors.injectionStartTime}
+                                      helperText={errors.injectionStartTime?.message}
+                                    />
+                                  )}
+                                />
+                              </Grid>
+                              <Grid item xs={12} sm={3}>
+                                <Controller
+                                  name="injectionEndTime"
+                                  control={control}
+                                  render={({ field: timeField }) => (
+                                    <TextField
+                                      {...timeField}
+                                      fullWidth
+                                      label="End Time"
+                                      type="time"
+                                      InputLabelProps={{ shrink: true }}
+                                      size="small"
+                                      error={!!errors.injectionEndTime}
+                                      helperText={errors.injectionEndTime?.message}
+                                    />
+                                  )}
+                                />
+                              </Grid>
+                            </>
+                          )
+                        )}
+                      />
+
+                      {/* Lead types to inject */}
+                      <Grid item xs={12}>
+                        <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
+                          Lead Types to Inject (FTDs are always manual):
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                          <Controller
+                            name="injectFiller"
+                            control={control}
+                            render={({ field }) => (
+                              <FormControlLabel
+                                control={<Checkbox {...field} checked={field.value} />}
+                                label="Filler Leads"
+                              />
+                            )}
+                          />
+                          <Controller
+                            name="injectCold"
+                            control={control}
+                            render={({ field }) => (
+                              <FormControlLabel
+                                control={<Checkbox {...field} checked={field.value} />}
+                                label="Cold Leads"
+                              />
+                            )}
+                          />
+                          <Controller
+                            name="injectLive"
+                            control={control}
+                            render={({ field }) => (
+                              <FormControlLabel
+                                control={<Checkbox {...field} checked={field.value} />}
+                                label="Live Leads"
+                              />
+                            )}
+                          />
+                        </Box>
+                      </Grid>
+                    </>
+                  )
+                )}
+              />
 
               {/* Exclusion Filters Section */}
               <Grid item xs={12}>
