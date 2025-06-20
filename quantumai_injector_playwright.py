@@ -266,8 +266,8 @@ class QuantumAIInjector:
             
             # Check the terms checkbox - CRITICAL for form submission
             try:
-                # For myform1, the checkbox has id="cbx-3" but we need to click the label
-                if form_id == "myform1":
+                # For myform1 and myform3 (popup), both use the same checkbox structure
+                if form_id in ["myform1", "myform3"]:
                     # Try multiple approaches to check the checkbox
                     checkbox_selectors = [
                         f'{form_selector} label[for="cbx-3"]',
@@ -312,7 +312,7 @@ class QuantumAIInjector:
                         except Exception as js_e:
                             print(f"ERROR: Could not check checkbox via JavaScript: {str(js_e)}")
                 else:
-                    # For other forms, use the original approach
+                    # For other forms (myform2), use the original approach
                     checkbox_label = page.wait_for_selector(f'{form_selector} .checked-svg', timeout=5000)
                     checkbox_label.click()
                     print("✓ Terms checkbox checked")
@@ -344,14 +344,14 @@ class QuantumAIInjector:
             print(f"INFO: Submitting QuantumAI form {form_id}...")
             
             # CRITICAL: Verify checkbox is checked before submitting
-            if form_id == "myform1":
+            if form_id in ["myform1", "myform3"]:
                 try:
                     checkbox = page.query_selector('#cbx-3')
                     if checkbox:
                         is_checked = checkbox.is_checked()
-                        print(f"INFO: Pre-submit checkbox verification - Checked: {is_checked}")
+                        print(f"INFO: Pre-submit checkbox verification for {form_id} - Checked: {is_checked}")
                         if not is_checked:
-                            print("WARNING: Checkbox not checked! Attempting to check it now...")
+                            print(f"WARNING: Checkbox not checked for {form_id}! Attempting to check it now...")
                             # Try to click the label again
                             label = page.query_selector('label[for="cbx-3"]')
                             if label:
@@ -363,11 +363,11 @@ class QuantumAIInjector:
                             # If still not checked, force it via JavaScript
                             if not is_checked:
                                 page.evaluate('document.getElementById("cbx-3").checked = true')
-                                print("INFO: Forced checkbox check via JavaScript")
+                                print(f"INFO: Forced checkbox check via JavaScript for {form_id}")
                     else:
-                        print("WARNING: Could not find checkbox #cbx-3")
+                        print(f"WARNING: Could not find checkbox #cbx-3 for {form_id}")
                 except Exception as e:
-                    print(f"WARNING: Error verifying checkbox: {str(e)}")
+                    print(f"WARNING: Error verifying checkbox for {form_id}: {str(e)}")
             
             # Take a screenshot before clicking submit
             self._take_screenshot(page, f"before_submit_{form_id}")
@@ -524,27 +524,34 @@ class QuantumAIInjector:
                 
                 success = False
                 
-                # Check if popup is open and close it to focus on root form
+                # NEW LOGIC: Prioritize popup when visible, then fallback to root forms
                 if popup_visible:
-                    print("INFO: Popup is open - attempting to close it to focus on root form")
-                    self._close_popup(page)
-                    time.sleep(1)  # Wait for popup to close
-                
-                # NEW LOGIC: Always prioritize root form page over popup
-                print("INFO: Filling main QuantumAI form (myform1) - ROOT FORM PRIORITY")
-                page.evaluate("document.getElementById('signin').scrollIntoView({behavior: 'smooth'})")
-                time.sleep(2)
-                
-                success = self._fill_quantumai_form(page, lead_data, "myform1")
-                if success:
-                    success = self._submit_quantumai_form(page, "myform1")
+                    print("INFO: Popup is visible - filling popup form (PRIORITY)")
+                    self._take_screenshot(page, "popup_detected")
+                    
+                    success = self._fill_quantumai_form(page, lead_data, "myform3")
                     if success:
-                        self._take_screenshot(page, "main_form_submitted")
-                        print("SUCCESS: Main form (root page) submitted successfully!")
+                        success = self._submit_quantumai_form(page, "myform3")
+                        if success:
+                            self._take_screenshot(page, "popup_form_submitted")
+                            print("SUCCESS: Popup form submitted successfully!")
                 
+                # Fallback to root form if popup failed or wasn't visible
                 if not success:
-                    # Try footer form as second option
-                    print("INFO: Trying footer form as second option (myform2)")
+                    print("INFO: Filling main QuantumAI form (myform1) - ROOT FORM FALLBACK")
+                    page.evaluate("document.getElementById('signin').scrollIntoView({behavior: 'smooth'})")
+                    time.sleep(2)
+                    
+                    success = self._fill_quantumai_form(page, lead_data, "myform1")
+                    if success:
+                        success = self._submit_quantumai_form(page, "myform1")
+                        if success:
+                            self._take_screenshot(page, "main_form_submitted")
+                            print("SUCCESS: Main form (root page) submitted successfully!")
+                
+                # Final fallback to footer form
+                if not success:
+                    print("INFO: Trying footer form as final fallback (myform2)")
                     page.evaluate("document.getElementById('contacts').scrollIntoView({behavior: 'smooth'})")
                     time.sleep(2)
                     
@@ -554,18 +561,6 @@ class QuantumAIInjector:
                         if success:
                             self._take_screenshot(page, "footer_form_submitted")
                             print("SUCCESS: Footer form submitted successfully!")
-                
-                # Only try popup as last resort if both root forms fail
-                if not success and popup_visible:
-                    print("INFO: Root forms failed - trying popup form as last resort (myform3)")
-                    self._take_screenshot(page, "popup_detected")
-                    
-                    success = self._fill_quantumai_form(page, lead_data, "myform3")
-                    if success:
-                        success = self._submit_quantumai_form(page, "myform3")
-                        if success:
-                            self._take_screenshot(page, "popup_form_submitted")
-                            print("SUCCESS: Popup form submitted successfully!")
                 
                 if success:
                     # Wait for redirects

@@ -603,15 +603,20 @@ exports.createOrder = async (req, res, next) => {
         `[FILLER-DEBUG] Fetch multiplier: ${fetchMultiplier}, fetching up to ${fetchLimit} leads`
       );
 
+      // Build base query for filler leads
+      let fillerQuery = {
+        leadType: "filler",
+        isAssigned: false,
+        brokerAvailabilityStatus: { $ne: "sleep" }, // Exclude sleeping leads
+        ...countryFilter,
+        ...genderFilter,
+      };
+
       // Use aggregation with $sample to get random leads for better pattern diversity
       // This helps ensure we don't just get leads with similar phone patterns
-      const fillerLeads = await Lead.aggregate([
+      let fillerLeads = await Lead.aggregate([
         {
-          $match: {
-            leadType: "filler",
-            ...countryFilter,
-            ...genderFilter,
-          },
+          $match: fillerQuery,
         },
         {
           $sample: { size: fetchLimit },
@@ -621,6 +626,27 @@ exports.createOrder = async (req, res, next) => {
       console.log(
         `[FILLER-DEBUG] Found ${fillerLeads.length} filler leads in database`
       );
+
+      // If client network is specified, filter out leads already assigned to this network
+      if (selectedClientNetwork && fillerLeads.length > 0) {
+        console.log(
+          `[FILLER-DEBUG] Filtering out leads already assigned to client network: ${selectedClientNetwork}`
+        );
+        
+        // Convert aggregation results to Lead documents for method access
+        const fillerLeadIds = fillerLeads.map(lead => lead._id);
+        const fillerLeadDocs = await Lead.find({ _id: { $in: fillerLeadIds } });
+        
+        const filteredFillerLeads = fillerLeadDocs.filter(
+          (lead) => !lead.isAssignedToClientNetwork(selectedClientNetwork)
+        );
+        
+        console.log(
+          `[FILLER-DEBUG] After client network filtering: ${filteredFillerLeads.length} leads remain`
+        );
+        
+        fillerLeads = filteredFillerLeads;
+      }
 
       if (fillerLeads.length > 0) {
         const appliedFillerLeads = applyFillerPhoneRepetitionRules(
