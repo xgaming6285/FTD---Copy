@@ -79,6 +79,7 @@ const createOrderSchema = (userRole) => {
     injectionEndTime: yup.string().default(''),
     // Device configuration fields
     deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
+    bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac', 'linux']).default('android'),
     deviceRatio: yup.object({
       windows: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
       android: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
@@ -103,6 +104,11 @@ const createOrderSchema = (userRole) => {
   }).test('available-devices', 'At least one device type must be selected for random mode', (value) => {
     if (value.deviceSelectionMode === 'random') {
       return Object.values(value.availableDeviceTypes || {}).some(enabled => enabled);
+    }
+    return true;
+  }).test('bulk-device', 'Device type is required for bulk mode', (value) => {
+    if (value.deviceSelectionMode === 'bulk') {
+      return value.bulkDeviceType && value.bulkDeviceType.trim() !== '';
     }
     return true;
   });
@@ -287,6 +293,11 @@ const OrdersPage = () => {
 
   const onSubmit = async (data) => {
     try {
+      // Transform availableDeviceTypes from object to array
+      const availableDeviceTypesArray = Object.entries(data.availableDeviceTypes || {})
+        .filter(([_, enabled]) => enabled)
+        .map(([deviceType, _]) => deviceType);
+
       const orderData = {
         requests: {
           ftd: data.ftd,
@@ -308,9 +319,12 @@ const OrdersPage = () => {
         injectLive: data.live > 0,     // Auto-inject if live leads requested
         injectionSettings: {
           // Device configuration
-          deviceSelectionMode: data.deviceSelectionMode,
-          deviceRatio: data.deviceRatio,
-          availableDeviceTypes: data.availableDeviceTypes,
+          deviceConfig: {
+            selectionMode: data.deviceSelectionMode,
+            bulkDeviceType: data.bulkDeviceType,
+            deviceRatio: data.deviceRatio,
+            availableDeviceTypes: availableDeviceTypesArray,
+          }
         }
       };
 
