@@ -180,7 +180,7 @@ class DeviceAssignmentService {
     // Use default device types if none specified
     const deviceTypes = availableDeviceTypes && availableDeviceTypes.length > 0 
       ? availableDeviceTypes 
-      : ['windows', 'android', 'ios', 'mac', 'linux'];
+      : ['windows', 'android', 'ios', 'mac'];
 
     for (const lead of leads) {
       try {
@@ -282,7 +282,7 @@ class DeviceAssignmentService {
    * Get a random device type from default options
    */
   static getRandomDeviceType() {
-    const deviceTypes = ['windows', 'android', 'ios', 'mac', 'linux'];
+    const deviceTypes = ['windows', 'android', 'ios', 'mac'];
     return deviceTypes[Math.floor(Math.random() * deviceTypes.length)];
   }
 
@@ -325,8 +325,7 @@ class DeviceAssignmentService {
         windows: 0,
         android: 0,
         ios: 0,
-        mac: 0,
-        linux: 0
+        mac: 0
       }
     };
 

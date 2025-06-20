@@ -97,7 +97,7 @@ const orderSchema = new mongoose.Schema(
         // For bulk mode - apply same device type to all leads
         bulkDeviceType: {
           type: String,
-          enum: ["windows", "android", "ios", "mac", "linux", null],
+          enum: ["windows", "android", "ios", "mac", null],
           default: null,
         },
         // For ratio mode - device distribution ratios
@@ -106,7 +106,6 @@ const orderSchema = new mongoose.Schema(
           android: { type: Number, default: 0, min: 0, max: 10 },
           ios: { type: Number, default: 0, min: 0, max: 10 },
           mac: { type: Number, default: 0, min: 0, max: 10 },
-          linux: { type: Number, default: 0, min: 0, max: 10 },
         },
         // For individual mode - specific device assignments per lead
         individualAssignments: [
@@ -117,7 +116,7 @@ const orderSchema = new mongoose.Schema(
             },
             deviceType: {
               type: String,
-              enum: ["windows", "android", "ios", "mac", "linux"],
+              enum: ["windows", "android", "ios", "mac"],
               required: true,
             },
           },
@@ -126,7 +125,7 @@ const orderSchema = new mongoose.Schema(
         availableDeviceTypes: [
           {
             type: String,
-            enum: ["windows", "android", "ios", "mac", "linux"],
+            enum: ["windows", "android", "ios", "mac"],
           },
         ],
       },

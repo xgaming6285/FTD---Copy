@@ -264,7 +264,7 @@ const leadSchema = new mongoose.Schema(
     // Device type for this lead (cached from fingerprint for quick access)
     deviceType: {
       type: String,
-      enum: ["windows", "android", "ios", "mac", "linux"],
+      enum: ["windows", "android", "ios", "mac"],
       sparse: true,
       index: true
     },

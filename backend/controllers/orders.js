@@ -1972,14 +1972,13 @@ const injectSingleLead = async (lead, orderId) => {
             "android",
             "ios",
             "mac",
-            "linux",
           ];
           deviceType =
             availableTypes[Math.floor(Math.random() * availableTypes.length)];
         }
 
         // Validate deviceType before assignment
-        const validDeviceTypes = ["windows", "android", "ios", "mac", "linux"];
+        const validDeviceTypes = ["windows", "android", "ios", "mac"];
         if (!deviceType || !validDeviceTypes.includes(deviceType)) {
           console.log(`[WARN] Invalid deviceType '${deviceType}', using default 'android'`);
           deviceType = "android";

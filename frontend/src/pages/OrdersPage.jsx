@@ -78,20 +78,18 @@ const createOrderSchema = (userRole) => {
     injectionEndTime: yup.string().default(''),
     // Device configuration fields
     deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
-    bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac', 'linux']).default('android'),
+    bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac']).default('android'),
     deviceRatio: yup.object({
       windows: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
       android: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
       ios: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
       mac: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-      linux: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
     }),
     availableDeviceTypes: yup.object({
       windows: yup.boolean().default(true),
       android: yup.boolean().default(true),
       ios: yup.boolean().default(true),
       mac: yup.boolean().default(true),
-      linux: yup.boolean().default(true),
     }),
   }).test('at-least-one', 'At least one lead type must be requested', (value) => {
     return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
@@ -1201,7 +1199,6 @@ const OrdersPage = () => {
                               <MenuItem value="android">Android Mobile</MenuItem>
                               <MenuItem value="ios">iPhone/iPad</MenuItem>
                               <MenuItem value="mac">Mac Desktop</MenuItem>
-                              <MenuItem value="linux">Linux Desktop</MenuItem>
                             </Select>
                           </FormControl>
                         )}
@@ -1287,22 +1284,7 @@ const OrdersPage = () => {
                           )}
                         />
                       </Grid>
-                      <Grid item xs={12} sm={2.4}>
-                        <Controller
-                          name="deviceRatio.linux"
-                          control={control}
-                          render={({ field: ratioField }) => (
-                            <TextField
-                              {...ratioField}
-                              fullWidth
-                              label="Linux"
-                              type="number"
-                              inputProps={{ min: 0, max: 10, step: 1 }}
-                              size="small"
-                            />
-                          )}
-                        />
-                      </Grid>
+
                     </>
                   )
                 )}
@@ -1359,16 +1341,7 @@ const OrdersPage = () => {
                             />
                           )}
                         />
-                        <Controller
-                          name="availableDeviceTypes.linux"
-                          control={control}
-                          render={({ field: deviceField }) => (
-                            <FormControlLabel
-                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
-                              label="Linux"
-                            />
-                          )}
-                        />
+
                       </Box>
                     </Grid>
                   )

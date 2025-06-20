@@ -13,7 +13,7 @@ const fingerprintSchema = new mongoose.Schema(
     // Device type and basic info
     deviceType: {
       type: String,
-      enum: ["windows", "android", "ios", "mac", "linux"],
+      enum: ["windows", "android", "ios", "mac"],
       required: true,
       index: true
     },
@@ -287,18 +287,6 @@ fingerprintSchema.statics.generateFingerprint = function(deviceType, createdBy) 
       },
       mobile: { isMobile: false, isTablet: false },
       browser: { name: "chrome", version: "120.0.0.0" }
-    },
-    linux: {
-      screen: { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, devicePixelRatio: 1 },
-      navigator: {
-        userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        platform: "Linux x86_64",
-        hardwareConcurrency: 4,
-        deviceMemory: 8,
-        maxTouchPoints: 0
-      },
-      mobile: { isMobile: false, isTablet: false },
-      browser: { name: "chrome", version: "120.0.0.0" }
     }
   };
   
@@ -348,7 +336,7 @@ fingerprintSchema.statics.generateFingerprint = function(deviceType, createdBy) 
     canvasFingerprint: Math.random().toString(36).substr(2, 16),
     audioFingerprint: Math.random().toString(36).substr(2, 16),
     timezone: "America/New_York",
-    plugins: deviceType === 'windows' || deviceType === 'mac' || deviceType === 'linux' ? [
+    plugins: deviceType === 'windows' || deviceType === 'mac' ? [
       {
         name: "Chrome PDF Plugin",
         filename: "internal-pdf-viewer",
@@ -383,7 +371,7 @@ fingerprintSchema.statics.createForLead = async function(leadId, deviceType, cre
   }
   
   // Validate deviceType
-  const validDeviceTypes = ["windows", "android", "ios", "mac", "linux"];
+  const validDeviceTypes = ["windows", "android", "ios", "mac"];
   if (!validDeviceTypes.includes(deviceType)) {
     throw new Error(`Invalid deviceType: ${deviceType}. Must be one of: ${validDeviceTypes.join(", ")}`);
   }

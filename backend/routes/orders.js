@@ -494,7 +494,7 @@ router.put(
 
       if (
         !deviceType ||
-        !["windows", "android", "ios", "mac", "linux"].includes(deviceType)
+        !["windows", "android", "ios", "mac"].includes(deviceType)
       ) {
         return res.status(400).json({
           success: false,
