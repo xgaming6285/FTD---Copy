@@ -132,12 +132,6 @@ const orderSchema = new mongoose.Schema(
       },
       // Proxy configuration for injection
       proxyConfig: {
-        // FTD proxy sharing settings
-        ftdProxySharing: {
-          enabled: { type: Boolean, default: true },
-          maxFTDsPerProxy: { type: Number, default: 3, min: 1, max: 10 },
-          shareByCountry: { type: Boolean, default: true },
-        },
         // Proxy expiration handling
         proxyExpiration: {
           autoExpireHours: { type: Number, default: 24, min: 1, max: 168 }, // 1 hour to 1 week

@@ -132,46 +132,30 @@ const proxySchema = new mongoose.Schema(
       }
     },
     
-    // Associated leads using this proxy
-    assignedLeads: [{
+    // Associated lead using this proxy (one-to-one relationship)
+    assignedLead: {
       leadId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Lead",
-        required: true
+        sparse: true,
+        index: true
       },
       orderId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Order",
-        required: true
+        sparse: true
       },
       assignedAt: {
-        type: Date,
-        default: Date.now
+        type: Date
       },
       status: {
         type: String,
-        enum: ["active", "completed", "failed"],
+        enum: ["active", "completed", "failed", "expired"],
         default: "active"
+      },
+      completedAt: {
+        type: Date
       }
-    }],
-    
-    // FTD sharing configuration
-    ftdSharing: {
-      isSharedProxy: {
-        type: Boolean,
-        default: false
-      },
-      maxFTDsPerProxy: {
-        type: Number,
-        default: 3 // Maximum FTDs that can share this proxy
-      },
-      currentFTDCount: {
-        type: Number,
-        default: 0
-      },
-      sharedCountries: [{
-        type: String
-      }]
     },
     
     // Creation metadata
@@ -205,9 +189,8 @@ proxySchema.index({ country: 1, status: 1 });
 proxySchema.index({ countryCode: 1, status: 1 });
 proxySchema.index({ "expiration.isExpired": 1, "expiration.expiresAt": 1 });
 proxySchema.index({ "health.isHealthy": 1, "health.lastHealthCheck": 1 });
-proxySchema.index({ "assignedLeads.leadId": 1 });
-proxySchema.index({ "assignedLeads.orderId": 1 });
-proxySchema.index({ "ftdSharing.isSharedProxy": 1, "ftdSharing.currentFTDCount": 1 });
+proxySchema.index({ "assignedLead.leadId": 1 });
+proxySchema.index({ "assignedLead.orderId": 1 });
 proxySchema.index({ createdBy: 1 });
 
 // Virtual for proxy description
@@ -220,13 +203,13 @@ proxySchema.virtual("isAvailable").get(function () {
   return this.status === "active" && 
          this.health.isHealthy && 
          !this.expiration.isExpired &&
-         this.usage.activeConnections < this.usage.maxConcurrentConnections;
+         !this.assignedLead.leadId; // Proxy is available only if no lead is assigned
 });
 
 // Virtual for can accept FTD
 proxySchema.virtual("canAcceptFTD").get(function () {
   return this.isAvailable && 
-         this.ftdSharing.currentFTDCount < this.ftdSharing.maxFTDsPerProxy;
+         this.usage.activeConnections < this.usage.maxConcurrentConnections;
 });
 
 // Static method to create proxy from 922proxy configuration
@@ -327,53 +310,42 @@ proxySchema.methods.testConnection = async function() {
   }
 };
 
-// Method to assign lead to this proxy
+// Method to assign lead to this proxy (one-to-one relationship)
 proxySchema.methods.assignLead = function(leadId, orderId, leadType = "non-ftd") {
-  // Check if lead is already assigned
-  const existingAssignment = this.assignedLeads.find(
-    assignment => assignment.leadId.toString() === leadId.toString()
-  );
-  
-  if (existingAssignment) {
-    return false; // Lead already assigned
+  // Check if proxy already has a lead assigned
+  if (this.assignedLead.leadId) {
+    return false; // Proxy already has a lead assigned
   }
   
-  // Add lead assignment
-  this.assignedLeads.push({
+  // Assign the lead to this proxy
+  this.assignedLead = {
     leadId,
     orderId,
     assignedAt: new Date(),
     status: "active"
-  });
+  };
   
   // Update usage counters
-  this.usage.activeConnections += 1;
+  this.usage.activeConnections = 1;
   this.usage.totalConnections += 1;
   this.usage.lastUsedAt = new Date();
-  
-  // Update FTD sharing if this is an FTD
-  if (leadType === "ftd") {
-    this.ftdSharing.currentFTDCount += 1;
-  }
   
   return true;
 };
 
 // Method to unassign lead from this proxy
 proxySchema.methods.unassignLead = function(leadId, status = "completed") {
-  const assignmentIndex = this.assignedLeads.findIndex(
-    assignment => assignment.leadId.toString() === leadId.toString()
-  );
-  
-  if (assignmentIndex === -1) {
-    return false; // Lead not found
+  // Check if the lead is assigned to this proxy
+  if (!this.assignedLead.leadId || this.assignedLead.leadId.toString() !== leadId.toString()) {
+    return false; // Lead not assigned to this proxy
   }
   
-  const assignment = this.assignedLeads[assignmentIndex];
-  assignment.status = status;
+  // Complete the assignment
+  this.assignedLead.status = status;
+  this.assignedLead.completedAt = new Date();
   
   // Update usage counters
-  this.usage.activeConnections = Math.max(0, this.usage.activeConnections - 1);
+  this.usage.activeConnections = 0;
   
   return true;
 };
@@ -411,31 +383,17 @@ proxySchema.statics.findAvailableProxy = async function(country, countryCode, le
     status: "active",
     "health.isHealthy": true,
     "expiration.isExpired": false,
-    $expr: {
-      $lt: ["$usage.activeConnections", "$usage.maxConcurrentConnections"]
-    }
+    "assignedLead.leadId": { $exists: false } // Only find proxies with no assigned lead
   };
   
-  // For FTDs, check if proxy can accept more FTDs
-  if (leadType === "ftd") {
-    query.$expr.$lt = ["$ftdSharing.currentFTDCount", "$ftdSharing.maxFTDsPerProxy"];
-  }
-  
-  return this.findOne(query).sort({ "usage.activeConnections": 1, createdAt: 1 });
+  return this.findOne(query).sort({ createdAt: 1 });
 };
 
 // Static method to find or create proxy for country
 proxySchema.statics.findOrCreateProxy = async function(country, countryCode, createdBy, leadType = "non-ftd") {
-  // First try to find an available proxy
-  let proxy = await this.findAvailableProxy(country, countryCode, leadType);
-  
-  if (proxy) {
-    return proxy;
-  }
-  
-  // If no available proxy, create a new one
+  // Always create a new proxy for one-to-one relationship
   try {
-    proxy = await this.createFromConfig(country, countryCode, createdBy);
+    const proxy = await this.createFromConfig(country, countryCode, createdBy);
     return proxy;
   } catch (error) {
     console.error(`Failed to create proxy for ${country}:`, error);
@@ -473,11 +431,6 @@ proxySchema.statics.cleanupExpiredProxies = async function() {
 proxySchema.pre("save", function(next) {
   // Check expiration before saving
   this.checkExpiration();
-  
-  // Ensure FTD count doesn't go negative
-  if (this.ftdSharing.currentFTDCount < 0) {
-    this.ftdSharing.currentFTDCount = 0;
-  }
   
   // Ensure active connections doesn't go negative
   if (this.usage.activeConnections < 0) {

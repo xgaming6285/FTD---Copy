@@ -107,10 +107,7 @@ const orderSchema = yup.object({
     linux: yup.boolean().default(true),
   }),
   // Proxy configuration fields
-  ftdProxySharing: yup.boolean().default(true),
-  maxFTDsPerProxy: yup.number().min(1, 'Must be at least 1').max(10, 'Must be 10 or less').integer('Must be a whole number').default(3),
   proxyExpireHours: yup.number().min(1, 'Must be at least 1 hour').max(168, 'Must be 168 hours or less').integer('Must be a whole number').default(24),
-  shareByCountry: yup.boolean().default(true),
 }).test('at-least-one', 'At least one lead type must be requested', (value) => {
   return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
 }).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
@@ -307,59 +304,34 @@ const OrdersPage = () => {
     }
   }, [user?.role]);
 
-  const onSubmitOrder = useCallback(async (data) => {
+  const onSubmit = async (data) => {
     try {
-      // Security Best Practice: The backend MUST validate the user's role before processing the creation.
       const orderData = {
         requests: {
-          ftd: data.ftd || 0,
-          filler: data.filler || 0,
-          cold: data.cold || 0,
-          live: data.live || 0,
+          ftd: data.ftd,
+          filler: data.filler,
+          cold: data.cold,
+          live: data.live,
         },
         priority: data.priority,
+        countryFilter: data.countryFilter,
+        genderFilter: data.genderFilter,
         notes: data.notes,
-        country: data.country || null,
-        gender: data.gender || null,
-        selectedClientNetwork: data.selectedClientNetwork || undefined,
-        // Include injection settings
-        injectionSettings: data.enableInjection ? {
-          enabled: true,
-          mode: data.injectionMode,
-          scheduledTime: data.injectionMode === 'scheduled' ? {
-            startTime: data.injectionStartTime,
-            endTime: data.injectionEndTime
-          } : undefined,
-          includeTypes: {
-            filler: data.injectFiller,
-            cold: data.injectCold,
-            live: data.injectLive
-          },
+        selectedClientNetwork: data.selectedClientNetwork,
+        // Injection settings
+        enableInjection: data.enableInjection,
+        injectFiller: data.injectFiller,
+        injectCold: data.injectCold,
+        injectLive: data.injectLive,
+        injectionSettings: {
           // Device configuration
-          deviceConfig: {
-            selectionMode: data.deviceSelectionMode,
-            bulkDeviceType: data.deviceSelectionMode === 'bulk' ? data.bulkDeviceType : null,
-            deviceRatio: data.deviceSelectionMode === 'ratio' ? data.deviceRatio : {
-              windows: 0, android: 0, ios: 0, mac: 0, linux: 0
-            },
-            availableDeviceTypes: data.deviceSelectionMode === 'random' ? 
-              Object.keys(data.availableDeviceTypes).filter(key => data.availableDeviceTypes[key]) : 
-              ['windows', 'android', 'ios', 'mac', 'linux']
-          },
-          // Proxy configuration
+          deviceSelectionMode: data.deviceSelectionMode,
+          deviceRatio: data.deviceRatio,
+          availableDeviceTypes: data.availableDeviceTypes,
+          // Proxy configuration - simplified for one-to-one relationship
           proxyConfig: {
-            ftdProxySharing: {
-              enabled: data.ftdProxySharing,
-              maxFTDsPerProxy: data.maxFTDsPerProxy,
-              shareByCountry: data.shareByCountry
-            },
-            proxyExpiration: {
-              autoExpireHours: data.proxyExpireHours,
-              healthCheckInterval: 300000 // 5 minutes
-            }
+            autoExpireAfterHours: data.proxyExpireHours
           }
-        } : {
-          enabled: false
         }
       };
 
@@ -374,7 +346,7 @@ const OrdersPage = () => {
         severity: 'error',
       });
     }
-  }, [reset, fetchOrders]);
+  };
 
   const handleViewOrder = useCallback(async (orderId) => {
     try {
@@ -1029,7 +1001,7 @@ const OrdersPage = () => {
       {/* Create Order Dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>Create New Order</DialogTitle>
-        <form onSubmit={handleSubmit(onSubmitOrder)}>
+        <form onSubmit={handleSubmit(onSubmit)}>
           <DialogContent>
             <Grid container spacing={2}>
               <Grid item xs={6} sm={3}><Controller name="ftd" control={control} render={({ field }) => <TextField {...field} fullWidth label="FTD" type="number" error={!!errors.ftd} helperText={errors.ftd?.message} inputProps={{ min: 0 }} size="small" />} /></Grid>
@@ -1476,39 +1448,8 @@ const OrdersPage = () => {
                   Proxy Configuration
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Configure proxy sharing and expiration settings for lead injection.
+                  Configure proxy expiration settings for lead injection. Each lead will get a unique proxy.
                 </Typography>
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="ftdProxySharing"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Checkbox {...field} checked={field.value} />}
-                      label="Enable FTD Proxy Sharing"
-                    />
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="maxFTDsPerProxy"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Max FTDs per Proxy"
-                      type="number"
-                      inputProps={{ min: 1, max: 10, step: 1 }}
-                      size="small"
-                      helperText="Maximum FTDs that can share one proxy"
-                    />
-                  )}
-                />
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -1524,19 +1465,6 @@ const OrdersPage = () => {
                       inputProps={{ min: 1, max: 168, step: 1 }}
                       size="small"
                       helperText="Hours after which proxy auto-expires"
-                    />
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="shareByCountry"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Checkbox {...field} checked={field.value} />}
-                      label="Share Proxies by Country"
                     />
                   )}
                 />

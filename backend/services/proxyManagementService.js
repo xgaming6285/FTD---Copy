@@ -4,14 +4,14 @@ const { generateProxyConfig, testProxyConnection } = require('../utils/proxyMana
 
 /**
  * Proxy Management Service
- * Handles proxy assignment, sharing, and expiration for leads
+ * Handles proxy assignment with one-to-one proxy-lead relationships
  */
 class ProxyManagementService {
 
   /**
    * Assign proxies to leads based on their countries and lead types
    * @param {Array} leads - Array of lead objects
-   * @param {Object} proxyConfig - Proxy configuration from order
+   * @param {Object} proxyConfig - Proxy configuration from order (now ignored for one-to-one)
    * @param {string} createdBy - User ID who is creating the assignment
    * @returns {Promise<Object>} Assignment results
    */
@@ -27,21 +27,17 @@ class ProxyManagementService {
     }
 
     try {
-      // Group leads by country and type for efficient proxy assignment
-      const leadGroups = this.groupLeadsByCountryAndType(leads);
+      // Group leads by country for efficient proxy assignment
+      const leadGroups = this.groupLeadsByCountry(leads);
       
       console.log('Lead groups for proxy assignment:', Object.keys(leadGroups));
 
       // Process each group
-      for (const [groupKey, groupLeads] of Object.entries(leadGroups)) {
-        const [country, leadType] = groupKey.split('_');
-        
+      for (const [country, groupLeads] of Object.entries(leadGroups)) {
         try {
-          const groupResults = await this.assignProxyToGroup(
+          const groupResults = await this.assignIndividualProxies(
             groupLeads, 
             country, 
-            leadType, 
-            proxyConfig, 
             createdBy
           );
           
@@ -50,13 +46,13 @@ class ProxyManagementService {
           results.skipped.push(...groupResults.skipped);
           
         } catch (error) {
-          console.error(`Error assigning proxy to group ${groupKey}:`, error);
+          console.error(`Error assigning proxy to group ${country}:`, error);
           // Mark all leads in this group as failed
           groupLeads.forEach(lead => {
             results.failed.push({
               leadId: lead._id,
               country,
-              leadType,
+              leadType: lead.leadType,
               error: error.message
             });
           });
@@ -72,134 +68,22 @@ class ProxyManagementService {
   }
 
   /**
-   * Group leads by country and lead type for proxy assignment
+   * Group leads by country for proxy assignment
    */
-  static groupLeadsByCountryAndType(leads) {
+  static groupLeadsByCountry(leads) {
     const groups = {};
 
     for (const lead of leads) {
       const country = lead.country;
-      const leadType = lead.leadType;
-      const groupKey = `${country}_${leadType}`;
 
-      if (!groups[groupKey]) {
-        groups[groupKey] = [];
+      if (!groups[country]) {
+        groups[country] = [];
       }
       
-      groups[groupKey].push(lead);
+      groups[country].push(lead);
     }
 
     return groups;
-  }
-
-  /**
-   * Assign proxy to a group of leads from the same country and type
-   */
-  static async assignProxyToGroup(leads, country, leadType, proxyConfig, createdBy) {
-    const results = { successful: [], failed: [], skipped: [] };
-    
-    try {
-      if (leadType === 'ftd') {
-        return await this.assignFTDProxies(leads, country, proxyConfig, createdBy);
-      } else {
-        return await this.assignNonFTDProxies(leads, country, createdBy);
-      }
-      
-    } catch (error) {
-      console.error(`Error assigning proxy to ${leadType} leads in ${country}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Assign proxies to FTD leads (with sharing capability)
-   */
-  static async assignFTDProxies(ftdLeads, country, proxyConfig, createdBy) {
-    const results = { successful: [], failed: [], skipped: [] };
-    
-    const { ftdProxySharing } = proxyConfig;
-    const maxFTDsPerProxy = ftdProxySharing.maxFTDsPerProxy || 3;
-    const shareByCountry = ftdProxySharing.shareByCountry !== false;
-
-    if (!ftdProxySharing.enabled) {
-      // No sharing - assign individual proxies
-      return await this.assignIndividualProxies(ftdLeads, country, createdBy);
-    }
-
-    try {
-      // Find existing proxy that can accept more FTDs from this country
-      let availableProxy = null;
-      
-      if (shareByCountry) {
-        availableProxy = await Proxy.findAvailableProxy(country, null, 'ftd');
-      }
-
-      // If no available proxy or it can't accept more FTDs, create a new one
-      if (!availableProxy || !availableProxy.canAcceptFTD) {
-        const countryCode = require('../utils/proxyManager').getCountryISOCode(country);
-        availableProxy = await Proxy.createFromConfig(country, countryCode, createdBy);
-        availableProxy.ftdSharing.isSharedProxy = true;
-        availableProxy.ftdSharing.maxFTDsPerProxy = maxFTDsPerProxy;
-        availableProxy.ftdSharing.sharedCountries.push(country);
-        await availableProxy.save();
-      }
-
-      // Assign FTDs to this proxy up to the limit
-      for (const lead of ftdLeads) {
-        if (availableProxy.ftdSharing.currentFTDCount >= maxFTDsPerProxy) {
-          // Create new proxy for remaining FTDs
-          const countryCode = require('../utils/proxyManager').getCountryISOCode(country);
-          availableProxy = await Proxy.createFromConfig(country, countryCode, createdBy);
-          availableProxy.ftdSharing.isSharedProxy = true;
-          availableProxy.ftdSharing.maxFTDsPerProxy = maxFTDsPerProxy;
-          availableProxy.ftdSharing.sharedCountries.push(country);
-          await availableProxy.save();
-        }
-
-        try {
-          // Assign proxy to lead
-          const assigned = availableProxy.assignLead(lead._id, lead.orderId, 'ftd');
-          if (assigned) {
-            lead.assignProxy(availableProxy._id, lead.orderId);
-            await availableProxy.save();
-            await lead.save();
-
-            results.successful.push({
-              leadId: lead._id,
-              proxyId: availableProxy._id,
-              country,
-              leadType: 'ftd',
-              shared: true
-            });
-          } else {
-            results.failed.push({
-              leadId: lead._id,
-              error: 'Failed to assign proxy to lead'
-            });
-          }
-
-        } catch (error) {
-          console.error(`Error assigning FTD proxy to lead ${lead._id}:`, error);
-          results.failed.push({
-            leadId: lead._id,
-            error: error.message
-          });
-        }
-      }
-
-      return results;
-
-    } catch (error) {
-      console.error(`Error in FTD proxy assignment for ${country}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Assign individual proxies to non-FTD leads
-   */
-  static async assignNonFTDProxies(leads, country, createdBy) {
-    return await this.assignIndividualProxies(leads, country, createdBy);
   }
 
   /**
@@ -324,19 +208,27 @@ class ProxyManagementService {
       if (affectedLeads.length > 0) {
         console.log(`Found ${affectedLeads.length} leads affected by unhealthy proxy`);
 
-        // For now, just mark proxy assignments as failed
-        // In a production system, you might want to reassign to new proxies
+        // Mark proxy assignments as failed
         for (const lead of affectedLeads) {
-          lead.completeProxyAssignment(proxy._id, 'failed');
+          // Find the specific proxy assignment to mark as failed
+          const assignment = lead.proxyAssignments.find(
+            assignment => assignment.proxy.toString() === proxy._id.toString() && 
+                          assignment.status === 'active'
+          );
+          if (assignment) {
+            assignment.status = 'failed';
+            assignment.completedAt = new Date();
+          }
           await lead.save();
         }
 
-        // Update proxy to mark all assignments as failed
-        proxy.assignedLeads.forEach(assignment => {
-          if (assignment.status === 'active') {
-            assignment.status = 'failed';
-          }
-        });
+        // Update proxy to mark assignment as failed (one-to-one relationship)
+        if (proxy.assignedLead.leadId && proxy.assignedLead.status === 'active') {
+          proxy.assignedLead.status = 'failed';
+          proxy.assignedLead.completedAt = new Date();
+          proxy.usage.activeConnections = 0;
+          await proxy.save();
+        }
       }
 
     } catch (error) {
@@ -425,16 +317,22 @@ class ProxyManagementService {
 
       // Mark all active assignments as expired
       for (const lead of affectedLeads) {
-        lead.completeProxyAssignment(proxy._id, 'expired');
+        const assignment = lead.proxyAssignments.find(
+          assignment => assignment.proxy.toString() === proxy._id.toString() && 
+                        assignment.status === 'active'
+        );
+        if (assignment) {
+          assignment.status = 'expired';
+          assignment.completedAt = new Date();
+        }
         await lead.save();
       }
 
-      // Update proxy assignments
-      proxy.assignedLeads.forEach(assignment => {
-        if (assignment.status === 'active') {
-          assignment.status = 'expired';
-        }
-      });
+      // Update proxy assignment (one-to-one relationship)
+      if (proxy.assignedLead.leadId && proxy.assignedLead.status === 'active') {
+        proxy.assignedLead.status = 'expired';
+        proxy.assignedLead.completedAt = new Date();
+      }
 
       proxy.usage.activeConnections = 0;
       await proxy.save();
