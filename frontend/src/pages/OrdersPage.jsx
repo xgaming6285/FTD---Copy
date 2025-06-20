@@ -54,7 +54,6 @@ import api from '../services/api';
 import { selectUser } from '../store/slices/authSlice';
 import { getSortedCountries } from '../constants/countries';
 import LeadDetailCard from '../components/LeadDetailCard';
-import ManualFTDInjectionModal from '../components/ManualFTDInjectionModal';
 
 // --- Best Practice: Define constants and schemas outside the component ---
 // This prevents them from being recreated on every render.
@@ -107,7 +106,10 @@ const orderSchema = yup.object({
     linux: yup.boolean().default(true),
   }),
   // Proxy configuration fields
+  ftdProxySharing: yup.boolean().default(true),
+  maxFTDsPerProxy: yup.number().min(1, 'Must be at least 1').max(10, 'Must be 10 or less').integer('Must be a whole number').default(3),
   proxyExpireHours: yup.number().min(1, 'Must be at least 1 hour').max(168, 'Must be 168 hours or less').integer('Must be a whole number').default(24),
+  shareByCountry: yup.boolean().default(true),
 }).test('at-least-one', 'At least one lead type must be requested', (value) => {
   return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
 }).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
@@ -225,20 +227,15 @@ const OrdersPage = () => {
     defaultValues: orderSchema.getDefault(),
   });
 
-  // Broker assignment states
-  const [brokerAssignmentDialog, setBrokerAssignmentDialog] = useState({
+  // Manual FTD injection state
+  const [manualFTDDialog, setManualFTDDialog] = useState({
     open: false,
-    orderId: null,
-    leadsWithBrokers: []
+    order: null,
+    lead: null,
+    step: 'confirm'
   });
-  const [brokerAssignments, setBrokerAssignments] = useState({});
-  const [assigningBrokers, setAssigningBrokers] = useState(false);
-
-  // Manual FTD injection states
-  const [ftdInjectionModal, setFtdInjectionModal] = useState({
-    open: false,
-    order: null
-  });
+  const [manualFTDDomain, setManualFTDDomain] = useState('');
+  const [processingLeads, setProcessingLeads] = useState({});
 
   // --- Optimization: `useCallback` to memoize functions ---
   const fetchOrders = useCallback(async () => {
@@ -304,34 +301,59 @@ const OrdersPage = () => {
     }
   }, [user?.role]);
 
-  const onSubmit = async (data) => {
+  const onSubmitOrder = useCallback(async (data) => {
     try {
+      // Security Best Practice: The backend MUST validate the user's role before processing the creation.
       const orderData = {
         requests: {
-          ftd: data.ftd,
-          filler: data.filler,
-          cold: data.cold,
-          live: data.live,
+          ftd: data.ftd || 0,
+          filler: data.filler || 0,
+          cold: data.cold || 0,
+          live: data.live || 0,
         },
         priority: data.priority,
-        countryFilter: data.countryFilter,
-        genderFilter: data.genderFilter,
         notes: data.notes,
-        selectedClientNetwork: data.selectedClientNetwork,
-        // Injection settings
-        enableInjection: data.enableInjection,
-        injectFiller: data.injectFiller,
-        injectCold: data.injectCold,
-        injectLive: data.injectLive,
-        injectionSettings: {
+        country: data.country || null,
+        gender: data.gender || null,
+        selectedClientNetwork: data.selectedClientNetwork || undefined,
+        // Include injection settings
+        injectionSettings: data.enableInjection ? {
+          enabled: true,
+          mode: data.injectionMode,
+          scheduledTime: data.injectionMode === 'scheduled' ? {
+            startTime: data.injectionStartTime,
+            endTime: data.injectionEndTime
+          } : undefined,
+          includeTypes: {
+            filler: data.injectFiller,
+            cold: data.injectCold,
+            live: data.injectLive
+          },
           // Device configuration
-          deviceSelectionMode: data.deviceSelectionMode,
-          deviceRatio: data.deviceRatio,
-          availableDeviceTypes: data.availableDeviceTypes,
-          // Proxy configuration - simplified for one-to-one relationship
+          deviceConfig: {
+            selectionMode: data.deviceSelectionMode,
+            bulkDeviceType: data.deviceSelectionMode === 'bulk' ? data.bulkDeviceType : null,
+            deviceRatio: data.deviceSelectionMode === 'ratio' ? data.deviceRatio : {
+              windows: 0, android: 0, ios: 0, mac: 0, linux: 0
+            },
+            availableDeviceTypes: data.deviceSelectionMode === 'random' ?
+              Object.keys(data.availableDeviceTypes).filter(key => data.availableDeviceTypes[key]) :
+              ['windows', 'android', 'ios', 'mac', 'linux']
+          },
+          // Proxy configuration
           proxyConfig: {
-            autoExpireAfterHours: data.proxyExpireHours
+            ftdProxySharing: {
+              enabled: data.ftdProxySharing,
+              maxFTDsPerProxy: data.maxFTDsPerProxy,
+              shareByCountry: data.shareByCountry
+            },
+            proxyExpiration: {
+              autoExpireHours: data.proxyExpireHours,
+              healthCheckInterval: 300000 // 5 minutes
+            }
           }
+        } : {
+          enabled: false
         }
       };
 
@@ -346,7 +368,7 @@ const OrdersPage = () => {
         severity: 'error',
       });
     }
-  };
+  }, [reset, fetchOrders]);
 
   const handleViewOrder = useCallback(async (orderId) => {
     try {
@@ -516,129 +538,117 @@ const OrdersPage = () => {
     }
   }, [fetchOrders]);
 
-  const handleSkipFTDs = useCallback(async (orderId) => {
-    try {
-      await api.post(`/orders/${orderId}/skip-ftds`);
-      setNotification({ message: 'FTDs marked for manual filling later!', severity: 'info' });
-      fetchOrders();
-    } catch (err) {
-      setNotification({ message: err.response?.data?.message || 'Failed to skip FTDs', severity: 'error' });
-    }
-  }, [fetchOrders]);
+  // Manual FTD injection handlers
+  const handleOpenManualFTDInjection = useCallback((order, lead) => {
+    // Check if this lead has already been processed
+    const networkHistory = lead.clientNetworkHistory?.find(
+      (history) => history.orderId?.toString() === order._id.toString()
+    );
 
-  // Broker assignment handlers
-  const handleOpenBrokerAssignment = useCallback(async (orderId) => {
-    try {
-      const response = await api.get(`/orders/${orderId}/pending-broker-assignment`);
-      setBrokerAssignmentDialog({
-        open: true,
-        orderId: orderId,
-        leadsWithBrokers: response.data.data.leadsWithBrokers
-      });
-
-      // Initialize broker assignments
-      const initialAssignments = {};
-      response.data.data.leadsWithBrokers.forEach(item => {
-        if (item.availableBrokers.length > 0) {
-          initialAssignments[item.lead._id] = {
-            clientBroker: '',
-            domain: ''
-          };
-        }
-      });
-      setBrokerAssignments(initialAssignments);
-    } catch (err) {
+    if (networkHistory && networkHistory.injectionStatus === "completed") {
       setNotification({
-        message: err.response?.data?.message || 'Failed to load broker assignment data',
+        message: 'This FTD lead has already been processed',
+        severity: 'warning'
+      });
+      return;
+    }
+
+    setManualFTDDialog({
+      open: true,
+      order: order,
+      lead: lead,
+      step: 'confirm'
+    });
+    setManualFTDDomain('');
+  }, []);
+
+  const handleCloseManualFTDDialog = useCallback(() => {
+    // Prevent closing if we're in domain_input step and domain is required
+    if (manualFTDDialog.step === 'domain_input' && !manualFTDDomain.trim()) {
+      setNotification({
+        message: 'Please enter the broker domain before closing. This field is mandatory.',
+        severity: 'warning'
+      });
+      return;
+    }
+
+    setManualFTDDialog({
+      open: false,
+      order: null,
+      lead: null,
+      step: 'confirm'
+    });
+    setManualFTDDomain('');
+  }, [manualFTDDialog.step, manualFTDDomain]);
+
+  const handleStartManualFTDInjection = useCallback(async () => {
+    const { order, lead } = manualFTDDialog;
+    if (!order || !lead) return;
+
+    setManualFTDDialog(prev => ({ ...prev, step: 'processing' }));
+    setProcessingLeads(prev => ({ ...prev, [lead._id]: true }));
+    setNotification({
+      message: `Starting manual FTD injection for ${lead.firstName} ${lead.lastName}...`,
+      severity: 'info'
+    });
+
+    try {
+      // Call the backend to start manual FTD injection for specific lead
+      const response = await api.post(`/orders/${order._id}/leads/${lead._id}/manual-ftd-injection-start`);
+
+      if (response.data.success) {
+        setManualFTDDialog(prev => ({ ...prev, step: 'domain_input' }));
+        setNotification({
+          message: 'Browser opened for manual form filling. Please fill the form manually and close the browser when done.',
+          severity: 'info'
+        });
+      } else {
+        throw new Error(response.data.message || 'Failed to start manual injection');
+      }
+    } catch (error) {
+      console.error('Manual FTD injection start failed:', error);
+      setNotification({
+        message: error.response?.data?.message || 'Failed to start manual FTD injection',
         severity: 'error'
       });
+      setManualFTDDialog(prev => ({ ...prev, step: 'confirm' }));
+    } finally {
+      setProcessingLeads(prev => ({ ...prev, [lead._id]: false }));
     }
-  }, []);
+  }, [manualFTDDialog.order, manualFTDDialog.lead]);
 
-  const handleBrokerAssignmentChange = useCallback((leadId, field, value) => {
-    setBrokerAssignments(prev => ({
-      ...prev,
-      [leadId]: {
-        ...prev[leadId],
-        [field]: value
-      }
-    }));
-  }, []);
+  const handleSubmitManualFTDDomain = useCallback(async () => {
+    const { order, lead } = manualFTDDialog;
+    if (!order || !lead || !manualFTDDomain.trim()) return;
 
-  const handleSubmitBrokerAssignments = useCallback(async () => {
     try {
-      setAssigningBrokers(true);
-
-      const assignments = Object.entries(brokerAssignments)
-        .filter(([leadId, assignment]) => assignment.clientBroker && assignment.domain)
-        .map(([leadId, assignment]) => ({
-          leadId,
-          clientBroker: assignment.clientBroker,
-          domain: assignment.domain
-        }));
-
-      if (assignments.length === 0) {
-        setNotification({ message: 'Please assign at least one broker', severity: 'warning' });
-        return;
-      }
-
-      await api.post(`/orders/${brokerAssignmentDialog.orderId}/assign-brokers`, {
-        brokerAssignments: assignments
+      // Submit the manually entered domain to complete the FTD injection for specific lead
+      await api.post(`/orders/${order._id}/leads/${lead._id}/manual-ftd-injection-complete`, {
+        domain: manualFTDDomain.trim()
       });
 
       setNotification({
-        message: `Successfully assigned brokers to ${assignments.length} leads!`,
+        message: `Manual FTD injection completed successfully for ${lead.firstName} ${lead.lastName}!`,
         severity: 'success'
       });
 
-      setBrokerAssignmentDialog({ open: false, orderId: null, leadsWithBrokers: [] });
-      setBrokerAssignments({});
-      fetchOrders();
-    } catch (err) {
-      setNotification({
-        message: err.response?.data?.message || 'Failed to assign brokers',
-        severity: 'error'
-      });
-    } finally {
-      setAssigningBrokers(false);
-    }
-  }, [brokerAssignmentDialog.orderId, brokerAssignments, fetchOrders]);
+      handleCloseManualFTDDialog();
+      fetchOrders(); // Refresh orders to show updated status
+    } catch (error) {
+      console.error('Manual FTD injection completion failed:', error);
 
-  const handleSkipBrokerAssignment = useCallback(async (orderId) => {
-    try {
-      await api.post(`/orders/${orderId}/skip-broker-assignment`);
-      setNotification({ message: 'Broker assignment skipped', severity: 'info' });
-      fetchOrders();
-    } catch (err) {
+      let errorMessage = 'Failed to complete manual FTD injection';
+
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+
       setNotification({
-        message: err.response?.data?.message || 'Failed to skip broker assignment',
+        message: errorMessage,
         severity: 'error'
       });
     }
-  }, [fetchOrders]);
-
-  // Manual FTD injection handlers
-  const handleOpenFTDInjection = useCallback((order) => {
-    setFtdInjectionModal({
-      open: true,
-      order: order
-    });
-  }, []);
-
-  const handleCloseFTDInjection = useCallback(() => {
-    setFtdInjectionModal({
-      open: false,
-      order: null
-    });
-  }, []);
-
-  const handleFTDInjectionSuccess = useCallback(() => {
-    setNotification({
-      message: 'FTD leads injected successfully!',
-      severity: 'success'
-    });
-    fetchOrders(); // Refresh orders to show updated status
-  }, [fetchOrders]);
+  }, [manualFTDDialog.order, manualFTDDialog.lead, manualFTDDomain, handleCloseManualFTDDialog, fetchOrders]);
 
 
 
@@ -832,38 +842,7 @@ const OrdersPage = () => {
                                 </>
                               )}
 
-                              {order.injectionSettings.status === 'completed' && order.ftdHandling?.status === 'manual_fill_required' && (
-                                <>
-                                  <IconButton size="small" onClick={() => handleOpenFTDInjection(order)} title="Manual FTD Injection" color="primary">
-                                    <SendIcon fontSize="small" />
-                                  </IconButton>
-                                  <IconButton size="small" onClick={() => handleSkipFTDs(order._id)} title="Skip FTDs" color="info">
-                                    <SkipNextIcon fontSize="small" />
-                                  </IconButton>
-                                </>
-                              )}
-                            </>
-                          )}
-
-                          {/* Broker Assignment Controls - only for admin/affiliate managers */}
-                          {(user?.role === 'admin' || user?.role === 'affiliate_manager') && order.injectionProgress?.brokerAssignmentPending && (
-                            <>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleOpenBrokerAssignment(order._id)}
-                                title="Assign Client Brokers"
-                                color="secondary"
-                              >
-                                <AssignmentIcon fontSize="small" />
-                              </IconButton>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleSkipBrokerAssignment(order._id)}
-                                title="Skip Broker Assignment"
-                                color="default"
-                              >
-                                <SkipNextIcon fontSize="small" />
-                              </IconButton>
+                              {/* Individual FTD injection buttons are now shown per lead in the expanded view */}
                             </>
                           )}
 
@@ -950,6 +929,41 @@ const OrdersPage = () => {
                                                     >
                                                       {expandedLeads[lead._id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                                                     </IconButton>
+
+                                                    {/* Individual Manual FTD Injection Button */}
+                                                    {lead.leadType === 'ftd' && (user?.role === 'admin' || user?.role === 'affiliate_manager') && (() => {
+                                                      // Check if this lead has been processed
+                                                      const networkHistory = lead.clientNetworkHistory?.find(
+                                                        (history) => history.orderId?.toString() === order._id.toString()
+                                                      );
+                                                      const isCompleted = networkHistory && networkHistory.injectionStatus === "completed";
+                                                      const isProcessing = processingLeads[lead._id];
+
+                                                      // Only show button if not completed
+                                                      if (!isCompleted) {
+                                                        return (
+                                                          <IconButton
+                                                            size="small"
+                                                            onClick={() => handleOpenManualFTDInjection(order, lead)}
+                                                            title={`Manual FTD Injection for ${lead.firstName} ${lead.lastName}`}
+                                                            color="primary"
+                                                            disabled={isProcessing}
+                                                          >
+                                                            {isProcessing ? <CircularProgress size={16} /> : <SendIcon fontSize="small" />}
+                                                          </IconButton>
+                                                        );
+                                                      }
+
+                                                      // Show completed status
+                                                      return (
+                                                        <Chip
+                                                          label="Injected"
+                                                          size="small"
+                                                          color="success"
+                                                          variant="outlined"
+                                                        />
+                                                      );
+                                                    })()}
                                                   </TableCell>
                                                 </TableRow>
                                                 {expandedLeads[lead._id] && (
@@ -1001,7 +1015,7 @@ const OrdersPage = () => {
       {/* Create Order Dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>Create New Order</DialogTitle>
-        <form onSubmit={handleSubmit(onSubmit)}>
+        <form onSubmit={handleSubmit(onSubmitOrder)}>
           <DialogContent>
             <Grid container spacing={2}>
               <Grid item xs={6} sm={3}><Controller name="ftd" control={control} render={({ field }) => <TextField {...field} fullWidth label="FTD" type="number" error={!!errors.ftd} helperText={errors.ftd?.message} inputProps={{ min: 0 }} size="small" />} /></Grid>
@@ -1448,8 +1462,39 @@ const OrdersPage = () => {
                   Proxy Configuration
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Configure proxy expiration settings for lead injection. Each lead will get a unique proxy.
+                  Configure proxy sharing and expiration settings for lead injection.
                 </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="ftdProxySharing"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControlLabel
+                      control={<Checkbox {...field} checked={field.value} />}
+                      label="Enable FTD Proxy Sharing"
+                    />
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="maxFTDsPerProxy"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Max FTDs per Proxy"
+                      type="number"
+                      inputProps={{ min: 1, max: 10, step: 1 }}
+                      size="small"
+                      helperText="Maximum FTDs that can share one proxy"
+                    />
+                  )}
+                />
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -1465,6 +1510,19 @@ const OrdersPage = () => {
                       inputProps={{ min: 1, max: 168, step: 1 }}
                       size="small"
                       helperText="Hours after which proxy auto-expires"
+                    />
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="shareByCountry"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControlLabel
+                      control={<Checkbox {...field} checked={field.value} />}
+                      label="Share Proxies by Country"
                     />
                   )}
                 />
@@ -1549,6 +1607,41 @@ const OrdersPage = () => {
                               >
                                 {expandedLeads[lead._id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                               </IconButton>
+
+                              {/* Individual Manual FTD Injection Button */}
+                              {lead.leadType === 'ftd' && (user?.role === 'admin' || user?.role === 'affiliate_manager') && (() => {
+                                // Check if this lead has been processed
+                                const networkHistory = lead.clientNetworkHistory?.find(
+                                  (history) => history.orderId?.toString() === selectedOrder._id.toString()
+                                );
+                                const isCompleted = networkHistory && networkHistory.injectionStatus === "completed";
+                                const isProcessing = processingLeads[lead._id];
+
+                                // Only show button if not completed
+                                if (!isCompleted) {
+                                  return (
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleOpenManualFTDInjection(selectedOrder, lead)}
+                                      title={`Manual FTD Injection for ${lead.firstName} ${lead.lastName}`}
+                                      color="primary"
+                                      disabled={isProcessing}
+                                    >
+                                      {isProcessing ? <CircularProgress size={16} /> : <SendIcon fontSize="small" />}
+                                    </IconButton>
+                                  );
+                                }
+
+                                // Show completed status
+                                return (
+                                  <Chip
+                                    label="Injected"
+                                    size="small"
+                                    color="success"
+                                    variant="outlined"
+                                  />
+                                );
+                              })()}
                             </TableCell>
                           </TableRow>
                           {expandedLeads[lead._id] && (
@@ -1584,93 +1677,121 @@ const OrdersPage = () => {
         </DialogActions>
       </Dialog>
 
-
-
-      {/* Broker Assignment Dialog */}
+      {/* Manual FTD Injection Dialog */}
       <Dialog
-        open={brokerAssignmentDialog.open}
-        onClose={() => setBrokerAssignmentDialog({ open: false, orderId: null, leadsWithBrokers: [] })}
-        maxWidth="md"
+        open={manualFTDDialog.open}
+        onClose={handleCloseManualFTDDialog}
+        maxWidth="sm"
         fullWidth
+        disableEscapeKeyDown={manualFTDDialog.step === 'processing' || manualFTDDialog.step === 'domain_input'}
+        // Disable backdrop click when domain input is required
+        onBackdropClick={manualFTDDialog.step === 'domain_input' ? undefined : handleCloseManualFTDDialog}
       >
-        <DialogTitle>Assign Client Brokers</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Assign client brokers to leads based on the final domain after injection.
+        <DialogTitle>
+          <Box display="flex" alignItems="center" gap={1}>
+            <SendIcon color="primary" />
+            <Typography variant="h6">Manual FTD Injection</Typography>
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Order #{manualFTDDialog.order?._id?.slice(-8)}
+            {manualFTDDialog.lead && (
+              <> - {manualFTDDialog.lead.firstName} {manualFTDDialog.lead.lastName}</>
+            )}
           </Typography>
+        </DialogTitle>
 
-          {brokerAssignmentDialog.leadsWithBrokers.length === 0 ? (
-            <Typography variant="body1" color="text.secondary">
-              No leads require broker assignment.
-            </Typography>
-          ) : (
-            <Box sx={{ maxHeight: 400, overflowY: 'auto' }}>
-              {brokerAssignmentDialog.leadsWithBrokers.map((item) => (
-                <Card key={item.lead._id} sx={{ mb: 2, p: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    {item.lead.firstName} {item.lead.lastName} ({item.lead.newEmail})
-                  </Typography>
+        <DialogContent>
+          {manualFTDDialog.step === 'confirm' && manualFTDDialog.lead && (
+            <>
+              <Typography variant="body1" sx={{ mb: 2 }}>
+                This will open a browser window with the landing form for <strong>{manualFTDDialog.lead.firstName} {manualFTDDialog.lead.lastName}</strong>. The form will be automatically filled with the FTD lead information. You will need to:
+              </Typography>
+              <Box component="ol" sx={{ pl: 2, mb: 2 }}>
+                <li>Review the auto-filled form with the following FTD lead information:</li>
+                <Box component="ul" sx={{ pl: 2, mb: 1 }}>
+                  <li>Name: {manualFTDDialog.lead.firstName} {manualFTDDialog.lead.lastName}</li>
+                  <li>Email: {manualFTDDialog.lead.newEmail}</li>
+                  <li>Phone: {manualFTDDialog.lead.newPhone}</li>
+                  <li>Country: {manualFTDDialog.lead.country}</li>
+                </Box>
+                <li>Make any necessary corrections to the auto-filled data</li>
+                <li>Click the submit button to submit the form</li>
+                <li>Wait for any redirects to complete</li>
+                <li>Copy the final domain/URL from the browser address bar</li>
+                <li>Close the browser window</li>
+                <li>Enter the copied domain in the next step</li>
+              </Box>
+              <Alert severity="info" sx={{ mt: 2 }}>
+                The form will be automatically filled with the FTD lead data. Review the information, submit the form, and make sure to copy the final domain before closing the browser!
+              </Alert>
+            </>
+          )}
 
-                  {item.availableBrokers.length === 0 ? (
-                    <Typography variant="body2" color="error">
-                      No available brokers for this lead (already assigned to all available brokers)
-                    </Typography>
-                  ) : (
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6}>
-                        <FormControl fullWidth size="small">
-                          <InputLabel>Client Broker</InputLabel>
-                          <Select
-                            value={brokerAssignments[item.lead._id]?.clientBroker || ''}
-                            onChange={(e) => handleBrokerAssignmentChange(item.lead._id, 'clientBroker', e.target.value)}
-                            label="Client Broker"
-                          >
-                            {item.availableBrokers.map((broker) => (
-                              <MenuItem key={broker} value={broker}>
-                                {broker}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          label="Domain"
-                          value={brokerAssignments[item.lead._id]?.domain || ''}
-                          onChange={(e) => handleBrokerAssignmentChange(item.lead._id, 'domain', e.target.value)}
-                          placeholder="e.g., example.com"
-                        />
-                      </Grid>
-                    </Grid>
-                  )}
-                </Card>
-              ))}
+          {manualFTDDialog.step === 'processing' && (
+            <Box display="flex" flexDirection="column" alignItems="center" py={3}>
+              <CircularProgress size={40} sx={{ mb: 2 }} />
+              <Typography variant="body1" align="center">
+                Browser is opening... The form will be auto-filled with FTD data. Please review, submit, and close the browser when done.
+              </Typography>
             </Box>
           )}
+
+          {manualFTDDialog.step === 'domain_input' && (
+            <>
+              <Typography variant="body1" sx={{ mb: 2 }}>
+                Please enter the final domain/URL that you copied from the browser:
+              </Typography>
+              <TextField
+                fullWidth
+                label="Final Domain/URL *"
+                placeholder="e.g., https://example.com or example.com"
+                value={manualFTDDomain}
+                onChange={(e) => setManualFTDDomain(e.target.value)}
+                sx={{ mb: 2 }}
+                autoFocus
+                required
+                error={!manualFTDDomain.trim()}
+                helperText={!manualFTDDomain.trim() ? "This field is mandatory" : "Enter the final domain where the form redirected to (not the original form URL)"}
+              />
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                Make sure this is the final domain after all redirects, not the original form URL.
+              </Alert>
+              <Alert severity="error">
+                <strong>Important:</strong> This dialog cannot be closed until you enter the broker domain. This field is mandatory for completing the FTD injection.
+              </Alert>
+            </>
+          )}
         </DialogContent>
+
         <DialogActions>
-          <Button onClick={() => setBrokerAssignmentDialog({ open: false, orderId: null, leadsWithBrokers: [] })}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSubmitBrokerAssignments}
-            disabled={assigningBrokers || brokerAssignmentDialog.leadsWithBrokers.length === 0}
-          >
-            {assigningBrokers ? 'Assigning...' : 'Assign Brokers'}
-          </Button>
+          {manualFTDDialog.step === 'confirm' && (
+            <>
+              <Button onClick={handleCloseManualFTDDialog}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleStartManualFTDInjection}
+                variant="contained"
+                startIcon={<SendIcon />}
+              >
+                Start Manual Injection
+              </Button>
+            </>
+          )}
+
+          {manualFTDDialog.step === 'domain_input' && (
+            <Button
+              onClick={handleSubmitManualFTDDomain}
+              variant="contained"
+              disabled={!manualFTDDomain.trim()}
+              startIcon={<SendIcon />}
+              fullWidth
+            >
+              Complete Injection
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
-
-      {/* Manual FTD Injection Modal */}
-      <ManualFTDInjectionModal
-        open={ftdInjectionModal.open}
-        onClose={handleCloseFTDInjection}
-        order={ftdInjectionModal.order}
-        onSuccess={handleFTDInjectionSuccess}
-      />
     </Box>
   );
 };

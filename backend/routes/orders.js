@@ -25,6 +25,10 @@ const {
   skipBrokerAssignment,
   getFTDLeadsForOrder,
   manualFTDInjection,
+  startManualFTDInjection,
+  completeManualFTDInjection,
+  startManualFTDInjectionForLead,
+  completeManualFTDInjectionForLead,
 } = require("../controllers/orders");
 
 const router = express.Router();
@@ -265,13 +269,49 @@ router.post(
 // @access  Private (Admin, Affiliate Manager)
 router.get("/:id/ftd-leads", [protect, isManager], getFTDLeadsForOrder);
 
+// @route   POST /api/orders/:id/manual-ftd-injection-start
+// @desc    Start manual FTD injection (opens browser for manual filling)
+// @access  Private (Admin, Affiliate Manager)
+router.post(
+  "/:id/manual-ftd-injection-start",
+  [protect, isManager],
+  startManualFTDInjection
+);
+
+// @route   POST /api/orders/:id/manual-ftd-injection-complete
+// @desc    Complete manual FTD injection (submit domain after manual filling)
+// @access  Private (Admin, Affiliate Manager)
+router.post(
+  "/:id/manual-ftd-injection-complete",
+  [protect, isManager],
+  completeManualFTDInjection
+);
+
 // @route   POST /api/orders/:id/manual-ftd-injection
-// @desc    Manual FTD injection
+// @desc    Manual FTD injection (deprecated - kept for compatibility)
 // @access  Private (Admin, Affiliate Manager)
 router.post(
   "/:id/manual-ftd-injection",
   [protect, isManager],
   manualFTDInjection
+);
+
+// @route   POST /api/orders/:id/leads/:leadId/manual-ftd-injection-start
+// @desc    Start manual FTD injection for a specific lead
+// @access  Private (Admin, Affiliate Manager)
+router.post(
+  "/:id/leads/:leadId/manual-ftd-injection-start",
+  [protect, isManager],
+  startManualFTDInjectionForLead
+);
+
+// @route   POST /api/orders/:id/leads/:leadId/manual-ftd-injection-complete
+// @desc    Complete manual FTD injection for a specific lead
+// @access  Private (Admin, Affiliate Manager)
+router.post(
+  "/:id/leads/:leadId/manual-ftd-injection-complete",
+  [protect, isManager],
+  completeManualFTDInjectionForLead
 );
 
 // @desc    Assign devices to order leads

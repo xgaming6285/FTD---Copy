@@ -174,8 +174,7 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
       ) {
         selectedLeads.push(leadsWithoutValidPhone[leadsWithoutPhoneIndex]);
         console.log(
-          `[FILLER-DEBUG] Added lead without valid phone pattern: ${
-            leadsWithoutPhoneIndex + 1
+          `[FILLER-DEBUG] Added lead without valid phone pattern: ${leadsWithoutPhoneIndex + 1
           }`
         );
         leadsWithoutPhoneIndex++;
@@ -185,8 +184,7 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
       for (let i = 0; i < requestedCount; i++) {
         selectedLeads.push(phoneGroups[uniquePatterns[i]][0]);
         console.log(
-          `[FILLER-DEBUG] Selected lead ${i + 1} with pattern ${
-            uniquePatterns[i]
+          `[FILLER-DEBUG] Selected lead ${i + 1} with pattern ${uniquePatterns[i]
           }`
         );
       }
@@ -234,18 +232,14 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
           if (wouldCreatePair) {
             totalPairs++;
             console.log(
-              `[FILLER-DEBUG] Added lead #${
-                currentCount + 1
-              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${
-                selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${currentCount + 1
+              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${selectedLeads.length
               })`
             );
           } else {
             console.log(
-              `[FILLER-DEBUG] Added lead #${
-                currentCount + 1
-              } from pattern ${pattern} (no pair), total leads: ${
-                selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${currentCount + 1
+              } from pattern ${pattern} (no pair), total leads: ${selectedLeads.length
               }`
             );
           }
@@ -316,18 +310,14 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
           if (wouldCreatePair) {
             totalPairs++;
             console.log(
-              `[FILLER-DEBUG] Added lead #${
-                currentCount + 1
-              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${
-                selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${currentCount + 1
+              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${selectedLeads.length
               })`
             );
           } else {
             console.log(
-              `[FILLER-DEBUG] Added lead #${
-                currentCount + 1
-              } from pattern ${pattern} (no pair), total leads: ${
-                selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${currentCount + 1
+              } from pattern ${pattern} (no pair), total leads: ${selectedLeads.length
               }`
             );
           }
@@ -1224,9 +1214,8 @@ exports.exportOrderLeads = async (req, res, next) => {
     ].join("\n");
 
     // Set response headers for file download
-    const filename = `order_${orderId}_leads_${
-      new Date().toISOString().split("T")[0]
-    }.csv`;
+    const filename = `order_${orderId}_leads_${new Date().toISOString().split("T")[0]
+      }.csv`;
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Cache-Control", "no-cache");
@@ -1770,9 +1759,8 @@ exports.manualFTDInjection = async (req, res, next) => {
       if (allFTDsInjected) {
         order.ftdHandling.status = "completed";
         order.ftdHandling.completedAt = new Date();
-        order.ftdHandling.notes = `All FTD leads manually injected. ${
-          notes || ""
-        }`.trim();
+        order.ftdHandling.notes = `All FTD leads manually injected. ${notes || ""
+          }`.trim();
       }
 
       // Update injection progress
@@ -1905,8 +1893,7 @@ const injectSingleLead = async (lead, orderId) => {
     );
 
     console.log(
-      `[DEBUG] Order selectedClientNetwork: ${
-        order.selectedClientNetwork ? order.selectedClientNetwork.name : "null"
+      `[DEBUG] Order selectedClientNetwork: ${order.selectedClientNetwork ? order.selectedClientNetwork.name : "null"
       }`
     );
     console.log(
@@ -1998,7 +1985,7 @@ const injectSingleLead = async (lead, orderId) => {
         }
 
         console.log(`[DEBUG] Using deviceType: ${deviceType} for lead ${lead._id}`);
-        
+
         await lead.assignFingerprint(deviceType, order.requester);
         await lead.save();
 
@@ -2137,7 +2124,7 @@ const injectSingleLead = async (lead, orderId) => {
         const output = data.toString();
         console.log(`[PYTHON STDOUT] ${output}`);
         stdoutData += output;
-        
+
         // Check for proxy expiration messages
         if (output.includes("PROXY_EXPIRED:")) {
           console.log(`[WARNING] Proxy expired during injection for lead ${lead._id}`);
@@ -2298,8 +2285,7 @@ const getAvailableClientBrokers = async (lead, clientNetwork) => {
   try {
     const ClientBroker = require("../models/ClientBroker");
     console.log(
-      `[DEBUG] getAvailableClientBrokers called with clientNetwork: ${
-        clientNetwork ? clientNetwork.name : "null"
+      `[DEBUG] getAvailableClientBrokers called with clientNetwork: ${clientNetwork ? clientNetwork.name : "null"
       }`
     );
 
@@ -2377,7 +2363,7 @@ const assignClientBrokerByDomain = async (
       console.log(
         `[DEBUG] Lead ${lead._id} is already assigned to broker ${clientBroker._id}`
       );
-      return;
+      return clientBroker; // Return the client broker instead of undefined
     }
 
     // Assign the client broker to the lead
@@ -2532,4 +2518,614 @@ const scheduleRandomInjections = (leads, order) => {
       }
     }, totalDelay);
   });
+};
+
+// @desc    Start manual FTD injection (opens browser for manual filling)
+// @route   POST /api/orders/:id/manual-ftd-injection-start
+// @access  Private (Admin, Affiliate Manager)
+exports.startManualFTDInjection = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
+      });
+    }
+
+    // Get FTD leads for this order
+    const Lead = require("../models/Lead");
+    const ftdLeads = await Lead.find({
+      _id: { $in: order.leads },
+      leadType: "ftd",
+    });
+
+    if (ftdLeads.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No FTD leads found for this order",
+      });
+    }
+
+    // Use the first FTD lead for manual injection
+    const leadToInject = ftdLeads[0];
+
+    // Prepare injection data for the manual script
+    const injectionData = {
+      leadId: leadToInject._id.toString(),
+      firstName: leadToInject.firstName,
+      lastName: leadToInject.lastName,
+      email: leadToInject.email,
+      phone: leadToInject.newPhone || leadToInject.phone,
+      country: leadToInject.country,
+      country_code: leadToInject.prefix?.replace('+', '') || '1',
+      targetUrl: process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
+      proxy: null // No proxy for manual injection to keep it simple
+    };
+
+    // Spawn the manual injector script
+    const { spawn } = require('child_process');
+    const path = require('path');
+
+    const scriptPath = path.join(__dirname, '../../manual_injector_playwright.py');
+    const pythonProcess = spawn('python', [scriptPath, JSON.stringify(injectionData)], {
+      stdio: 'pipe',
+      cwd: path.dirname(scriptPath)
+    });
+
+    // Handle script output
+    let scriptOutput = '';
+    let scriptError = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      scriptOutput += output;
+      console.log(`Manual Injector Output: ${output}`);
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      const error = data.toString();
+      scriptError += error;
+      console.error(`Manual Injector Error: ${error}`);
+    });
+
+    pythonProcess.on('close', (code) => {
+      console.log(`Manual injector script exited with code ${code}`);
+      if (code !== 0) {
+        console.error(`Manual injection failed with code ${code}`);
+        console.error(`Script error: ${scriptError}`);
+      }
+    });
+
+    // Don't wait for the script to complete - return immediately
+    res.status(200).json({
+      success: true,
+      message: "Manual FTD injection started. Browser should open shortly.",
+      data: {
+        leadId: leadToInject._id,
+        leadInfo: {
+          firstName: leadToInject.firstName,
+          lastName: leadToInject.lastName,
+          email: leadToInject.email,
+          phone: leadToInject.newPhone || leadToInject.phone,
+          country: leadToInject.country,
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error starting manual FTD injection:', error);
+    next(error);
+  }
+};
+
+// @desc    Complete manual FTD injection (submit domain after manual filling)
+// @route   POST /api/orders/:id/manual-ftd-injection-complete
+// @access  Private (Admin, Affiliate Manager)
+exports.completeManualFTDInjection = async (req, res, next) => {
+  try {
+    const { domain } = req.body;
+
+    if (!domain || !domain.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Domain is required",
+      });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can complete manual FTD injection.",
+      });
+    }
+
+    // Get FTD leads for this order that haven't been processed yet
+    const Lead = require("../models/Lead");
+    const ftdLeads = await Lead.find({
+      _id: { $in: order.leads },
+      leadType: "ftd",
+    });
+
+    if (ftdLeads.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No FTD leads found for this order",
+      });
+    }
+
+    // Process the first unprocessed FTD lead
+    const leadToProcess = ftdLeads.find(lead => {
+      const networkHistory = lead.clientNetworkHistory?.find(
+        (history) => history.orderId?.toString() === order._id.toString()
+      );
+      return !networkHistory || networkHistory.injectionStatus !== "completed";
+    });
+
+    if (!leadToProcess) {
+      return res.status(400).json({
+        success: false,
+        message: "All FTD leads for this order have already been processed",
+      });
+    }
+
+    // Clean and validate domain
+    let cleanDomain = domain.trim();
+    if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
+      try {
+        const url = new URL(cleanDomain);
+        cleanDomain = url.hostname;
+      } catch (e) {
+        // If URL parsing fails, just remove the protocol manually
+        cleanDomain = cleanDomain.replace(/^https?:\/\//, '');
+      }
+    }
+
+    // Remove any trailing paths, query parameters, etc.
+    cleanDomain = cleanDomain.split('/')[0].split('?')[0].split('#')[0];
+
+    if (!cleanDomain) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid domain format",
+      });
+    }
+
+    // Assign client broker based on domain
+    try {
+      console.log(`[DEBUG] Attempting to assign client broker for domain: ${cleanDomain}`);
+      console.log(`[DEBUG] Lead to process: ${leadToProcess._id}`);
+      console.log(`[DEBUG] User ID: ${req.user.id}`);
+      console.log(`[DEBUG] Order ID: ${order._id}`);
+
+      const assignedBroker = await assignClientBrokerByDomain(
+        leadToProcess,
+        cleanDomain,
+        req.user.id,
+        order._id
+      );
+
+      if (!assignedBroker) {
+        throw new Error('assignClientBrokerByDomain returned null or undefined');
+      }
+
+      console.log(`[DEBUG] Successfully assigned broker: ${assignedBroker._id} (${assignedBroker.name})`);
+
+      // Update lead's client network history
+      const networkHistoryEntry = {
+        clientNetwork: order.selectedClientNetwork,
+        clientBroker: assignedBroker._id,
+        orderId: order._id,
+        assignedAt: new Date(),
+        assignedBy: req.user.id,
+        domain: cleanDomain,
+        injectionStatus: "completed",
+        injectionType: "manual_ftd",
+        injectionNotes: "Manual FTD injection completed by affiliate manager/admin",
+      };
+
+      // Check if entry already exists for this order
+      const existingHistoryIndex = leadToProcess.clientNetworkHistory?.findIndex(
+        (history) => history.orderId?.toString() === order._id.toString()
+      );
+
+      if (existingHistoryIndex >= 0) {
+        // Update existing entry
+        leadToProcess.clientNetworkHistory[existingHistoryIndex] = networkHistoryEntry;
+      } else {
+        // Add new entry
+        if (!leadToProcess.clientNetworkHistory) {
+          leadToProcess.clientNetworkHistory = [];
+        }
+        leadToProcess.clientNetworkHistory.push(networkHistoryEntry);
+      }
+
+      // Mark lead as assigned
+      leadToProcess.isAssigned = true;
+      leadToProcess.lastAssignedAt = new Date();
+
+      await leadToProcess.save();
+
+      // Update order FTD handling status
+      const allFTDLeads = await Lead.find({
+        _id: { $in: order.leads },
+        leadType: "ftd",
+      });
+
+      const allFTDsInjected = allFTDLeads.every((lead) => {
+        const networkHistory = lead.clientNetworkHistory?.find(
+          (history) => history.orderId?.toString() === order._id.toString()
+        );
+        return networkHistory && networkHistory.injectionStatus === "completed";
+      });
+
+      if (allFTDsInjected) {
+        order.ftdHandling.status = "completed";
+        order.ftdHandling.completedAt = new Date();
+        order.ftdHandling.notes = "All FTD leads manually injected and assigned to client brokers";
+      }
+
+      // Update injection progress
+      order.injectionProgress.ftdsPendingManualFill = Math.max(
+        0,
+        order.injectionProgress.ftdsPendingManualFill - 1
+      );
+
+      await order.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Manual FTD injection completed successfully",
+        data: {
+          leadId: leadToProcess._id,
+          domain: cleanDomain,
+          clientBroker: {
+            id: assignedBroker._id,
+            name: assignedBroker.name,
+            domain: assignedBroker.domain,
+          },
+          allFTDsCompleted: allFTDsInjected,
+        },
+      });
+
+    } catch (error) {
+      console.error('Error assigning client broker:', error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to assign client broker based on domain",
+        error: error.message,
+      });
+    }
+
+  } catch (error) {
+    console.error('Error completing manual FTD injection:', error);
+    next(error);
+  }
+};
+
+// @desc    Start manual FTD injection for a specific lead
+// @route   POST /api/orders/:id/leads/:leadId/manual-ftd-injection-start
+// @access  Private (Admin, Affiliate Manager)
+exports.startManualFTDInjectionForLead = async (req, res, next) => {
+  try {
+    const { id: orderId, leadId } = req.params;
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
+      });
+    }
+
+    // Get the specific FTD lead
+    const Lead = require("../models/Lead");
+    const lead = await Lead.findOne({
+      _id: leadId,
+      _id: { $in: order.leads },
+      leadType: "ftd",
+    });
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "FTD lead not found in this order",
+      });
+    }
+
+    // Check if this lead has already been processed
+    const existingHistory = lead.clientNetworkHistory?.find(
+      (history) => history.orderId?.toString() === orderId.toString()
+    );
+
+    if (existingHistory && existingHistory.injectionStatus === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "This FTD lead has already been processed",
+      });
+    }
+
+    // Prepare injection data for the manual script
+    const injectionData = {
+      leadId: lead._id.toString(),
+      firstName: lead.firstName,
+      lastName: lead.lastName,
+      email: lead.newEmail,
+      phone: lead.newPhone || lead.phone,
+      country: lead.country,
+      country_code: lead.prefix?.replace('+', '') || '1',
+      targetUrl: process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
+      proxy: null // No proxy for manual injection to keep it simple
+    };
+
+    // Spawn the manual injector script
+    const { spawn } = require('child_process');
+    const path = require('path');
+
+    const scriptPath = path.join(__dirname, '../../manual_injector_playwright.py');
+    const pythonProcess = spawn('python', [scriptPath, JSON.stringify(injectionData)], {
+      stdio: 'pipe',
+      cwd: path.dirname(scriptPath)
+    });
+
+    // Handle script output
+    let scriptOutput = '';
+    let scriptError = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      scriptOutput += output;
+      console.log(`Manual Injector Output: ${output}`);
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      const error = data.toString();
+      scriptError += error;
+      console.error(`Manual Injector Error: ${error}`);
+    });
+
+    pythonProcess.on('close', (code) => {
+      console.log(`Manual injector script exited with code ${code}`);
+      if (code !== 0) {
+        console.error(`Manual injection failed with code ${code}`);
+        console.error(`Script error: ${scriptError}`);
+      }
+    });
+
+    // Don't wait for the script to complete - return immediately
+    res.status(200).json({
+      success: true,
+      message: "Manual FTD injection started. Browser should open shortly.",
+      data: {
+        leadId: lead._id,
+        leadInfo: {
+          firstName: lead.firstName,
+          lastName: lead.lastName,
+          email: lead.newEmail,
+          phone: lead.newPhone || lead.phone,
+          country: lead.country,
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error starting manual FTD injection for lead:', error);
+    next(error);
+  }
+};
+
+// @desc    Complete manual FTD injection for a specific lead
+// @route   POST /api/orders/:id/leads/:leadId/manual-ftd-injection-complete
+// @access  Private (Admin, Affiliate Manager)
+exports.completeManualFTDInjectionForLead = async (req, res, next) => {
+  try {
+    const { id: orderId, leadId } = req.params;
+    const { domain } = req.body;
+
+    if (!domain || !domain.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Domain is required and cannot be empty",
+      });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only admins and affiliate managers can complete manual FTD injection.",
+      });
+    }
+
+    // Get the specific FTD lead
+    const Lead = require("../models/Lead");
+    const lead = await Lead.findOne({
+      _id: leadId,
+      _id: { $in: order.leads },
+      leadType: "ftd",
+    });
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "FTD lead not found in this order",
+      });
+    }
+
+    // Check if this lead has already been processed
+    const existingHistory = lead.clientNetworkHistory?.find(
+      (history) => history.orderId?.toString() === orderId.toString()
+    );
+
+    if (existingHistory && existingHistory.injectionStatus === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "This FTD lead has already been processed",
+      });
+    }
+
+    // Clean and validate domain
+    let cleanDomain = domain.trim();
+    if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
+      try {
+        const url = new URL(cleanDomain);
+        cleanDomain = url.hostname;
+      } catch (e) {
+        // If URL parsing fails, just remove the protocol manually
+        cleanDomain = cleanDomain.replace(/^https?:\/\//, '');
+      }
+    }
+
+    // Remove any trailing paths, query parameters, etc.
+    cleanDomain = cleanDomain.split('/')[0].split('?')[0].split('#')[0];
+
+    if (!cleanDomain) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid domain format",
+      });
+    }
+
+    // Assign client broker based on domain
+    try {
+      console.log(`[DEBUG] Attempting to assign client broker for lead ${leadId} with domain: ${cleanDomain}`);
+
+      const assignedBroker = await assignClientBrokerByDomain(
+        lead,
+        cleanDomain,
+        req.user.id,
+        order._id
+      );
+
+      if (!assignedBroker) {
+        throw new Error('Failed to assign client broker for domain');
+      }
+
+      console.log(`[DEBUG] Successfully assigned broker: ${assignedBroker._id} (${assignedBroker.name})`);
+
+      // Update lead's client network history
+      const networkHistoryEntry = {
+        clientNetwork: order.selectedClientNetwork,
+        clientBroker: assignedBroker._id,
+        orderId: order._id,
+        assignedAt: new Date(),
+        assignedBy: req.user.id,
+        domain: cleanDomain,
+        injectionStatus: "completed",
+        injectionType: "manual_ftd",
+        injectionNotes: `Manual FTD injection completed by ${req.user.fullName || req.user.email}`,
+      };
+
+      // Check if entry already exists for this order
+      const existingHistoryIndex = lead.clientNetworkHistory?.findIndex(
+        (history) => history.orderId?.toString() === order._id.toString()
+      );
+
+      if (existingHistoryIndex >= 0) {
+        // Update existing entry
+        lead.clientNetworkHistory[existingHistoryIndex] = networkHistoryEntry;
+      } else {
+        // Add new entry
+        if (!lead.clientNetworkHistory) {
+          lead.clientNetworkHistory = [];
+        }
+        lead.clientNetworkHistory.push(networkHistoryEntry);
+      }
+
+      // Mark lead as assigned
+      lead.isAssigned = true;
+      lead.lastAssignedAt = new Date();
+
+      await lead.save();
+
+      // Check if all FTD leads in this order are now completed
+      const Lead = require("../models/Lead");
+      const allFTDLeads = await Lead.find({
+        _id: { $in: order.leads },
+        leadType: "ftd",
+      });
+
+      const allFTDsInjected = allFTDLeads.every((ftdLead) => {
+        const networkHistory = ftdLead.clientNetworkHistory?.find(
+          (history) => history.orderId?.toString() === order._id.toString()
+        );
+        return networkHistory && networkHistory.injectionStatus === "completed";
+      });
+
+      // Update order status if all FTDs are completed
+      if (allFTDsInjected) {
+        order.ftdHandling.status = "completed";
+        order.ftdHandling.completedAt = new Date();
+        order.ftdHandling.notes = "All FTD leads manually injected and assigned to client brokers";
+      }
+
+      // Update injection progress
+      order.injectionProgress.ftdsPendingManualFill = Math.max(
+        0,
+        order.injectionProgress.ftdsPendingManualFill - 1
+      );
+
+      await order.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Manual FTD injection completed successfully for this lead",
+        data: {
+          leadId: lead._id,
+          domain: cleanDomain,
+          clientBroker: {
+            id: assignedBroker._id,
+            name: assignedBroker.name,
+            domain: assignedBroker.domain,
+          },
+          allFTDsCompleted: allFTDsInjected,
+        },
+      });
+
+    } catch (error) {
+      console.error(`Error assigning client broker for lead ${leadId}:`, error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to assign client broker based on domain",
+        error: error.message,
+      });
+    }
+
+  } catch (error) {
+    console.error(`Error completing manual FTD injection for lead ${leadId}:`, error);
+    next(error);
+  }
 };
