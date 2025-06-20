@@ -128,6 +128,92 @@ class QuantumAIInjector:
             print(f"WARNING: Error triggering popup: {str(e)}")
             return False
 
+    def _close_popup(self, page):
+        """Close the popup if it's visible."""
+        try:
+            print("INFO: Attempting to close popup...")
+            
+            # Common close button selectors for popups
+            close_selectors = [
+                '#popup_custom .close',
+                '#popup_custom .close-btn',
+                '#popup_custom .popup-close',
+                '#popup_custom button[aria-label="Close"]',
+                '#popup_custom .x-close',
+                '#popup_custom [data-dismiss="modal"]',
+                '#popup_custom .modal-close'
+            ]
+            
+            close_button = None
+            for selector in close_selectors:
+                try:
+                    close_button = page.query_selector(selector)
+                    if close_button and close_button.is_visible():
+                        print(f"INFO: Found close button using selector: {selector}")
+                        break
+                except Exception as e:
+                    continue
+            
+            if close_button:
+                close_button.click()
+                print("✓ Popup close button clicked")
+                time.sleep(0.5)
+                
+                # Verify popup is closed
+                if not self._check_popup_visibility(page):
+                    print("✓ Popup successfully closed")
+                    return True
+                else:
+                    print("WARNING: Popup still visible after close attempt")
+            else:
+                print("WARNING: No close button found for popup")
+                
+                # Try alternative methods to close popup
+                print("INFO: Trying alternative popup close methods...")
+                
+                # Method 1: Press Escape key
+                try:
+                    page.keyboard.press('Escape')
+                    time.sleep(0.5)
+                    if not self._check_popup_visibility(page):
+                        print("✓ Popup closed using Escape key")
+                        return True
+                except:
+                    pass
+                
+                # Method 2: Click outside popup (on backdrop)
+                try:
+                    page.click('body', position={'x': 10, 'y': 10})
+                    time.sleep(0.5)
+                    if not self._check_popup_visibility(page):
+                        print("✓ Popup closed by clicking outside")
+                        return True
+                except:
+                    pass
+                
+                # Method 3: Try to hide popup via JavaScript
+                try:
+                    page.evaluate("""
+                        const popup = document.getElementById('popup_custom');
+                        if (popup) {
+                            popup.style.display = 'none';
+                            popup.style.visibility = 'hidden';
+                        }
+                    """)
+                    time.sleep(0.5)
+                    if not self._check_popup_visibility(page):
+                        print("✓ Popup hidden via JavaScript")
+                        return True
+                except:
+                    pass
+            
+            print("WARNING: Could not close popup with any method")
+            return False
+            
+        except Exception as e:
+            print(f"WARNING: Error closing popup: {str(e)}")
+            return False
+
     def _fill_quantumai_form(self, page, lead_data, form_id):
         """Fill QuantumAI form fields for a specific form."""
         try:
@@ -178,13 +264,72 @@ class QuantumAIInjector:
             except Exception as e:
                 print(f"WARNING: Could not set country code: {str(e)}")
             
-            # Check the terms checkbox
+            # Check the terms checkbox - CRITICAL for form submission
             try:
-                checkbox_label = page.wait_for_selector(f'{form_selector} .checked-svg', timeout=5000)
-                checkbox_label.click()
-                print("✓ Terms checkbox checked")
+                # For myform1, the checkbox has id="cbx-3" but we need to click the label
+                if form_id == "myform1":
+                    # Try multiple approaches to check the checkbox
+                    checkbox_selectors = [
+                        f'{form_selector} label[for="cbx-3"]',
+                        f'{form_selector} .checked-svg',
+                        f'{form_selector} label.checked-svg',
+                        'label[for="cbx-3"]',  # Global selector as fallback
+                        '.checked-svg'  # Global selector as fallback
+                    ]
+                    
+                    checkbox_checked = False
+                    for selector in checkbox_selectors:
+                        try:
+                            checkbox_element = page.wait_for_selector(selector, timeout=2000)
+                            if checkbox_element and checkbox_element.is_visible():
+                                print(f"INFO: Found checkbox using selector: {selector}")
+                                checkbox_element.click()
+                                time.sleep(0.5)  # Wait for checkbox state to update
+                                
+                                # Verify checkbox is checked
+                                actual_checkbox = page.query_selector('#cbx-3')
+                                if actual_checkbox:
+                                    is_checked = actual_checkbox.is_checked()
+                                    print(f"INFO: Checkbox checked state: {is_checked}")
+                                    if is_checked:
+                                        checkbox_checked = True
+                                        break
+                                else:
+                                    # Fallback: assume it worked if we clicked the label
+                                    checkbox_checked = True
+                                    break
+                        except Exception as e:
+                            continue
+                    
+                    if checkbox_checked:
+                        print("✓ Terms checkbox checked successfully")
+                    else:
+                        print("WARNING: Could not verify checkbox was checked")
+                        # Try JavaScript approach as last resort
+                        try:
+                            page.evaluate('document.getElementById("cbx-3").checked = true')
+                            print("✓ Terms checkbox checked via JavaScript")
+                        except Exception as js_e:
+                            print(f"ERROR: Could not check checkbox via JavaScript: {str(js_e)}")
+                else:
+                    # For other forms, use the original approach
+                    checkbox_label = page.wait_for_selector(f'{form_selector} .checked-svg', timeout=5000)
+                    checkbox_label.click()
+                    print("✓ Terms checkbox checked")
+                    
             except Exception as e:
                 print(f"WARNING: Could not check terms checkbox: {str(e)}")
+                # Try to find and check any checkbox in the form
+                try:
+                    all_checkboxes = page.query_selector_all(f'{form_selector} input[type="checkbox"]')
+                    if all_checkboxes:
+                        for cb in all_checkboxes:
+                            if not cb.is_checked():
+                                cb.check()
+                                print("✓ Fallback: Checkbox checked")
+                                break
+                except:
+                    pass
             
             return True
             
@@ -198,17 +343,62 @@ class QuantumAIInjector:
         try:
             print(f"INFO: Submitting QuantumAI form {form_id}...")
             
+            # CRITICAL: Verify checkbox is checked before submitting
+            if form_id == "myform1":
+                try:
+                    checkbox = page.query_selector('#cbx-3')
+                    if checkbox:
+                        is_checked = checkbox.is_checked()
+                        print(f"INFO: Pre-submit checkbox verification - Checked: {is_checked}")
+                        if not is_checked:
+                            print("WARNING: Checkbox not checked! Attempting to check it now...")
+                            # Try to click the label again
+                            label = page.query_selector('label[for="cbx-3"]')
+                            if label:
+                                label.click()
+                                time.sleep(0.5)
+                                is_checked = checkbox.is_checked()
+                                print(f"INFO: After re-click - Checkbox checked: {is_checked}")
+                            
+                            # If still not checked, force it via JavaScript
+                            if not is_checked:
+                                page.evaluate('document.getElementById("cbx-3").checked = true')
+                                print("INFO: Forced checkbox check via JavaScript")
+                    else:
+                        print("WARNING: Could not find checkbox #cbx-3")
+                except Exception as e:
+                    print(f"WARNING: Error verifying checkbox: {str(e)}")
+            
             # Take a screenshot before clicking submit
             self._take_screenshot(page, f"before_submit_{form_id}")
             
-            # Try multiple selectors for the submit button
-            submit_selectors = [
-                f'#{form_id} button[name="submitBtn"]',
-                f'#{form_id} button[type="submit"]',
-                f'#{form_id} .btn_send',
-                f'#{form_id} button:contains("Register")',
-                f'#{form_id} button.btn'
-            ]
+            # Try multiple selectors for the submit button based on form type
+            if form_id == "myform1":
+                # Root form specific selectors
+                submit_selectors = [
+                    f'#{form_id} button[name="submitBtn"]',
+                    f'#{form_id} button[type="submit"]',
+                    f'#{form_id} .btn_send',
+                    f'#{form_id} button.btn',
+                    f'#{form_id} input[type="submit"]',
+                    f'#{form_id} button:has-text("Register")',
+                    f'#{form_id} button:has-text("REGISTER")',
+                    f'#{form_id} button:has-text("Submit")',
+                    f'#{form_id} [role="button"]',
+                    # More specific root form button selectors
+                    'button[name="submitBtn"]',
+                    '.btn_send',
+                    'button.btn:has-text("Register")'
+                ]
+            else:
+                # Generic selectors for other forms
+                submit_selectors = [
+                    f'#{form_id} button[name="submitBtn"]',
+                    f'#{form_id} button[type="submit"]',
+                    f'#{form_id} .btn_send',
+                    f'#{form_id} button:has-text("Register")',
+                    f'#{form_id} button.btn'
+                ]
             
             submit_button = None
             for selector in submit_selectors:
@@ -222,15 +412,36 @@ class QuantumAIInjector:
             
             if not submit_button:
                 print(f"ERROR: Could not find submit button for form {form_id}")
-                # Try to find any button in the form
-                all_buttons = page.query_selector_all(f'#{form_id} button')
+                # Try to find any button in the form and nearby
+                all_buttons = page.query_selector_all(f'#{form_id} button, #{form_id} input[type="submit"], #{form_id} [role="button"]')
                 print(f"INFO: Found {len(all_buttons)} buttons in form {form_id}")
                 for i, btn in enumerate(all_buttons):
                     btn_text = btn.inner_text()
                     btn_name = btn.get_attribute('name')
                     btn_type = btn.get_attribute('type')
-                    print(f"  Button {i}: text='{btn_text}', name='{btn_name}', type='{btn_type}'")
-                return False
+                    btn_class = btn.get_attribute('class')
+                    print(f"  Button {i}: text='{btn_text}', name='{btn_name}', type='{btn_type}', class='{btn_class}'")
+                
+                # For root form, try to find buttons outside the form but nearby
+                if form_id == "myform1":
+                    print("INFO: Searching for register buttons outside the form for myform1...")
+                    nearby_buttons = page.query_selector_all('button:has-text("Register"), button:has-text("REGISTER"), .btn_send, button[name="submitBtn"]')
+                    print(f"INFO: Found {len(nearby_buttons)} nearby register buttons")
+                    for i, btn in enumerate(nearby_buttons):
+                        btn_text = btn.inner_text()
+                        btn_name = btn.get_attribute('name')
+                        btn_type = btn.get_attribute('type')
+                        btn_class = btn.get_attribute('class')
+                        print(f"  Nearby Button {i}: text='{btn_text}', name='{btn_name}', type='{btn_type}', class='{btn_class}'")
+                        
+                        # Try to use the first visible register button
+                        if btn.is_visible() and ('register' in btn_text.lower() or btn_name == 'submitBtn' or 'btn_send' in (btn_class or '')):
+                            print(f"INFO: Using nearby register button: {btn_text}")
+                            submit_button = btn
+                            break
+                
+                if not submit_button:
+                    return False
             
             # Scroll the submit button into view
             submit_button.scroll_into_view_if_needed()
@@ -313,34 +524,27 @@ class QuantumAIInjector:
                 
                 success = False
                 
-                # Determine which form to fill based on popup visibility
+                # Check if popup is open and close it to focus on root form
                 if popup_visible:
-                    print("INFO: Popup is visible - filling popup form (highest priority)")
-                    self._take_screenshot(page, "popup_detected")
-                    
-                    success = self._fill_quantumai_form(page, lead_data, "myform3")
+                    print("INFO: Popup is open - attempting to close it to focus on root form")
+                    self._close_popup(page)
+                    time.sleep(1)  # Wait for popup to close
+                
+                # NEW LOGIC: Always prioritize root form page over popup
+                print("INFO: Filling main QuantumAI form (myform1) - ROOT FORM PRIORITY")
+                page.evaluate("document.getElementById('signin').scrollIntoView({behavior: 'smooth'})")
+                time.sleep(2)
+                
+                success = self._fill_quantumai_form(page, lead_data, "myform1")
+                if success:
+                    success = self._submit_quantumai_form(page, "myform1")
                     if success:
-                        success = self._submit_quantumai_form(page, "myform3")
-                        if success:
-                            self._take_screenshot(page, "popup_form_submitted")
-                            print("SUCCESS: Popup form submitted successfully!")
+                        self._take_screenshot(page, "main_form_submitted")
+                        print("SUCCESS: Main form (root page) submitted successfully!")
                 
                 if not success:
-                    # Try main form
-                    print("INFO: Filling main QuantumAI form (myform1)")
-                    page.evaluate("document.getElementById('signin').scrollIntoView({behavior: 'smooth'})")
-                    time.sleep(2)
-                    
-                    success = self._fill_quantumai_form(page, lead_data, "myform1")
-                    if success:
-                        success = self._submit_quantumai_form(page, "myform1")
-                        if success:
-                            self._take_screenshot(page, "main_form_submitted")
-                            print("SUCCESS: Main form submitted successfully!")
-                
-                if not success:
-                    # Try footer form as last resort
-                    print("INFO: Trying footer form as last resort (myform2)")
+                    # Try footer form as second option
+                    print("INFO: Trying footer form as second option (myform2)")
                     page.evaluate("document.getElementById('contacts').scrollIntoView({behavior: 'smooth'})")
                     time.sleep(2)
                     
@@ -350,6 +554,18 @@ class QuantumAIInjector:
                         if success:
                             self._take_screenshot(page, "footer_form_submitted")
                             print("SUCCESS: Footer form submitted successfully!")
+                
+                # Only try popup as last resort if both root forms fail
+                if not success and popup_visible:
+                    print("INFO: Root forms failed - trying popup form as last resort (myform3)")
+                    self._take_screenshot(page, "popup_detected")
+                    
+                    success = self._fill_quantumai_form(page, lead_data, "myform3")
+                    if success:
+                        success = self._submit_quantumai_form(page, "myform3")
+                        if success:
+                            self._take_screenshot(page, "popup_form_submitted")
+                            print("SUCCESS: Popup form submitted successfully!")
                 
                 if success:
                     # Wait for redirects

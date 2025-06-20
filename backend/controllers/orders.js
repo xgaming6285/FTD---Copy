@@ -4,6 +4,88 @@ const Order = require("../models/Order");
 const Lead = require("../models/Lead");
 const ClientNetwork = require("../models/ClientNetwork");
 const ClientBroker = require("../models/ClientBroker");
+const { spawn } = require("child_process");
+const path = require("path");
+
+// Function to run the QuantumAI injector after successful lead injection
+const runQuantumAIInjector = async (leadData) => {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log("🚀🚀🚀 STARTING QUANTUMAI INJECTOR AFTER SUCCESSFUL INJECTION FOR LEAD:", leadData.newEmail);
+      console.log("Lead data being sent to QuantumAI:", leadData);
+      
+      // Prepare lead data for the injector
+      const injectorData = {
+        firstName: leadData.firstName,
+        lastName: leadData.lastName,
+        email: leadData.newEmail,
+        phone: leadData.newPhone,
+        country_code: leadData.prefix ? leadData.prefix.replace('+', '') : '1', // Remove + from prefix, default to 1
+        country: leadData.country || 'Unknown',
+        targetUrl: 'https://k8ro.info/bKkkBWkK' // Default QuantumAI URL
+      };
+      
+      // Path to the quantumai injector script
+      const scriptPath = path.join(__dirname, '../../quantumai_injector_playwright.py');
+      console.log("📄 QuantumAI Script path:", scriptPath);
+      console.log("📦 QuantumAI Injector data:", JSON.stringify(injectorData, null, 2));
+      
+      // Spawn the Python process
+      console.log("🐍 Spawning QuantumAI Python process...");
+      const pythonProcess = spawn('python', [scriptPath, JSON.stringify(injectorData)], {
+        cwd: path.join(__dirname, '../..'),
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      console.log("✅ QuantumAI Python process spawned with PID:", pythonProcess.pid);
+      
+      let stdout = '';
+      let stderr = '';
+      
+      pythonProcess.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdout += output;
+        console.log('QuantumAI Injector:', output.trim());
+      });
+      
+      pythonProcess.stderr.on('data', (data) => {
+        const error = data.toString();
+        stderr += error;
+        console.error('QuantumAI Injector Error:', error.trim());
+      });
+      
+      pythonProcess.on('close', (code) => {
+        console.log(`QuantumAI injector process exited with code ${code}`);
+        
+        if (code === 0) {
+          console.log('✓ QuantumAI injection completed successfully');
+          resolve({ success: true, output: stdout });
+        } else {
+          console.error('✗ QuantumAI injection failed');
+          resolve({ success: false, error: stderr, output: stdout });
+        }
+      });
+      
+      pythonProcess.on('error', (error) => {
+        console.error('Failed to start QuantumAI injector:', error);
+        reject(error);
+      });
+      
+      // Set a timeout for the injection process (5 minutes)
+      setTimeout(() => {
+        if (!pythonProcess.killed) {
+          console.log('QuantumAI injector timeout - killing process');
+          pythonProcess.kill('SIGKILL');
+          resolve({ success: false, error: 'Process timeout' });
+        }
+      }, 300000); // 5 minutes
+      
+    } catch (error) {
+      console.error('Error in runQuantumAIInjector:', error);
+      reject(error);
+    }
+  });
+};
 
 /**
  * FILLER LEADS PHONE NUMBER REPETITION RULES
@@ -2033,15 +2115,14 @@ const injectSingleLead = async (lead, orderId) => {
           );
         }
       } else {
-        console.error(`[ERROR] Failed to assign proxy to lead ${lead._id}`);
-        return false;
+        console.warn(`⚠️ Failed to assign proxy to lead ${lead._id}, proceeding without proxy`);
+        proxyConfig = null; // Proceed without proxy
       }
     } catch (error) {
-      console.error(
-        `[ERROR] Error assigning proxy to lead ${lead._id}:`,
-        error
+      console.warn(
+        `⚠️ Error assigning proxy to lead ${lead._id}: ${error.message}, proceeding without proxy`
       );
-      return false;
+      proxyConfig = null; // Proceed without proxy
     }
 
     // Get fingerprint configuration for injection
@@ -2088,11 +2169,17 @@ const injectSingleLead = async (lead, orderId) => {
       country_code: lead.prefix || "1",
       // Fingerprint configuration
       fingerprint: fingerprintConfig,
-      // Proxy configuration
+      // Proxy configuration (null if no proxy available)
       proxy: proxyConfig,
       // Target URL
       targetUrl: "https://ftd-copy.vercel.app/landing",
     };
+
+    if (!proxyConfig) {
+      console.log(`[INFO] Proceeding with injection for lead ${lead._id} WITHOUT proxy`);
+    } else {
+      console.log(`[INFO] Proceeding with injection for lead ${lead._id} WITH proxy: ${proxyConfig.host}:${proxyConfig.port}`);
+    }
 
     const scriptPath = path.resolve(
       path.join(__dirname, "..", "..", "injector_playwright.py")
@@ -2171,6 +2258,20 @@ const injectSingleLead = async (lead, orderId) => {
           console.log(
             `Successfully injected lead ${lead._id} for order ${orderId}`
           );
+
+          // 🚀 TRIGGER QUANTUMAI INJECTION AFTER SUCCESSFUL LEAD INJECTION
+          console.log('🎯 Triggering QuantumAI injection for successfully injected lead...');
+          runQuantumAIInjector(lead)
+            .then((result) => {
+              if (result.success) {
+                console.log('✅ QuantumAI injection completed successfully for lead:', lead._id);
+              } else {
+                console.error('❌ QuantumAI injection failed for lead:', lead._id, result.error);
+              }
+            })
+            .catch((error) => {
+              console.error('💥 QuantumAI injection error for lead:', lead._id, error);
+            });
 
           // Parse final domain from stdout
           let finalDomain = null;

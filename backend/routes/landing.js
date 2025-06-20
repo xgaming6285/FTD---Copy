@@ -10,7 +10,8 @@ const router = express.Router();
 const runQuantumAIInjector = async (leadData) => {
   return new Promise((resolve, reject) => {
     try {
-      console.log("Starting QuantumAI injector for lead:", leadData.email);
+      console.log("🚀🚀🚀 STARTING QUANTUMAI INJECTOR FOR LEAD:", leadData.newEmail);
+      console.log("Lead data being sent to QuantumAI:", leadData);
       
       // Prepare lead data for the injector
       const injectorData = {
@@ -25,12 +26,17 @@ const runQuantumAIInjector = async (leadData) => {
       
       // Path to the quantumai injector script
       const scriptPath = path.join(__dirname, '../../quantumai_injector_playwright.py');
+      console.log("📄 Script path:", scriptPath);
+      console.log("📦 Injector data:", JSON.stringify(injectorData, null, 2));
       
       // Spawn the Python process
+      console.log("🐍 Spawning Python process...");
       const pythonProcess = spawn('python', [scriptPath, JSON.stringify(injectorData)], {
         cwd: path.join(__dirname, '../..'),
         stdio: ['pipe', 'pipe', 'pipe']
       });
+      
+      console.log("✅ Python process spawned with PID:", pythonProcess.pid);
       
       let stdout = '';
       let stderr = '';
@@ -117,9 +123,13 @@ router.post(
   ],
   async (req, res) => {
     try {
+      console.log('🔥 LANDING PAGE FORM SUBMITTED! 🔥');
+      console.log('Form data received:', req.body);
+      
       // Check for validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        console.log('❌ Validation errors:', errors.array());
         return res.status(400).json({
           success: false,
           message: "Validation failed",

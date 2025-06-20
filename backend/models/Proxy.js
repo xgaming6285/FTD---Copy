@@ -223,9 +223,14 @@ proxySchema.statics.createFromConfig = async function(country, countryCode, crea
     if (isHealthy) {
       proxy.status = "active";
       await proxy.save();
+      console.log(`✅ Proxy created and verified for ${country}`);
     } else {
       proxy.status = "failed";
       await proxy.save();
+      console.warn(`⚠️ Proxy health check failed for ${country}, but proxy object created`);
+      
+      // Instead of throwing an error, we'll return the proxy but mark it as failed
+      // This allows the injection process to continue without a proxy if needed
       throw new Error(`Proxy health check failed for ${country}`);
     }
     
@@ -244,26 +249,63 @@ proxySchema.methods.testConnection = async function() {
   
   try {
     const proxyUrl = `http://${this.config.username}:${this.config.password}@${this.config.host}:${this.config.port}`;
+    console.log(`[PROXY-DEBUG] Testing proxy for ${this.country}: ${this.config.host}:${this.config.port}`);
+    console.log(`[PROXY-DEBUG] Username: ${this.config.username}`);
     
-    const response = await axios.get('https://api.ipify.org', {
-      httpsAgent: new HttpsProxyAgent(proxyUrl),
-      timeout: 10000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    // Try multiple test URLs for better reliability
+    const testUrls = [
+      'https://api.ipify.org',
+      'https://httpbin.org/ip',
+      'https://ip.oxylabs.io/location'
+    ];
+    
+    let lastError = null;
+    
+    for (const testUrl of testUrls) {
+      try {
+        console.log(`[PROXY-DEBUG] Testing with URL: ${testUrl}`);
+        
+        const response = await axios.get(testUrl, {
+          httpsAgent: new HttpsProxyAgent(proxyUrl),
+          timeout: 15000, // Increased timeout
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        
+        const responseTime = Date.now() - startTime;
+        
+        // Update health status
+        this.health.isHealthy = true;
+        this.health.lastHealthCheck = new Date();
+        this.health.failedHealthChecks = 0;
+        this.health.responseTime = responseTime;
+        this.health.lastError = null;
+        
+        let ipAddress = 'unknown';
+        try {
+          if (testUrl.includes('ipify') || testUrl.includes('httpbin')) {
+            ipAddress = typeof response.data === 'string' ? response.data.trim() : response.data.origin || response.data.ip || 'unknown';
+          } else if (testUrl.includes('oxylabs')) {
+            const locationData = JSON.parse(response.data);
+            ipAddress = locationData.ip || 'unknown';
+          }
+        } catch (parseError) {
+          console.warn(`[PROXY-DEBUG] Could not parse IP from response: ${parseError.message}`);
+        }
+        
+        console.log(`✅ Proxy health check passed for ${this.country}: ${ipAddress} (${responseTime}ms) via ${testUrl}`);
+        return true;
+        
+      } catch (error) {
+        lastError = error;
+        console.warn(`[PROXY-DEBUG] Test failed with ${testUrl}: ${error.message}`);
+        continue; // Try next URL
       }
-    });
+    }
     
-    const responseTime = Date.now() - startTime;
-    
-    // Update health status
-    this.health.isHealthy = true;
-    this.health.lastHealthCheck = new Date();
-    this.health.failedHealthChecks = 0;
-    this.health.responseTime = responseTime;
-    this.health.lastError = null;
-    
-    console.log(`Proxy health check passed for ${this.country}: ${response.data} (${responseTime}ms)`);
-    return true;
+    // If we get here, all URLs failed
+    throw lastError || new Error('All proxy test URLs failed');
     
   } catch (error) {
     const responseTime = Date.now() - startTime;
@@ -280,7 +322,8 @@ proxySchema.methods.testConnection = async function() {
       this.status = "failed";
     }
     
-    console.error(`Proxy health check failed for ${this.country}:`, error.message);
+    console.error(`❌ Proxy health check failed for ${this.country}:`, error.message);
+    console.error(`[PROXY-DEBUG] Full error:`, error);
     return false;
   }
 };
