@@ -59,56 +59,60 @@ import ManualFTDInjectionModal from '../components/ManualFTDInjectionModal';
 // --- Best Practice: Define constants and schemas outside the component ---
 // This prevents them from being recreated on every render.
 
-// Validation schema for order creation
-const orderSchema = yup.object({
-  ftd: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  filler: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  cold: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  live: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  priority: yup.string().oneOf(['low', 'medium', 'high']).default('medium'),
-  countryFilter: yup.string().default(''),
-  genderFilter: yup.string().oneOf(['', 'male', 'female']).default(''),
-  notes: yup.string().default(''),
-  selectedClientNetwork: yup.string().default(''),
-  // Injection settings
-  enableInjection: yup.boolean().default(false),
-  injectFiller: yup.boolean().default(false),
-  injectCold: yup.boolean().default(false),
-  injectLive: yup.boolean().default(false),
-  // Device configuration fields
-  deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
-  deviceRatio: yup.object({
-    windows: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-    android: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-    ios: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-    mac: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-    linux: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-  }),
-  availableDeviceTypes: yup.object({
-    windows: yup.boolean().default(true),
-    android: yup.boolean().default(true),
-    ios: yup.boolean().default(true),
-    mac: yup.boolean().default(true),
-    linux: yup.boolean().default(true),
-  }),
-}).test('at-least-one', 'At least one lead type must be requested', (value) => {
-  return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
-}).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
-  if (value.enableInjection) {
-    return value.injectFiller || value.injectCold || value.injectLive;
-  }
-  return true;
-}).test('device-ratio', 'At least one device ratio must be greater than 0 for ratio mode', (value) => {
-  if (value.deviceSelectionMode === 'ratio') {
-    return Object.values(value.deviceRatio || {}).some(ratio => ratio > 0);
-  }
-  return true;
-}).test('available-devices', 'At least one device type must be selected for random mode', (value) => {
-  if (value.deviceSelectionMode === 'random') {
-    return Object.values(value.availableDeviceTypes || {}).some(enabled => enabled);
-  }
-  return true;
-});
+// Function to create validation schema based on user role
+const createOrderSchema = (userRole) => {
+  return yup.object({
+    ftd: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    filler: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    cold: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    live: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    priority: yup.string().oneOf(['low', 'medium', 'high']).default('medium'),
+    countryFilter: yup.string().required('Country filter is required').min(2, 'Country must be at least 2 characters'),
+    genderFilter: yup.string().oneOf(['', 'male', 'female']).default(''),
+    notes: yup.string().default(''),
+    selectedClientNetwork: userRole === 'affiliate_manager' 
+      ? yup.string().required('Client network selection is required')
+      : yup.string().default(''),
+    // Injection settings
+    enableInjection: yup.boolean().default(false),
+    injectFiller: yup.boolean().default(false),
+    injectCold: yup.boolean().default(false),
+    injectLive: yup.boolean().default(false),
+    // Device configuration fields
+    deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
+    deviceRatio: yup.object({
+      windows: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      android: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      ios: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      mac: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      linux: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+    }),
+    availableDeviceTypes: yup.object({
+      windows: yup.boolean().default(true),
+      android: yup.boolean().default(true),
+      ios: yup.boolean().default(true),
+      mac: yup.boolean().default(true),
+      linux: yup.boolean().default(true),
+    }),
+  }).test('at-least-one', 'At least one lead type must be requested', (value) => {
+    return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
+  }).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
+    if (value.enableInjection) {
+      return value.injectFiller || value.injectCold || value.injectLive;
+    }
+    return true;
+  }).test('device-ratio', 'At least one device ratio must be greater than 0 for ratio mode', (value) => {
+    if (value.deviceSelectionMode === 'ratio') {
+      return Object.values(value.deviceRatio || {}).some(ratio => ratio > 0);
+    }
+    return true;
+  }).test('available-devices', 'At least one device type must be selected for random mode', (value) => {
+    if (value.deviceSelectionMode === 'random') {
+      return Object.values(value.availableDeviceTypes || {}).some(enabled => enabled);
+    }
+    return true;
+  });
+};
 
 // Helper functions for status/priority colors
 const getStatusColor = (status) => {
@@ -204,8 +208,8 @@ const OrdersPage = () => {
     reset,
     formState: { errors, isSubmitting },
   } = useForm({
-    resolver: yupResolver(orderSchema),
-    defaultValues: orderSchema.getDefault(),
+    resolver: yupResolver(createOrderSchema(user?.role)),
+    defaultValues: createOrderSchema(user?.role).getDefault(),
   });
 
   // Broker assignment states
@@ -297,8 +301,8 @@ const OrdersPage = () => {
           live: data.live,
         },
         priority: data.priority,
-        countryFilter: data.countryFilter,
-        genderFilter: data.genderFilter,
+        country: data.countryFilter,
+        gender: data.genderFilter,
         notes: data.notes,
         selectedClientNetwork: data.selectedClientNetwork,
         // Injection settings
@@ -1004,29 +1008,23 @@ const OrdersPage = () => {
                 )} />
               </Grid>
               <Grid item xs={12}>
-                <Controller name="country" control={control} render={({ field }) => (
-                  <FormControl fullWidth size="small" error={!!errors.country}>
-                    <InputLabel>Country Filter (Optional)</InputLabel>
+                <Controller name="countryFilter" control={control} render={({ field }) => (
+                  <FormControl fullWidth size="small" error={!!errors.countryFilter}>
+                    <InputLabel>Country Filter *</InputLabel>
                     <Select
                       {...field}
-                      label="Country Filter (Optional)"
+                      label="Country Filter *"
                       value={field.value || ''}
                     >
-                      <MenuItem value="">All Countries</MenuItem>
                       {getSortedCountries().map((country) => (
                         <MenuItem key={country.code} value={country.name}>
                           {country.name}
                         </MenuItem>
                       ))}
                     </Select>
-                    {errors.country?.message && (
+                    {errors.countryFilter?.message && (
                       <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                        {errors.country.message}
-                      </Typography>
-                    )}
-                    {!errors.country?.message && (
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
-                        Leave empty for all countries
+                        {errors.countryFilter.message}
                       </Typography>
                     )}
                   </FormControl>
@@ -1041,14 +1039,13 @@ const OrdersPage = () => {
                     control={control}
                     render={({ field }) => (
                       <FormControl fullWidth size="small" error={!!errors.selectedClientNetwork}>
-                        <InputLabel>Client Network (Optional)</InputLabel>
+                        <InputLabel>Client Network *</InputLabel>
                         <Select
                           {...field}
-                          label="Client Network (Optional)"
+                          label="Client Network *"
                           value={field.value || ''}
                           disabled={loadingClientNetworks}
                         >
-                          <MenuItem value="">All Client Networks</MenuItem>
                           {clientNetworks.map((network) => (
                             <MenuItem key={network._id} value={network._id}>
                               {network.name}
