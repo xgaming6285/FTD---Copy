@@ -203,30 +203,41 @@ class ManualLeadInjector:
                 print("INFO: Launching browser for manual injection...")
                 browser = p.chromium.launch(**self._setup_browser_config())
                 
-                # Create a new context with iPhone 14 Pro Max settings
-                iphone_14_pro_max = {
-                    'screen': {
-                        'width': 428,  # Standard iPhone width
-                        'height': 926  # Standard iPhone height
-                    },
-                    'viewport': {
-                        'width': 428,  # Adjusted to standard iPhone viewport width
-                        'height': 926  # Adjusted to show the form properly
-                    },
-                    'device_scale_factor': 3,
-                    'is_mobile': True,
-                    'has_touch': True,
-                    'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/605.1 NAVER(inapp; search; 2000; 12.12.50; 14PROMAX)',
-                }
+                # Get fingerprint configuration
+                fingerprint = lead_data.get('fingerprint')
+                if fingerprint:
+                    print(f"INFO: Using device fingerprint: {fingerprint.get('deviceId', 'unknown')} ({fingerprint.get('deviceType', 'unknown')})")
+                    device_config = self._create_device_config_from_fingerprint(fingerprint)
+                else:
+                    print("WARNING: No fingerprint configuration provided, using default iPhone 14 Pro Max settings")
+                    # Use default iPhone 14 Pro Max settings as fallback
+                    device_config = {
+                        'screen': {
+                            'width': 428,
+                            'height': 926
+                        },
+                        'viewport': {
+                            'width': 428,
+                            'height': 926
+                        },
+                        'device_scale_factor': 3,
+                        'is_mobile': True,
+                        'has_touch': True,
+                        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/605.1 NAVER(inapp; search; 2000; 12.12.50; 14PROMAX)',
+                    }
                 
-                # Add additional context options to ensure proper rendering
+                # Create context with device configuration
                 context = browser.new_context(
-                    **iphone_14_pro_max,
+                    **device_config,
                     locale="en-US"
                 )
                 
                 # Create a new page
                 page = context.new_page()
+                
+                # Apply fingerprint properties if available
+                if fingerprint:
+                    self._apply_fingerprint_to_page(page, fingerprint)
                 
                 # Set content size to ensure proper rendering
                 page.evaluate("""() => {
@@ -316,6 +327,71 @@ class ManualLeadInjector:
                     browser.close()
                 except:
                     pass
+
+    def _create_device_config_from_fingerprint(self, fingerprint):
+        """Create Playwright device configuration from fingerprint data."""
+        screen = fingerprint.get('screen', {})
+        navigator = fingerprint.get('navigator', {})
+        mobile = fingerprint.get('mobile', {})
+        
+        return {
+            'screen': {
+                'width': screen.get('width', 428),
+                'height': screen.get('height', 926)
+            },
+            'viewport': {
+                'width': screen.get('availWidth', screen.get('width', 428)),
+                'height': screen.get('availHeight', screen.get('height', 926))
+            },
+            'device_scale_factor': screen.get('devicePixelRatio', 1),
+            'is_mobile': mobile.get('isMobile', False),
+            'has_touch': navigator.get('maxTouchPoints', 0) > 0,
+            'user_agent': navigator.get('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+        }
+
+    def _apply_fingerprint_to_page(self, page, fingerprint):
+        """Apply fingerprint properties to the page context."""
+        try:
+            # Set injection mode flag first (most important)
+            page.evaluate("() => { localStorage.setItem('isInjectionMode', 'true'); }")
+            print("INFO: Set injection mode flag for the landing page")
+            
+            # Try to apply fingerprint properties (non-critical if it fails)
+            navigator = fingerprint.get('navigator', {})
+            screen = fingerprint.get('screen', {})
+            
+            # Simple approach - just set the essential properties
+            platform = json.dumps(navigator.get('platform', 'Win32'))
+            user_agent = json.dumps(navigator.get('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'))
+            
+            page.evaluate(f"""() => {{
+                try {{
+                    // Set basic navigator properties
+                    Object.defineProperty(navigator, 'platform', {{
+                        get: () => {platform}
+                    }});
+                    
+                    // Set injection mode flag (redundant but important)
+                    localStorage.setItem('isInjectionMode', 'true');
+                    
+                    console.log('Fingerprint properties applied successfully');
+                }} catch (error) {{
+                    console.error('Error applying fingerprint:', error);
+                    // Ensure injection mode is still set
+                    localStorage.setItem('isInjectionMode', 'true');
+                }}
+            }};""")
+            
+            print(f"INFO: Applied fingerprint properties for device: {fingerprint.get('deviceId', 'unknown')}")
+            
+        except Exception as e:
+            print(f"WARNING: Failed to apply fingerprint properties: {str(e)}")
+            # Always ensure injection mode is set
+            try:
+                page.evaluate("() => { localStorage.setItem('isInjectionMode', 'true'); }")
+                print("INFO: Set injection mode flag despite fingerprint error")
+            except Exception as e2:
+                print(f"WARNING: Could not set injection mode flag: {str(e2)}")
 
 def main():
     """Main execution function."""

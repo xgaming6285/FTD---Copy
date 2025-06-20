@@ -2870,6 +2870,110 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
       });
     }
 
+    // Assign device fingerprint if not already assigned
+    if (!lead.fingerprint) {
+      try {
+        console.log(`[DEBUG] Assigning device fingerprint to FTD lead ${lead._id}`);
+
+        const deviceConfig = order.injectionSettings?.deviceConfig || {};
+        let deviceType = "android"; // Default device type
+
+        // Determine device type based on configuration
+        if (
+          deviceConfig.selectionMode === "bulk" &&
+          deviceConfig.bulkDeviceType
+        ) {
+          deviceType = deviceConfig.bulkDeviceType;
+        } else if (
+          deviceConfig.selectionMode === "individual" &&
+          deviceConfig.individualAssignments
+        ) {
+          const assignment = deviceConfig.individualAssignments.find(
+            (assign) => assign.leadId.toString() === lead._id.toString()
+          );
+          if (assignment) {
+            deviceType = assignment.deviceType;
+          }
+        } else if (
+          deviceConfig.selectionMode === "ratio" &&
+          deviceConfig.deviceRatio
+        ) {
+          // For ratio mode, use random selection based on available types
+          const availableTypes = Object.keys(deviceConfig.deviceRatio).filter(
+            (type) => deviceConfig.deviceRatio[type] > 0
+          );
+          if (availableTypes.length > 0) {
+            deviceType =
+              availableTypes[Math.floor(Math.random() * availableTypes.length)];
+          }
+        } else {
+          // Random selection from available types
+          const availableTypes = deviceConfig.availableDeviceTypes || [
+            "windows",
+            "android",
+            "ios",
+            "mac",
+          ];
+          deviceType =
+            availableTypes[Math.floor(Math.random() * availableTypes.length)];
+        }
+
+        // Validate deviceType before assignment
+        const validDeviceTypes = ["windows", "android", "ios", "mac"];
+        if (!deviceType || !validDeviceTypes.includes(deviceType)) {
+          console.log(`[WARN] Invalid deviceType '${deviceType}', using default 'android'`);
+          deviceType = "android";
+        }
+
+        console.log(`[DEBUG] Using deviceType: ${deviceType} for FTD lead ${lead._id}`);
+
+        await lead.assignFingerprint(deviceType, order.requester);
+        await lead.save();
+
+        console.log(
+          `[DEBUG] Assigned ${deviceType} device to FTD lead ${lead._id}`
+        );
+      } catch (error) {
+        console.error(
+          `[ERROR] Failed to assign device fingerprint to FTD lead ${lead._id}:`,
+          error
+        );
+        // Continue with injection using default fingerprint
+      }
+    }
+
+    // Get fingerprint configuration for injection
+    let fingerprintConfig = null;
+    if (lead.fingerprint) {
+      try {
+        const fingerprint = await lead.getFingerprint();
+        if (fingerprint) {
+          fingerprintConfig = {
+            deviceId: fingerprint.deviceId,
+            deviceType: fingerprint.deviceType,
+            browser: fingerprint.browser,
+            screen: fingerprint.screen,
+            navigator: fingerprint.navigator,
+            webgl: fingerprint.webgl,
+            canvasFingerprint: fingerprint.canvasFingerprint,
+            audioFingerprint: fingerprint.audioFingerprint,
+            timezone: fingerprint.timezone,
+            plugins: fingerprint.plugins,
+            mobile: fingerprint.mobile,
+            additional: fingerprint.additional,
+          };
+          console.log(
+            `[DEBUG] Using fingerprint ${fingerprint.deviceId} for FTD lead ${lead._id}`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[ERROR] Failed to get fingerprint for FTD lead ${lead._id}:`,
+          error
+        );
+      }
+    }
+
     // Prepare injection data for the manual script
     const injectionData = {
       leadId: lead._id.toString(),
@@ -2880,6 +2984,7 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
       country: lead.country,
       country_code: lead.prefix?.replace('+', '') || '1',
       targetUrl: process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
+      fingerprint: fingerprintConfig, // Include fingerprint configuration
       proxy: null // No proxy for manual injection to keep it simple
     };
 
@@ -2929,6 +3034,10 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
           email: lead.newEmail,
           phone: lead.newPhone || lead.phone,
           country: lead.country,
+        },
+        deviceInfo: {
+          deviceType: lead.deviceType,
+          fingerprintId: lead.fingerprint
         }
       }
     });
