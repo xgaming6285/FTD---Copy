@@ -854,493 +854,241 @@ class LeadInjector:
             if not self.proxy_config:
                 print("WARNING: No proxy configuration available. Proceeding without proxy for testing.")
             
-            # Get fingerprint configuration from lead data
-            fingerprint_config = lead_data.get('fingerprint', {})
-            if not fingerprint_config:
-                print("WARNING: No fingerprint configuration provided. Using default mobile settings.")
-                fingerprint_config = self._get_default_fingerprint()
-            
             with sync_playwright() as p:
                 # Launch browser with configuration
                 print("INFO: Launching browser...")
                 browser = p.chromium.launch(**self._setup_browser_config())
                 
-                # Create context with fingerprint settings
-                device_config = self._create_device_config_from_fingerprint(fingerprint_config)
-                print(f"INFO: Using device configuration: {fingerprint_config.get('deviceType', 'unknown')} - {fingerprint_config.get('deviceId', 'unknown')}")
+                # Create a new context with iPhone 14 Pro Max settings
+                iphone_14_pro_max = {
+                    'screen': {
+                        'width': 428,  # Standard iPhone width
+                        'height': 926  # Standard iPhone height
+                    },
+                    'viewport': {
+                        'width': 428,  # Adjusted to standard iPhone viewport width
+                        'height': 926  # Adjusted to show the form properly
+                    },
+                    'device_scale_factor': 3,
+                    'is_mobile': True,
+                    'has_touch': True,
+                    'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/605.1 NAVER(inapp; search; 2000; 12.12.50; 14PROMAX)',
+                }
                 
+                # Add additional context options to ensure proper rendering
                 context = browser.new_context(
-                    **device_config,
+                    **iphone_14_pro_max,
                     locale="en-US"
                 )
                 
                 # Create a new page
                 page = context.new_page()
                 
-                # Set viewport meta tag for proper rendering
+                # Set content size to ensure proper rendering
                 page.evaluate("""() => {
                     const meta = document.createElement('meta');
                     meta.name = 'viewport';
                     meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
                     document.head.appendChild(meta);
                 }""")
-                
-                # Apply fingerprint properties to the page (before navigation)
-                # Skip fingerprint for now to avoid localStorage issues
-                print("INFO: Skipping fingerprint application to avoid localStorage issues")
-                
+
                 # Navigate to target URL with retries
                 print(f"INFO: Navigating to target URL: {target_url}")
-                
                 success = False
                 for attempt in range(MAX_RETRIES):
                     try:
-                        # Check proxy health before navigation (skip if no proxy)
-                        if self.proxy_config and not self._check_proxy_health():
-                            print("ERROR: Proxy health check failed. Session terminated.")
-                            return False
-                        
-                        page.goto(target_url, wait_until="networkidle", timeout=30000)
+                        page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
                         success = True
                         break
                     except Exception as e:
-                        if "proxy" in str(e).lower() or "timeout" in str(e).lower():
-                            print(f"WARNING: Proxy may have expired during navigation. Error: {str(e)}")
-                            if not self._handle_proxy_expiration():
-                                return False
-                        
-                        print(f"WARNING: Navigation attempt {attempt + 1} failed: {str(e)}")
+                        print(f"WARNING: Failed to navigate on attempt {attempt+1}/{MAX_RETRIES}: {str(e)}")
                         if attempt < MAX_RETRIES - 1:
-                            print(f"INFO: Retrying in {RETRY_DELAY} seconds...")
+                            print(f"Retrying in {RETRY_DELAY} seconds...")
                             time.sleep(RETRY_DELAY)
-                        else:
-                            print("ERROR: All navigation attempts failed")
-                            return False
-                
+
                 if not success:
+                    print("ERROR: Failed to navigate to target URL after multiple attempts")
                     return False
-                
-                # Take initial screenshot
-                self._take_screenshot(page, "initial_load")
-                
-                                # Debug: Check page title and URL
-                print(f"INFO: Page title: {page.title()}")
-                print(f"INFO: Current URL: {page.url}")
-                
-                # Debug: Check if page has any content
-                try:
-                    body_content = page.locator('body').inner_text()
-                    if len(body_content) < 100:
-                        print(f"WARNING: Page seems to have minimal content: {body_content[:200]}...")
-                    else:
-                        print("INFO: Page appears to have loaded with content")
-                except Exception as e:
-                    print(f"WARNING: Could not check page content: {str(e)}")
-                
-                # Debug: Check for JavaScript errors
-                try:
-                    console_logs = []
-                    def handle_console(msg):
-                        console_logs.append(f"{msg.type}: {msg.text}")
-                    
-                    page.on("console", handle_console)
-                    
-                    # Check for any React/JavaScript errors
-                    js_errors = page.evaluate("""() => {
-                        const errors = [];
-                        
-                        // Check if React is loaded
-                        if (typeof window.React !== 'undefined') {
-                            errors.push('React is loaded');
-                        } else {
-                            errors.push('React is not loaded');
-                        }
-                        
-                        // Check if there's a root element
-                        const root = document.getElementById('root');
-                        if (root) {
-                            errors.push(`Root element found with ${root.children.length} children`);
-                        } else {
-                            errors.push('No root element found');
-                        }
-                        
-                        // Check for any visible form elements
-                        const forms = document.querySelectorAll('form, [data-testid="landingForm"]');
-                        errors.push(`Found ${forms.length} form elements`);
-                        
-                        const inputs = document.querySelectorAll('input');
-                        errors.push(`Found ${inputs.length} input elements`);
-                        
-                        return errors;
-                    }""")
-                    
-                    print("DEBUG: JavaScript analysis:")
-                    for error in js_errors:
-                        print(f"  - {error}")
-                        
-                except Exception as e:
-                    print(f"WARNING: Could not analyze JavaScript: {str(e)}")
-                
-                # Set injection mode flag after page loads
-                try:
-                    page.evaluate("() => { localStorage.setItem('isInjectionMode', 'true'); }")
-                    print("INFO: Set injection mode flag after page load")
-                except Exception as e:
-                    print(f"WARNING: Could not set injection mode flag: {str(e)}")
-                
-                # Verify proxy and device simulation
-                verification_result = self._verify_proxy_and_device(page)
-                if not verification_result:
-                    print("WARNING: Proxy and device verification failed, but continuing...")
-                
-                # Fill form fields with human-like behavior
-                print("INFO: Filling form fields...")
+
+                # Take a screenshot after page load
+                self._take_screenshot(page, "initial_page_load")
+
+                # Reduce break time for testing
+                print("INFO: Taking a short break...")
+                time.sleep(3)
+                print("\nINFO: Break finished, continuing with form filling...")
                 
                 try:
-                    # Debug info about the form fields
-                    for key, value in lead_data.items():
-                        print(f"DEBUG: {key}: {value}")
-                    
-                    # Wait for the page to fully load and React components to render
-                    print("INFO: Waiting for React components to load...")
-                    page.wait_for_load_state('networkidle', timeout=30000)
-                    
-                    # Additional wait for React components to render
-                    time.sleep(5)
-                    
-                    # Take screenshot to see current state
-                    self._take_screenshot(page, "before_form_interaction")
-                    
-                    # Try multiple selectors for form fields in case of dynamic rendering
-                    print("INFO: Looking for form fields...")
-                    
-                    # Wait for React app to fully mount - look for any input fields
-                    print("INFO: Waiting for React app to mount and render form fields...")
-                    for attempt in range(10):  # Try for up to 30 seconds (10 attempts * 3 seconds)
-                        try:
-                            # Check if any input fields are present
-                            inputs = page.locator('input').all()
-                            if len(inputs) > 0:
-                                print(f"INFO: Found {len(inputs)} input fields after {attempt * 3} seconds")
+                    # Check if the form is visible
+                    form_visible = page.is_visible('form[id="landingForm"], form[data-testid="landingForm"]')
+                    if not form_visible:
+                        print("WARNING: Form not immediately visible, trying to find it...")
+                        # Try to scroll to find the form
+                        page.evaluate("window.scrollTo(0, 0);")
+                        time.sleep(1)
+                        # Try to find the form by scrolling down
+                        for i in range(5):
+                            page.evaluate(f"window.scrollTo(0, {i * 200});")
+                            time.sleep(0.5)
+                            if page.is_visible('form[id="landingForm"], form[data-testid="landingForm"], #firstName'):
+                                print(f"INFO: Form found after scrolling {i * 200}px")
+                                form_visible = True
                                 break
-                            else:
-                                print(f"INFO: No input fields found yet, waiting... (attempt {attempt + 1}/10)")
-                                time.sleep(3)
-                        except Exception as e:
-                            print(f"WARNING: Error checking for input fields: {str(e)}")
-                            time.sleep(3)
-                    
-                    # Wait for the form container 
+
+                        # Take another screenshot after scrolling
+                        self._take_screenshot(page, "after_scrolling")
+
+                        # If still not visible, try to adjust zoom
+                        if not form_visible:
+                            print("WARNING: Form still not visible, trying to adjust zoom...")
+                            page.evaluate("document.body.style.zoom = '80%'")
+                            time.sleep(1)
+                            self._take_screenshot(page, "after_zoom_adjustment")
+
+                    # Fill form fields with human-like behavior
+                    print("INFO: Filling form fields...")
                     try:
-                        page.wait_for_selector('[data-testid="landingForm"], form, #landingForm', timeout=15000)
-                        print("INFO: Found landing form container")
-                    except:
-                        print("WARNING: Could not find landing form container, proceeding anyway")
-                    
-                    # Additional wait for Material-UI components to render
-                    print("INFO: Waiting for Material-UI components to fully render...")
-                    time.sleep(3)
-                    
-                    # Helper function to find form fields with multiple strategies
-                    def find_form_field(field_name, field_label, timeout=30000):
-                        selectors = [
-                            f'#{field_name}',
-                            f'[data-testid="{field_name}"]',
-                            f'input[name="{field_name}"]',
-                            f'input[placeholder*="{field_label.lower()}" i]',
-                            f'input[aria-label*="{field_label}" i]',
-                            f'input[id*="{field_name}" i]',
-                            # Material-UI specific selectors
-                            f'.MuiTextField-root input[name="{field_name}"]',
-                            f'.MuiTextField-root input#{field_name}',
-                            f'.MuiOutlinedInput-input[name="{field_name}"]'
-                        ]
-                        
-                        for selector in selectors:
-                            try:
-                                element = page.wait_for_selector(selector, timeout=3000)
-                                if element and element.is_visible():
-                                    print(f"INFO: Found {field_name} field using selector: {selector}")
-                                    return element
-                            except:
-                                continue
-                        
-                        # Last resort: try to find any visible input field that might match
-                        try:
-                            # Get all input elements and check them one by one
-                            all_inputs = page.query_selector_all('input')
-                            print(f"DEBUG: Found {len(all_inputs)} total input elements")
-                            
-                            for i, input_elem in enumerate(all_inputs):
-                                try:
-                                    if input_elem.is_visible():
-                                        attrs = {
-                                            'id': input_elem.get_attribute('id') or '',
-                                            'name': input_elem.get_attribute('name') or '',
-                                            'placeholder': input_elem.get_attribute('placeholder') or '',
-                                            'aria-label': input_elem.get_attribute('aria-label') or '',
-                                            'type': input_elem.get_attribute('type') or ''
-                                        }
-                                        print(f"DEBUG: Input {i}: {attrs}")
-                                        
-                                        # Check if any attribute matches our field
-                                        for attr_value in attrs.values():
-                                            if attr_value and (field_name.lower() in attr_value.lower() or field_label.lower() in attr_value.lower()):
-                                                print(f"INFO: Found {field_name} field by attribute matching: {attrs}")
-                                                return input_elem
-                                        
-                                        # For firstName, also try the first text input
-                                        if field_name == "firstName" and attrs.get('type') in ['text', ''] and i == 0:
-                                            print(f"INFO: Using first text input as {field_name}: {attrs}")
-                                            return input_elem
-                                            
-                                except Exception as e:
-                                    print(f"DEBUG: Error checking input {i}: {str(e)}")
-                                    continue
-                        except Exception as e:
-                            print(f"DEBUG: Error in fallback field search: {str(e)}")
-                        
-                        return None
-                    
-                    # Wait for form fields and fill them
-                    print("INFO: Looking for firstName field...")
-                    first_name = find_form_field("firstName", "First Name")
-                    
-                    if not first_name:
-                        print("ERROR: Could not find firstName field with any method")
-                        self._take_screenshot(page, "form_not_found")
-                        # Debug: List all input fields on the page
-                        try:
-                            inputs = page.locator('input').all()
-                            print(f"DEBUG: Found {len(inputs)} input fields on page")
-                            for i, input_elem in enumerate(inputs):
-                                try:
-                                    attrs = {
-                                        'id': input_elem.get_attribute('id'),
-                                        'name': input_elem.get_attribute('name'),
-                                        'placeholder': input_elem.get_attribute('placeholder'),
-                                        'type': input_elem.get_attribute('type'),
-                                        'aria-label': input_elem.get_attribute('aria-label'),
-                                        'visible': input_elem.is_visible()
-                                    }
-                                    print(f"DEBUG: Input {i}: {attrs}")
-                                except:
-                                    pass
-                        except Exception as debug_error:
-                            print(f"DEBUG: Could not list input fields: {str(debug_error)}")
-                        return False
-                        
-                    print("INFO: Found firstName field, filling...")
-                    self._human_like_typing(first_name, lead_data["firstName"])
-                    
-                    print("INFO: Looking for lastName field...")
-                    last_name = find_form_field("lastName", "Last Name")
-                    if not last_name:
-                        print("ERROR: Could not find lastName field")
-                        return False
-                    print("INFO: Found lastName field, filling...")
-                    self._human_like_typing(last_name, lead_data["lastName"])
-                    
-                    print("INFO: Looking for email field...")
-                    email = find_form_field("email", "Email")
-                    if not email:
-                        print("ERROR: Could not find email field")
-                        return False
-                    print("INFO: Found email field, filling...")
-                    self._human_like_typing(email, lead_data["email"])
+                        # Debug info about the form fields
+                        for key, value in lead_data.items():
+                            print(f"DEBUG: {key}: {value}")
 
-                    # Determine phone prefix to use
-                    phone_code_from_lead = lead_data.get('country_code')
-                    country_name_from_lead = lead_data.get('country')
-                    phone_code_to_use = None
+                        # Wait for form fields and fill them - using proper selectors from LandingPage.jsx
+                        first_name = page.wait_for_selector('#firstName', timeout=30000)
+                        if not first_name:
+                            print("ERROR: Could not find firstName field")
+                            self._take_screenshot(page, "form_not_found")
+                            return False
+                        self._human_like_typing(first_name, lead_data["firstName"])
 
-                    # Prioritize country name to get phone code
-                    if country_name_from_lead and country_name_from_lead in COUNTRY_TO_PHONE_CODE:
-                        phone_code_to_use = COUNTRY_TO_PHONE_CODE[country_name_from_lead]
-                    elif phone_code_from_lead:
-                        # Fallback to the one from lead data
-                        phone_code_to_use = phone_code_from_lead
-                        print(f"WARNING: Country '{country_name_from_lead}' not in phone code mapping. Using provided country_code: {phone_code_to_use}")
+                        last_name = page.wait_for_selector('#lastName', timeout=30000)
+                        self._human_like_typing(last_name, lead_data["lastName"])
 
-                    # Check if country_code exists and isn't empty
-                    if phone_code_to_use:
-                        # Format the country code with a plus sign if it doesn't have one
-                        code = str(phone_code_to_use)
-                        if not code.startswith('+'):
-                            code = f"+{code}"
-                            
-                        print(f"INFO: Selecting country code {code}")
-                        
-                        # Find the prefix dropdown using multiple strategies
-                        print("INFO: Looking for prefix dropdown...")
-                        prefix_dropdown = None
-                        prefix_selectors = [
-                            '#prefix',
-                            '[data-testid="prefix"]',
-                            '[aria-labelledby="prefix-label"]',
-                            '.MuiSelect-select[name="prefix"]',
-                            'div[role="button"][aria-labelledby="prefix-label"]'
-                        ]
-                        
-                        for selector in prefix_selectors:
-                            try:
-                                prefix_dropdown = page.wait_for_selector(selector, timeout=5000)
-                                if prefix_dropdown and prefix_dropdown.is_visible():
-                                    print(f"INFO: Found prefix dropdown using selector: {selector}")
-                                    break
-                            except:
-                                continue
-                        
-                        if prefix_dropdown:
-                            prefix_dropdown.click()
+                        email = page.wait_for_selector('#email', timeout=30000)
+                        self._human_like_typing(email, lead_data["email"])
+
+                        # Determine phone prefix to use
+                        phone_code_from_lead = lead_data.get('country_code')
+                        country_name_from_lead = lead_data.get('country')
+                        phone_code_to_use = None
+
+                        # Prioritize country name to get phone code
+                        if country_name_from_lead and country_name_from_lead in COUNTRY_TO_PHONE_CODE:
+                            phone_code_to_use = COUNTRY_TO_PHONE_CODE[country_name_from_lead]
+                        elif phone_code_from_lead:
+                            # Fallback to the one from lead data
+                            phone_code_to_use = phone_code_from_lead
+                            print(f"WARNING: Country '{country_name_from_lead}' not in phone code mapping. Using provided country_code: {phone_code_to_use}")
+
+                        # Check if country_code exists and isn't empty
+                        if phone_code_to_use:
+                            # Format the country code with a plus sign if it doesn't have one
+                            code = str(phone_code_to_use)
+                            if not code.startswith('+'):
+                                code = f"+{code}"
+                            print(f"INFO: Selecting country code {code}")
+
+                            # Click the dropdown to open it
+                            page.click('#prefix')
                             # Wait for dropdown to open
-                            time.sleep(2)
-                            
+                            time.sleep(1)
+
                             # Find the correct country code option
                             try:
                                 clean_code = code.replace('+', '')
-                                option_selectors = [
-                                    f'[data-testid="prefix-option-{clean_code}"]',
-                                    f'li[data-value="{code}"]',
-                                    f'li[role="option"]:has-text("{code}")',
-                                    f'.MuiMenuItem-root:has-text("{code}")'
-                                ]
-                                
-                                option_selected = False
-                                for option_selector in option_selectors:
-                                    try:
-                                        option = page.wait_for_selector(option_selector, timeout=3000)
-                                        if option and option.is_visible():
-                                            option.click()
-                                            print(f"INFO: Selected country code {code} using selector: {option_selector}")
-                                            option_selected = True
-                                            break
-                                    except:
-                                        continue
-                                
-                                if not option_selected:
-                                    print(f"WARNING: Could not select country code {code}, using fallback")
-                                    # Try to select the first available option
-                                    try:
-                                        first_option = page.wait_for_selector('li[role="option"]:first-child, .MuiMenuItem-root:first-child', timeout=3000)
-                                        if first_option:
-                                            first_option.click()
-                                    except:
-                                        print("WARNING: Could not select any country code option")
-                                
+                                selector = f'[data-testid="prefix-option-{clean_code}"]'
+                                print(f"INFO: Using selector {selector}")
+                                page.click(selector)
                             except Exception as e:
-                                print(f"WARNING: Error selecting country code {code}: {str(e)}")
-                        else:
-                            print("WARNING: Could not find prefix dropdown")
+                                print(f"WARNING: Could not select country code {code}: {str(e)}")
+                                # Use first option as fallback
+                                page.click('[data-testid="prefix-option-1"]')
 
-                    # Find and fill phone field
-                    phone_number = lead_data['phone']
-                    print("INFO: Looking for phone field...")
-                    phone = find_form_field("phone", "Phone")
-                    if not phone:
-                        print("ERROR: Could not find phone field")
-                        return False
-                    print("INFO: Found phone field, filling...")
-                    self._human_like_typing(phone, phone_number)
+                        phone_number = lead_data['phone']
+                        phone = page.wait_for_selector('#phone', timeout=30000)
+                        self._human_like_typing(phone, phone_number)
                     
-                    # Take a screenshot before submission
-                    self._take_screenshot(page, "before_submission")
-                    
-                    # Set injection mode flag
-                    page.evaluate("window.localStorage.setItem('isInjectionMode', 'true')")
-                    
-                    # Random delay before submission
-                    time.sleep(random.uniform(1, 2))
-                    
-                    # Submit form
-                    print("INFO: Looking for submit button...")
-                    submit_button = None
-                    submit_selectors = [
-                        '#submitBtn',
-                        '[data-testid="submitBtn"]',
-                        'button[type="submit"]',
-                        'button:has-text("Submit")',
-                        '.MuiButton-root[type="submit"]'
-                    ]
-                    
-                    for selector in submit_selectors:
+                        # Take a screenshot before submission
+                        self._take_screenshot(page, "before_submission")
+                        
+                        # Set injection mode flag
+                        page.evaluate("window.localStorage.setItem('isInjectionMode', 'true')")
+                        
+                        # Random delay before submission
+                        time.sleep(random.uniform(1, 2))
+                        
+                        # Submit form
+                        submit_button = page.wait_for_selector('#submitBtn', timeout=30000)
+                        submit_button.click()
+                        
+                        # Wait for success indication - the Thank You message appears when form is submitted
                         try:
-                            submit_button = page.wait_for_selector(selector, timeout=5000)
-                            if submit_button and submit_button.is_visible():
-                                print(f"INFO: Found submit button using selector: {selector}")
-                                break
-                        except:
-                            continue
-                    
-                    if not submit_button:
-                        print("ERROR: Could not find submit button")
-                        return False
-                    
-                    print("INFO: Found submit button, clicking...")
-                    submit_button.click()
-                    
-                    # Wait for success indication - the Thank You message appears when form is submitted
-                    try:
-                        # Wait for the success message to appear
-                        success_message = page.wait_for_selector('text="Thank You!"', timeout=30000)
-                        if success_message:
-                            print("SUCCESS: Form submitted successfully")
-                            self._take_screenshot(page, "success")
-                            
-                            # Wait 20 seconds for the final redirect to complete
-                            print("INFO: Waiting 20 seconds for final redirect...")
-                            
-                            # Take periodic screenshots during the wait to monitor redirects
-                            for i in range(4):  # 4 checks over 20 seconds (every 5 seconds)
-                                time.sleep(5)
-                                current_url = page.url
-                                print(f"INFO: URL after {(i+1)*5} seconds: {current_url}")
-                                self._take_screenshot(page, f"redirect_check_{i+1}")
-                            
-                            # Get the final domain after all redirects
-                            final_url = page.url
-                            print(f"INFO: Final URL after 20 seconds: {final_url}")
-                            
-                            # Extract domain from URL
-                            parsed_url = urlparse(final_url)
-                            final_domain = parsed_url.netloc
-                            
-                            # Validate domain
-                            if not final_domain or final_domain == "ftd-copy.vercel.app":
-                                print(f"WARNING: Final domain appears to be the original form domain: {final_domain}")
-                                print("INFO: This might indicate no redirect occurred or redirect failed")
-                            
-                            print(f"SUCCESS: Final domain captured: {final_domain}")
-                            self._take_screenshot(page, "final_redirect")
-                            
-                            # Store the final domain in a way the backend can access it
-                            # We'll output it in a specific format the backend can parse
-                            print(f"FINAL_DOMAIN:{final_domain}")
-                            
-                            # Verify proxy and device simulation
-                            verification_result = self._verify_proxy_and_device(page)
-                            if verification_result:
-                                print("INFO: Proxy and device verification completed")
+                            # Wait for the success message to appear
+                            success_message = page.wait_for_selector('text="Thank You!"', timeout=30000)
+                            if success_message:
+                                print("SUCCESS: Form submitted successfully")
+                                self._take_screenshot(page, "success")
+                                
+                                # Wait 20 seconds for the final redirect to complete
+                                print("INFO: Waiting 20 seconds for final redirect...")
+                                
+                                # Take periodic screenshots during the wait to monitor redirects
+                                for i in range(4):  # 4 checks over 20 seconds (every 5 seconds)
+                                    time.sleep(5)
+                                    current_url = page.url
+                                    print(f"INFO: URL after {(i+1)*5} seconds: {current_url}")
+                                    self._take_screenshot(page, f"redirect_check_{i+1}")
+                                
+                                # Get the final domain after all redirects
+                                final_url = page.url
+                                print(f"INFO: Final URL after 20 seconds: {final_url}")
+                                
+                                # Extract domain from URL
+                                parsed_url = urlparse(final_url)
+                                final_domain = parsed_url.netloc
+                                
+                                # Validate domain
+                                if not final_domain or final_domain == "ftd-copy.vercel.app":
+                                    print(f"WARNING: Final domain appears to be the original form domain: {final_domain}")
+                                    print("INFO: This might indicate no redirect occurred or redirect failed")
+                                
+                                print(f"SUCCESS: Final domain captured: {final_domain}")
+                                self._take_screenshot(page, "final_redirect")
+                                
+                                # Store the final domain in a way the backend can access it
+                                # We'll output it in a specific format the backend can parse
+                                print(f"FINAL_DOMAIN:{final_domain}")
+                                
+                                # Verify proxy and device simulation
+                                if self.proxy_config:
+                                    verification_result = self._verify_proxy_and_device(page)
+                                    if verification_result:
+                                        print("INFO: Proxy and device verification completed")
+                                    else:
+                                        print("WARNING: Proxy and device verification failed")
+                                
+                                return True
                             else:
-                                print("WARNING: Proxy and device verification failed")
-                            
-                            return True
-                        else:
-                            # Check for error message
-                            error_message = page.query_selector('.MuiAlert-message')
-                            if error_message:
-                                error_text = error_message.inner_text()
-                                print(f"WARNING: Submission error - {error_text}")
-                                self._take_screenshot(page, "error")
-                            else:
-                                print("WARNING: Could not verify successful submission")
-                                self._take_screenshot(page, "unknown_state")
+                                # Check for error message
+                                error_message = page.query_selector('.MuiAlert-message')
+                                if error_message:
+                                    error_text = error_message.inner_text()
+                                    print(f"WARNING: Submission error - {error_text}")
+                                    self._take_screenshot(page, "error")
+                                else:
+                                    print("WARNING: Could not verify successful submission")
+                                    self._take_screenshot(page, "unknown_state")
+                                return False
+                        except Exception as e:
+                            print(f"WARNING: Could not verify successful submission - {str(e)}")
+                            self._take_screenshot(page, "verification_error")
                             return False
-                    except Exception as e:
-                        print(f"WARNING: Could not verify successful submission - {str(e)}")
-                        self._take_screenshot(page, "verification_error")
-                        return False
                     
+                    except Exception as e:
+                        print(f"ERROR: Form filling failed - {str(e)}")
+                        self._take_screenshot(page, "form_filling_error")
+                        traceback.print_exc()
+                        return False
+                        
                 except Exception as e:
                     print(f"ERROR: Form interaction failed - {str(e)}")
                     self._take_screenshot(page, "form_interaction_error")
