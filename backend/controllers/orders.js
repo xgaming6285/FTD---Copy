@@ -644,6 +644,7 @@ exports.createOrder = async (req, res, next) => {
           cold: true,
           live: true,
         },
+        deviceConfig: injectionSettings.deviceConfig || {},
       },
 
       // Add FTD handling and injection progress

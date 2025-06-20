@@ -68,31 +68,30 @@ router.post(
       .isLength({ max: 500 })
       .withMessage("Notes must be less than 500 characters"),
     body("country")
-      .optional({ nullable: true })
+      .notEmpty()
+      .withMessage("Country filter is required")
       .trim()
-      .custom((value) => {
-        if (value === null || value === "") {
-          return true;
-        }
-        if (value.length < 2) {
-          throw new Error("Country must be at least 2 characters");
-        }
-        return true;
-      }),
+      .isLength({ min: 2 })
+      .withMessage("Country must be at least 2 characters"),
     body("gender")
       .optional({ nullable: true })
       .isIn(["male", "female", "not_defined", null, ""])
       .withMessage("Gender must be male, female, not_defined, or empty"),
     body("selectedClientNetwork")
-      .optional({ nullable: true })
-      .custom((value) => {
-        if (value === null || value === "" || value === undefined) {
-          return true;
-        }
-        if (!mongoose.Types.ObjectId.isValid(value)) {
-          throw new Error(
-            "selectedClientNetwork must be a valid MongoDB ObjectId"
-          );
+      .custom((value, { req }) => {
+        // For affiliate managers, client network selection is required
+        if (req.user && req.user.role === "affiliate_manager") {
+          if (!value || value === "") {
+            throw new Error("Client network selection is required for affiliate managers");
+          }
+          if (!mongoose.Types.ObjectId.isValid(value)) {
+            throw new Error("selectedClientNetwork must be a valid MongoDB ObjectId");
+          }
+        } else {
+          // For other roles, it's optional but must be valid if provided
+          if (value && value !== "" && !mongoose.Types.ObjectId.isValid(value)) {
+            throw new Error("selectedClientNetwork must be a valid MongoDB ObjectId");
+          }
         }
         return true;
       }),
@@ -475,36 +474,6 @@ router.get(
       res.status(500).json({
         success: false,
         message: "Server error getting proxy statistics",
-        error: error.message,
-      });
-    }
-  }
-);
-
-// @desc    Handle expired proxies
-// @route   POST /api/v1/orders/handle-expired-proxies
-// @access  Private/Admin
-router.post(
-  "/handle-expired-proxies",
-  protect,
-  authorize("admin", "affiliate_manager"),
-  async (req, res) => {
-    try {
-      const ProxyManagementService = require("../services/proxyManagementService");
-
-      console.log("Handling expired proxies...");
-      const count = await ProxyManagementService.handleExpiredProxies();
-
-      res.status(200).json({
-        success: true,
-        message: `Handled ${count} expired proxies`,
-        data: { expiredProxiesHandled: count },
-      });
-    } catch (error) {
-      console.error("Error handling expired proxies:", error);
-      res.status(500).json({
-        success: false,
-        message: "Server error handling expired proxies",
         error: error.message,
       });
     }

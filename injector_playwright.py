@@ -1098,7 +1098,6 @@ class LeadInjector:
         except Exception as e:
             if "proxy" in str(e).lower():
                 print(f"ERROR: Proxy-related error during injection: {str(e)}")
-                self._handle_proxy_expiration()
             else:
                 print(f"ERROR: Browser initialization failed - {str(e)}")
             traceback.print_exc()
@@ -1212,15 +1211,7 @@ class LeadInjector:
             print(f"WARNING: Proxy health check failed: {str(e)}")
             return False
 
-    def _handle_proxy_expiration(self):
-        """Handle proxy expiration during session."""
-        print("INFO: Proxy appears to have expired during session.")
-        print("INFO: Session terminated due to proxy expiration.")
-        print("INFO: Please restart the injection process to get a new proxy.")
-        
-        # Output specific message that the backend can parse
-        print("PROXY_EXPIRED: Session ended due to proxy expiration")
-        return False
+
 
 def get_proxy_config(country_name):
     """Get proxy configuration from 922proxy API (fallback method)."""

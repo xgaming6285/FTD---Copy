@@ -50,7 +50,7 @@ const proxySchema = new mongoose.Schema(
     // Proxy status
     status: {
       type: String,
-      enum: ["active", "expired", "failed", "testing"],
+      enum: ["active", "failed", "testing"],
       default: "testing",
       index: true
     },
@@ -76,26 +76,6 @@ const proxySchema = new mongoose.Schema(
       firstUsedAt: {
         type: Date,
         default: Date.now
-      }
-    },
-    
-    // Expiration tracking
-    expiration: {
-      expiresAt: {
-        type: Date,
-        index: true
-      },
-      isExpired: {
-        type: Boolean,
-        default: false,
-        index: true
-      },
-      expiredAt: {
-        type: Date
-      },
-      autoExpireAfterHours: {
-        type: Number,
-        default: 24 // Auto-expire after 24 hours of first use
       }
     },
     
@@ -150,7 +130,7 @@ const proxySchema = new mongoose.Schema(
       },
       status: {
         type: String,
-        enum: ["active", "completed", "failed", "expired"],
+        enum: ["active", "completed", "failed"],
         default: "active"
       },
       completedAt: {
@@ -187,7 +167,6 @@ const proxySchema = new mongoose.Schema(
 // Indexes for performance
 proxySchema.index({ country: 1, status: 1 });
 proxySchema.index({ countryCode: 1, status: 1 });
-proxySchema.index({ "expiration.isExpired": 1, "expiration.expiresAt": 1 });
 proxySchema.index({ "health.isHealthy": 1, "health.lastHealthCheck": 1 });
 proxySchema.index({ "assignedLead.leadId": 1 });
 proxySchema.index({ "assignedLead.orderId": 1 });
@@ -202,7 +181,6 @@ proxySchema.virtual("description").get(function () {
 proxySchema.virtual("isAvailable").get(function () {
   return this.status === "active" && 
          this.health.isHealthy && 
-         !this.expiration.isExpired &&
          !this.assignedLead.leadId; // Proxy is available only if no lead is assigned
 });
 
@@ -234,9 +212,6 @@ proxySchema.statics.createFromConfig = async function(country, countryCode, crea
       sessionInfo: {
         sessionId: proxyConfig.sessionId,
         originalUsername: proxyConfig.originalUsername
-      },
-      expiration: {
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
       },
       createdBy
     };
@@ -350,39 +325,12 @@ proxySchema.methods.unassignLead = function(leadId, status = "completed") {
   return true;
 };
 
-// Method to check if proxy is expired
-proxySchema.methods.checkExpiration = function() {
-  const now = new Date();
-  
-  if (this.expiration.expiresAt && now > this.expiration.expiresAt) {
-    this.expiration.isExpired = true;
-    this.expiration.expiredAt = now;
-    this.status = "expired";
-    return true;
-  }
-  
-  return false;
-};
-
-// Method to extend proxy expiration
-proxySchema.methods.extendExpiration = function(hours = 24) {
-  const newExpirationTime = new Date(Date.now() + hours * 60 * 60 * 1000);
-  this.expiration.expiresAt = newExpirationTime;
-  this.expiration.isExpired = false;
-  this.expiration.expiredAt = null;
-  
-  if (this.status === "expired") {
-    this.status = "active";
-  }
-};
-
 // Static method to find available proxy for country
 proxySchema.statics.findAvailableProxy = async function(country, countryCode, leadType = "non-ftd") {
   const query = {
     country,
     status: "active",
     "health.isHealthy": true,
-    "expiration.isExpired": false,
     "assignedLead.leadId": { $exists: false } // Only find proxies with no assigned lead
   };
   
@@ -401,37 +349,25 @@ proxySchema.statics.findOrCreateProxy = async function(country, countryCode, cre
   }
 };
 
-// Static method to cleanup expired proxies
-proxySchema.statics.cleanupExpiredProxies = async function() {
-  const expiredProxies = await this.find({
-    $or: [
-      { "expiration.expiresAt": { $lt: new Date() } },
-      { status: "expired" },
-      { status: "failed" }
-    ]
+// Static method to cleanup failed proxies
+proxySchema.statics.cleanupFailedProxies = async function() {
+  const failedProxies = await this.find({
+    status: "failed"
   });
   
-  for (const proxy of expiredProxies) {
-    proxy.checkExpiration();
-    
+  for (const proxy of failedProxies) {
     // If proxy has no active connections, it can be safely removed
     if (proxy.usage.activeConnections === 0) {
       await proxy.deleteOne();
-      console.log(`Cleaned up expired proxy: ${proxy.description}`);
-    } else {
-      // Mark as expired but keep for active connections
-      await proxy.save();
+      console.log(`Cleaned up failed proxy: ${proxy.description}`);
     }
   }
   
-  return expiredProxies.length;
+  return failedProxies.length;
 };
 
 // Pre-save middleware
 proxySchema.pre("save", function(next) {
-  // Check expiration before saving
-  this.checkExpiration();
-  
   // Ensure active connections doesn't go negative
   if (this.usage.activeConnections < 0) {
     this.usage.activeConnections = 0;

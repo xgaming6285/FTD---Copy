@@ -287,7 +287,7 @@ const leadSchema = new mongoose.Schema(
       },
       status: {
         type: String,
-        enum: ["active", "completed", "expired", "failed"],
+        enum: ["active", "completed", "failed"],
         default: "active"
       },
       completedAt: {

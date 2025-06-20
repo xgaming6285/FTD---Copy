@@ -58,76 +58,60 @@ import LeadDetailCard from '../components/LeadDetailCard';
 // --- Best Practice: Define constants and schemas outside the component ---
 // This prevents them from being recreated on every render.
 
-// Validation schema for order creation
-const orderSchema = yup.object({
-  ftd: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  filler: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  cold: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  live: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  priority: yup.string().oneOf(['low', 'medium', 'high'], 'Invalid priority').default('medium'),
-  notes: yup.string(),
-  country: yup.string().nullable(),
-  gender: yup.string().oneOf(['', 'male', 'female', 'not_defined'], 'Invalid gender').nullable().default(''),
-  // Injection fields
-  enableInjection: yup.boolean().default(false),
-  injectionMode: yup.string().oneOf(['manual', 'bulk', 'scheduled'], 'Invalid injection mode').default('manual'),
-  injectionStartTime: yup.string().when('injectionMode', {
-    is: 'scheduled',
-    then: schema => schema.required('Start time is required for scheduled injection'),
-    otherwise: schema => schema
-  }),
-  injectionEndTime: yup.string().when('injectionMode', {
-    is: 'scheduled',
-    then: schema => schema.required('End time is required for scheduled injection'),
-    otherwise: schema => schema
-  }),
-  injectFiller: yup.boolean().default(true),
-  injectCold: yup.boolean().default(true),
-  injectLive: yup.boolean().default(true),
-  // Device configuration fields
-  deviceSelectionMode: yup.string().oneOf(['random', 'bulk', 'ratio', 'individual'], 'Invalid device selection mode').default('random'),
-  bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac', 'linux'], 'Invalid device type').when('deviceSelectionMode', {
-    is: 'bulk',
-    then: schema => schema.required('Device type is required for bulk mode'),
-    otherwise: schema => schema
-  }),
-  deviceRatio: yup.object({
-    windows: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-    android: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-    ios: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-    mac: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-    linux: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
-  }),
-  availableDeviceTypes: yup.object({
-    windows: yup.boolean().default(true),
-    android: yup.boolean().default(true),
-    ios: yup.boolean().default(true),
-    mac: yup.boolean().default(true),
-    linux: yup.boolean().default(true),
-  }),
-  // Proxy configuration fields
-  ftdProxySharing: yup.boolean().default(true),
-  maxFTDsPerProxy: yup.number().min(1, 'Must be at least 1').max(10, 'Must be 10 or less').integer('Must be a whole number').default(3),
-  proxyExpireHours: yup.number().min(1, 'Must be at least 1 hour').max(168, 'Must be 168 hours or less').integer('Must be a whole number').default(24),
-  shareByCountry: yup.boolean().default(true),
-}).test('at-least-one', 'At least one lead type must be requested', (value) => {
-  return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
-}).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
-  if (value.enableInjection) {
-    return value.injectFiller || value.injectCold || value.injectLive;
-  }
-  return true;
-}).test('device-ratio', 'At least one device ratio must be greater than 0 for ratio mode', (value) => {
-  if (value.deviceSelectionMode === 'ratio') {
-    return Object.values(value.deviceRatio || {}).some(ratio => ratio > 0);
-  }
-  return true;
-}).test('available-devices', 'At least one device type must be selected for random mode', (value) => {
-  if (value.deviceSelectionMode === 'random') {
-    return Object.values(value.availableDeviceTypes || {}).some(enabled => enabled);
-  }
-  return true;
-});
+// Function to create validation schema based on user role
+const createOrderSchema = (userRole) => {
+  return yup.object({
+    ftd: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    filler: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    cold: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    live: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    priority: yup.string().oneOf(['low', 'medium', 'high']).default('medium'),
+    countryFilter: yup.string().required('Country filter is required').min(2, 'Country must be at least 2 characters'),
+    genderFilter: yup.string().oneOf(['', 'male', 'female']).default(''),
+    notes: yup.string().default(''),
+    selectedClientNetwork: userRole === 'affiliate_manager' 
+      ? yup.string().required('Client network selection is required')
+      : yup.string().default(''),
+    // Injection settings
+    injectionMode: yup.string().oneOf(['bulk', 'scheduled']).default('bulk'),
+    injectionStartTime: yup.string().default(''),
+    injectionEndTime: yup.string().default(''),
+    // Device configuration fields
+    deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
+    bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac', 'linux']).default('android'),
+    deviceRatio: yup.object({
+      windows: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      android: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      ios: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      mac: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      linux: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+    }),
+    availableDeviceTypes: yup.object({
+      windows: yup.boolean().default(true),
+      android: yup.boolean().default(true),
+      ios: yup.boolean().default(true),
+      mac: yup.boolean().default(true),
+      linux: yup.boolean().default(true),
+    }),
+  }).test('at-least-one', 'At least one lead type must be requested', (value) => {
+    return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
+  }).test('device-ratio', 'At least one device ratio must be greater than 0 for ratio mode', (value) => {
+    if (value.deviceSelectionMode === 'ratio') {
+      return Object.values(value.deviceRatio || {}).some(ratio => ratio > 0);
+    }
+    return true;
+  }).test('available-devices', 'At least one device type must be selected for random mode', (value) => {
+    if (value.deviceSelectionMode === 'random') {
+      return Object.values(value.availableDeviceTypes || {}).some(enabled => enabled);
+    }
+    return true;
+  }).test('bulk-device', 'Device type is required for bulk mode', (value) => {
+    if (value.deviceSelectionMode === 'bulk') {
+      return value.bulkDeviceType && value.bulkDeviceType.trim() !== '';
+    }
+    return true;
+  });
+};
 
 // Helper functions for status/priority colors
 const getStatusColor = (status) => {
@@ -223,8 +207,8 @@ const OrdersPage = () => {
     reset,
     formState: { errors, isSubmitting },
   } = useForm({
-    resolver: yupResolver(orderSchema),
-    defaultValues: orderSchema.getDefault(),
+    resolver: yupResolver(createOrderSchema(user?.role)),
+    defaultValues: createOrderSchema(user?.role).getDefault(),
   });
 
   // Manual FTD injection state
@@ -303,7 +287,11 @@ const OrdersPage = () => {
 
   const onSubmitOrder = useCallback(async (data) => {
     try {
-      // Security Best Practice: The backend MUST validate the user's role before processing the creation.
+      // Transform availableDeviceTypes from object to array
+      const availableDeviceTypesArray = Object.entries(data.availableDeviceTypes || {})
+        .filter(([_, enabled]) => enabled)
+        .map(([deviceType, _]) => deviceType);
+
       const orderData = {
         requests: {
           ftd: data.ftd || 0,
@@ -312,48 +300,25 @@ const OrdersPage = () => {
           live: data.live || 0,
         },
         priority: data.priority,
+        country: data.countryFilter,
+        gender: data.genderFilter,
         notes: data.notes,
-        country: data.country || null,
-        gender: data.gender || null,
-        selectedClientNetwork: data.selectedClientNetwork || undefined,
-        // Include injection settings
-        injectionSettings: data.enableInjection ? {
-          enabled: true,
-          mode: data.injectionMode,
-          scheduledTime: data.injectionMode === 'scheduled' ? {
-            startTime: data.injectionStartTime,
-            endTime: data.injectionEndTime
-          } : undefined,
-          includeTypes: {
-            filler: data.injectFiller,
-            cold: data.injectCold,
-            live: data.injectLive
-          },
+        selectedClientNetwork: data.selectedClientNetwork,
+        // Injection settings - automatically inject all non-FTD lead types
+        injectionMode: data.injectionMode,
+        injectionStartTime: data.injectionStartTime,
+        injectionEndTime: data.injectionEndTime,
+        injectFiller: data.filler > 0, // Auto-inject if filler leads requested
+        injectCold: data.cold > 0,     // Auto-inject if cold leads requested
+        injectLive: data.live > 0,     // Auto-inject if live leads requested
+        injectionSettings: {
           // Device configuration
           deviceConfig: {
             selectionMode: data.deviceSelectionMode,
-            bulkDeviceType: data.deviceSelectionMode === 'bulk' ? data.bulkDeviceType : null,
-            deviceRatio: data.deviceSelectionMode === 'ratio' ? data.deviceRatio : {
-              windows: 0, android: 0, ios: 0, mac: 0, linux: 0
-            },
-            availableDeviceTypes: data.deviceSelectionMode === 'random' ?
-              Object.keys(data.availableDeviceTypes).filter(key => data.availableDeviceTypes[key]) :
-              ['windows', 'android', 'ios', 'mac', 'linux']
-          },
-          // Proxy configuration
-          proxyConfig: {
-            ftdProxySharing: {
-              enabled: data.ftdProxySharing,
-              maxFTDsPerProxy: data.maxFTDsPerProxy,
-              shareByCountry: data.shareByCountry
-            },
-            proxyExpiration: {
-              autoExpireHours: data.proxyExpireHours,
-              healthCheckInterval: 300000 // 5 minutes
-            }
+            bulkDeviceType: data.bulkDeviceType,
+            deviceRatio: data.deviceRatio,
+            availableDeviceTypes: availableDeviceTypesArray,
           }
-        } : {
-          enabled: false
         }
       };
 
@@ -1039,29 +1004,23 @@ const OrdersPage = () => {
                 )} />
               </Grid>
               <Grid item xs={12}>
-                <Controller name="country" control={control} render={({ field }) => (
-                  <FormControl fullWidth size="small" error={!!errors.country}>
-                    <InputLabel>Country Filter (Optional)</InputLabel>
+                <Controller name="countryFilter" control={control} render={({ field }) => (
+                  <FormControl fullWidth size="small" error={!!errors.countryFilter}>
+                    <InputLabel>Country Filter *</InputLabel>
                     <Select
                       {...field}
-                      label="Country Filter (Optional)"
+                      label="Country Filter *"
                       value={field.value || ''}
                     >
-                      <MenuItem value="">All Countries</MenuItem>
                       {getSortedCountries().map((country) => (
                         <MenuItem key={country.code} value={country.name}>
                           {country.name}
                         </MenuItem>
                       ))}
                     </Select>
-                    {errors.country?.message && (
+                    {errors.countryFilter?.message && (
                       <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                        {errors.country.message}
-                      </Typography>
-                    )}
-                    {!errors.country?.message && (
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
-                        Leave empty for all countries
+                        {errors.countryFilter.message}
                       </Typography>
                     )}
                   </FormControl>
@@ -1076,14 +1035,13 @@ const OrdersPage = () => {
                     control={control}
                     render={({ field }) => (
                       <FormControl fullWidth size="small" error={!!errors.selectedClientNetwork}>
-                        <InputLabel>Client Network (Optional)</InputLabel>
+                        <InputLabel>Client Network *</InputLabel>
                         <Select
                           {...field}
-                          label="Client Network (Optional)"
+                          label="Client Network *"
                           value={field.value || ''}
                           disabled={loadingClientNetworks}
                         >
-                          <MenuItem value="">All Client Networks</MenuItem>
                           {clientNetworks.map((network) => (
                             <MenuItem key={network._id} value={network._id}>
                               {network.name}
@@ -1196,45 +1154,6 @@ const OrdersPage = () => {
                   )
                 )}
               />
-
-              {/* Lead types to inject */}
-              <Grid item xs={12}>
-                <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                  Lead Types to Inject (FTDs are always manual):
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                  <Controller
-                    name="injectFiller"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControlLabel
-                        control={<Checkbox {...field} checked={field.value} />}
-                        label="Filler Leads"
-                      />
-                    )}
-                  />
-                  <Controller
-                    name="injectCold"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControlLabel
-                        control={<Checkbox {...field} checked={field.value} />}
-                        label="Cold Leads"
-                      />
-                    )}
-                  />
-                  <Controller
-                    name="injectLive"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControlLabel
-                        control={<Checkbox {...field} checked={field.value} />}
-                        label="Live Leads"
-                      />
-                    )}
-                  />
-                </Box>
-              </Grid>
 
               {/* Device Configuration Section */}
               <Grid item xs={12}>
