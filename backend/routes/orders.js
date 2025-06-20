@@ -441,36 +441,6 @@ router.get(
   }
 );
 
-// @desc    Handle expired proxies
-// @route   POST /api/v1/orders/handle-expired-proxies
-// @access  Private/Admin
-router.post(
-  "/handle-expired-proxies",
-  protect,
-  authorize("admin", "affiliate_manager"),
-  async (req, res) => {
-    try {
-      const ProxyManagementService = require("../services/proxyManagementService");
-
-      console.log("Handling expired proxies...");
-      const count = await ProxyManagementService.handleExpiredProxies();
-
-      res.status(200).json({
-        success: true,
-        message: `Handled ${count} expired proxies`,
-        data: { expiredProxiesHandled: count },
-      });
-    } catch (error) {
-      console.error("Error handling expired proxies:", error);
-      res.status(500).json({
-        success: false,
-        message: "Server error handling expired proxies",
-        error: error.message,
-      });
-    }
-  }
-);
-
 // @desc    Update lead device type
 // @route   PUT /api/v1/orders/leads/:leadId/device
 // @access  Private/Admin

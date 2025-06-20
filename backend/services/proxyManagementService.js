@@ -1,137 +1,123 @@
 const Proxy = require('../models/Proxy');
 const Lead = require('../models/Lead');
-const { generateProxyConfig, testProxyConnection } = require('../utils/proxyManager');
 
 /**
  * Proxy Management Service
- * Handles proxy assignment with one-to-one proxy-lead relationships
+ * Handles proxy assignment, health monitoring, and cleanup
  */
 class ProxyManagementService {
 
   /**
-   * Assign proxies to leads based on their countries and lead types
-   * @param {Array} leads - Array of lead objects
-   * @param {Object} proxyConfig - Proxy configuration from order (now ignored for one-to-one)
-   * @param {string} createdBy - User ID who is creating the assignment
-   * @returns {Promise<Object>} Assignment results
+   * Assign proxies to leads for injection
    */
   static async assignProxiesToLeads(leads, proxyConfig, createdBy) {
-    const results = {
-      successful: [],
-      failed: [],
-      skipped: []
-    };
-
-    if (!leads || leads.length === 0) {
-      return results;
-    }
-
     try {
-      // Group leads by country for efficient proxy assignment
-      const leadGroups = this.groupLeadsByCountry(leads);
+      console.log(`Assigning proxies to ${leads.length} leads...`);
       
-      console.log('Lead groups for proxy assignment:', Object.keys(leadGroups));
+      const results = {
+        successful: [],
+        failed: []
+      };
 
-      // Process each group
-      for (const [country, groupLeads] of Object.entries(leadGroups)) {
+      // Group leads by country for efficient proxy creation
+      const leadsByCountry = this.groupLeadsByCountry(leads);
+
+      for (const [country, countryLeads] of Object.entries(leadsByCountry)) {
+        console.log(`Processing ${countryLeads.length} leads for ${country}...`);
+        
+        const countryCode = countryLeads[0].countryCode || country.toLowerCase();
+        
         try {
-          const groupResults = await this.assignIndividualProxies(
-            groupLeads, 
-            country, 
-            createdBy
-          );
-          
-          results.successful.push(...groupResults.successful);
-          results.failed.push(...groupResults.failed);
-          results.skipped.push(...groupResults.skipped);
-          
+          const assignments = await this.assignIndividualProxies(countryLeads, country, createdBy);
+          results.successful.push(...assignments);
         } catch (error) {
-          console.error(`Error assigning proxy to group ${country}:`, error);
-          // Mark all leads in this group as failed
-          groupLeads.forEach(lead => {
+          console.error(`Error assigning proxies for ${country}:`, error);
+          countryLeads.forEach(lead => {
             results.failed.push({
               leadId: lead._id,
-              country,
-              leadType: lead.leadType,
+              country: country,
               error: error.message
             });
           });
         }
       }
 
+      console.log(`Proxy assignment completed: ${results.successful.length} successful, ${results.failed.length} failed`);
       return results;
 
     } catch (error) {
-      console.error('Error in proxy assignment service:', error);
+      console.error('Error in proxy assignment:', error);
       throw error;
     }
   }
 
   /**
-   * Group leads by country for proxy assignment
+   * Group leads by country for efficient processing
    */
   static groupLeadsByCountry(leads) {
-    const groups = {};
-
-    for (const lead of leads) {
+    const grouped = {};
+    
+    leads.forEach(lead => {
       const country = lead.country;
-
-      if (!groups[country]) {
-        groups[country] = [];
+      if (!grouped[country]) {
+        grouped[country] = [];
       }
-      
-      groups[country].push(lead);
-    }
+      grouped[country].push(lead);
+    });
 
-    return groups;
+    return grouped;
   }
 
   /**
-   * Assign individual proxies to leads (one proxy per lead)
+   * Assign individual proxies to leads (one-to-one relationship)
    */
   static async assignIndividualProxies(leads, country, createdBy) {
-    const results = { successful: [], failed: [], skipped: [] };
+    const assignments = [];
 
     for (const lead of leads) {
       try {
-        const countryCode = require('../utils/proxyManager').getCountryISOCode(country);
-        const proxy = await Proxy.createFromConfig(country, countryCode, createdBy);
+        console.log(`Creating proxy for lead ${lead._id} in ${country}...`);
+        
+        // Create a new proxy for each lead (one-to-one relationship)
+        const proxy = await Proxy.findOrCreateProxy(
+          country, 
+          lead.countryCode || country.toLowerCase(), 
+          createdBy
+        );
 
-        // Assign proxy to lead
-        const assigned = proxy.assignLead(lead._id, lead.orderId, lead.leadType);
-        if (assigned) {
-          lead.assignProxy(proxy._id, lead.orderId);
-          await proxy.save();
-          await lead.save();
+        if (proxy) {
+          // Assign the lead to the proxy
+          const assigned = proxy.assignLead(lead._id, lead.orderId);
+          
+          if (assigned) {
+            await proxy.save();
+            
+            assignments.push({
+              leadId: lead._id,
+              proxyId: proxy._id,
+              country: country,
+              proxyConfig: proxy.config
+            });
 
-          results.successful.push({
-            leadId: lead._id,
-            proxyId: proxy._id,
-            country,
-            leadType: lead.leadType,
-            shared: false
-          });
+            console.log(`Successfully assigned proxy ${proxy.proxyId} to lead ${lead._id}`);
+          } else {
+            throw new Error(`Failed to assign proxy to lead ${lead._id}`);
+          }
         } else {
-          results.failed.push({
-            leadId: lead._id,
-            error: 'Failed to assign proxy to lead'
-          });
+          throw new Error(`No proxy available for ${country}`);
         }
 
       } catch (error) {
-        console.error(`Error assigning individual proxy to lead ${lead._id}:`, error);
-        results.failed.push({
-          leadId: lead._id,
-          error: error.message
-        });
+        console.error(`Error assigning proxy to lead ${lead._id}:`, error);
+        throw error;
       }
     }
 
-    return results;
+    return assignments;
   }
 
   /**
-   * Check proxy health and handle expiration
+   * Check proxy health
    */
   static async monitorProxyHealth() {
     try {
@@ -151,7 +137,6 @@ class ProxyManagementService {
       const results = {
         healthy: 0,
         unhealthy: 0,
-        expired: 0,
         errors: []
       };
 
@@ -179,9 +164,9 @@ class ProxyManagementService {
         }
       }
 
-      // Clean up expired proxies
-      const cleanedUp = await Proxy.cleanupExpiredProxies();
-      results.expired = cleanedUp;
+      // Clean up failed proxies
+      const cleanedUp = await Proxy.cleanupFailedProxies();
+      results.cleaned = cleanedUp;
 
       console.log('Proxy health monitoring completed:', results);
       return results;
@@ -268,100 +253,6 @@ class ProxyManagementService {
 
     } catch (error) {
       console.error('Error getting proxy stats:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Find and reassign expired proxies
-   */
-  static async handleExpiredProxies() {
-    try {
-      const expiredProxies = await Proxy.find({
-        $or: [
-          { 'expiration.isExpired': true },
-          { 'expiration.expiresAt': { $lt: new Date() } }
-        ],
-        'usage.activeConnections': { $gt: 0 }
-      });
-
-      console.log(`Found ${expiredProxies.length} expired proxies with active connections`);
-
-      for (const proxy of expiredProxies) {
-        await this.handleExpiredProxy(proxy);
-      }
-
-      return expiredProxies.length;
-
-    } catch (error) {
-      console.error('Error handling expired proxies:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Handle a single expired proxy
-   */
-  static async handleExpiredProxy(proxy) {
-    try {
-      console.log(`Handling expired proxy: ${proxy.proxyId}`);
-
-      // Mark proxy as expired
-      proxy.checkExpiration();
-      
-      // Get all leads with active assignments to this proxy
-      const affectedLeads = await Lead.find({
-        'proxyAssignments.proxy': proxy._id,
-        'proxyAssignments.status': 'active'
-      });
-
-      // Mark all active assignments as expired
-      for (const lead of affectedLeads) {
-        const assignment = lead.proxyAssignments.find(
-          assignment => assignment.proxy.toString() === proxy._id.toString() && 
-                        assignment.status === 'active'
-        );
-        if (assignment) {
-          assignment.status = 'expired';
-          assignment.completedAt = new Date();
-        }
-        await lead.save();
-      }
-
-      // Update proxy assignment (one-to-one relationship)
-      if (proxy.assignedLead.leadId && proxy.assignedLead.status === 'active') {
-        proxy.assignedLead.status = 'expired';
-        proxy.assignedLead.completedAt = new Date();
-      }
-
-      proxy.usage.activeConnections = 0;
-      await proxy.save();
-
-      console.log(`Marked proxy ${proxy.proxyId} as expired and updated ${affectedLeads.length} lead assignments`);
-
-    } catch (error) {
-      console.error(`Error handling expired proxy ${proxy.proxyId}:`, error);
-    }
-  }
-
-  /**
-   * Extend proxy expiration
-   */
-  static async extendProxyExpiration(proxyId, hours = 24) {
-    try {
-      const proxy = await Proxy.findById(proxyId);
-      if (!proxy) {
-        throw new Error('Proxy not found');
-      }
-
-      proxy.extendExpiration(hours);
-      await proxy.save();
-
-      console.log(`Extended proxy ${proxy.proxyId} expiration by ${hours} hours`);
-      return proxy;
-
-    } catch (error) {
-      console.error(`Error extending proxy expiration:`, error);
       throw error;
     }
   }

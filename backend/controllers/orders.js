@@ -2137,21 +2137,6 @@ const injectSingleLead = async (lead, orderId) => {
         const output = data.toString();
         console.log(`[PYTHON STDOUT] ${output}`);
         stdoutData += output;
-        
-        // Check for proxy expiration messages
-        if (output.includes("PROXY_EXPIRED:")) {
-          console.log(`[WARNING] Proxy expired during injection for lead ${lead._id}`);
-          // Mark the proxy assignment as expired
-          if (lead.proxyAssignments && lead.proxyAssignments.length > 0) {
-            const activeAssignment = lead.proxyAssignments.find(
-              assignment => assignment.status === 'active' && assignment.orderId.toString() === orderId.toString()
-            );
-            if (activeAssignment) {
-              activeAssignment.status = 'expired';
-              activeAssignment.completedAt = new Date();
-            }
-          }
-        }
       });
 
       pythonProcess.stderr.on("data", (data) => {

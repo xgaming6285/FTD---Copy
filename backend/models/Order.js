@@ -132,16 +132,13 @@ const orderSchema = new mongoose.Schema(
       },
       // Proxy configuration for injection
       proxyConfig: {
-        // Proxy expiration handling
-        proxyExpiration: {
-          autoExpireHours: { type: Number, default: 24, min: 1, max: 168 }, // 1 hour to 1 week
-          healthCheckInterval: {
-            type: Number,
-            default: 300000,
-            min: 60000,
-            max: 1800000,
-          }, // 1 min to 30 min
-        },
+        // Proxy health monitoring
+        healthCheckInterval: {
+          type: Number,
+          default: 300000,
+          min: 60000,
+          max: 1800000,
+        }, // 1 min to 30 min
       },
     },
 

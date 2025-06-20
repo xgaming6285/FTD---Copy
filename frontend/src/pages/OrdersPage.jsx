@@ -65,33 +65,18 @@ const orderSchema = yup.object({
   filler: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
   cold: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
   live: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  priority: yup.string().oneOf(['low', 'medium', 'high'], 'Invalid priority').default('medium'),
-  notes: yup.string(),
-  country: yup.string().nullable(),
-  gender: yup.string().oneOf(['', 'male', 'female', 'not_defined'], 'Invalid gender').nullable().default(''),
-  // Injection fields
+  priority: yup.string().oneOf(['low', 'medium', 'high']).default('medium'),
+  countryFilter: yup.string().default(''),
+  genderFilter: yup.string().oneOf(['', 'male', 'female']).default(''),
+  notes: yup.string().default(''),
+  selectedClientNetwork: yup.string().default(''),
+  // Injection settings
   enableInjection: yup.boolean().default(false),
-  injectionMode: yup.string().oneOf(['manual', 'bulk', 'scheduled'], 'Invalid injection mode').default('manual'),
-  injectionStartTime: yup.string().when('injectionMode', {
-    is: 'scheduled',
-    then: schema => schema.required('Start time is required for scheduled injection'),
-    otherwise: schema => schema
-  }),
-  injectionEndTime: yup.string().when('injectionMode', {
-    is: 'scheduled',
-    then: schema => schema.required('End time is required for scheduled injection'),
-    otherwise: schema => schema
-  }),
-  injectFiller: yup.boolean().default(true),
-  injectCold: yup.boolean().default(true),
-  injectLive: yup.boolean().default(true),
+  injectFiller: yup.boolean().default(false),
+  injectCold: yup.boolean().default(false),
+  injectLive: yup.boolean().default(false),
   // Device configuration fields
-  deviceSelectionMode: yup.string().oneOf(['random', 'bulk', 'ratio', 'individual'], 'Invalid device selection mode').default('random'),
-  bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac', 'linux'], 'Invalid device type').when('deviceSelectionMode', {
-    is: 'bulk',
-    then: schema => schema.required('Device type is required for bulk mode'),
-    otherwise: schema => schema
-  }),
+  deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
   deviceRatio: yup.object({
     windows: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
     android: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
@@ -106,8 +91,6 @@ const orderSchema = yup.object({
     mac: yup.boolean().default(true),
     linux: yup.boolean().default(true),
   }),
-  // Proxy configuration fields
-  proxyExpireHours: yup.number().min(1, 'Must be at least 1 hour').max(168, 'Must be 168 hours or less').integer('Must be a whole number').default(24),
 }).test('at-least-one', 'At least one lead type must be requested', (value) => {
   return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
 }).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
@@ -328,10 +311,6 @@ const OrdersPage = () => {
           deviceSelectionMode: data.deviceSelectionMode,
           deviceRatio: data.deviceRatio,
           availableDeviceTypes: data.availableDeviceTypes,
-          // Proxy configuration - simplified for one-to-one relationship
-          proxyConfig: {
-            autoExpireAfterHours: data.proxyExpireHours
-          }
         }
       };
 
@@ -1441,34 +1420,6 @@ const OrdersPage = () => {
                   )
                 )}
               />
-
-              {/* Proxy Configuration Section */}
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
-                  Proxy Configuration
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Configure proxy expiration settings for lead injection. Each lead will get a unique proxy.
-                </Typography>
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="proxyExpireHours"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Proxy Auto-Expire (Hours)"
-                      type="number"
-                      inputProps={{ min: 1, max: 168, step: 1 }}
-                      size="small"
-                      helperText="Hours after which proxy auto-expires"
-                    />
-                  )}
-                />
-              </Grid>
             </Grid>
             {errors[''] && <Alert severity="error" sx={{ mt: 2 }}>{errors['']?.message}</Alert>}
           </DialogContent>

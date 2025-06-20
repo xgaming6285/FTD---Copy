@@ -178,10 +178,6 @@ async function monitorProxyHealth() {
     const results = await ProxyManagementService.monitorProxyHealth();
     console.log('Proxy health monitoring results:', results);
     
-    // Handle expired proxies
-    const expiredCount = await ProxyManagementService.handleExpiredProxies();
-    console.log(`Handled ${expiredCount} expired proxies`);
-    
     // Get proxy statistics
     const stats = await ProxyManagementService.getProxyStats();
     console.log('Current proxy statistics:', stats);
