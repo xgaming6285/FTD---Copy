@@ -74,10 +74,9 @@ const createOrderSchema = (userRole) => {
       ? yup.string().required('Client network selection is required')
       : yup.string().default(''),
     // Injection settings
-    enableInjection: yup.boolean().default(false),
-    injectFiller: yup.boolean().default(false),
-    injectCold: yup.boolean().default(false),
-    injectLive: yup.boolean().default(false),
+    injectionMode: yup.string().oneOf(['bulk', 'scheduled']).default('bulk'),
+    injectionStartTime: yup.string().default(''),
+    injectionEndTime: yup.string().default(''),
     // Device configuration fields
     deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
     deviceRatio: yup.object({
@@ -96,11 +95,6 @@ const createOrderSchema = (userRole) => {
     }),
   }).test('at-least-one', 'At least one lead type must be requested', (value) => {
     return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
-  }).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
-    if (value.enableInjection) {
-      return value.injectFiller || value.injectCold || value.injectLive;
-    }
-    return true;
   }).test('device-ratio', 'At least one device ratio must be greater than 0 for ratio mode', (value) => {
     if (value.deviceSelectionMode === 'ratio') {
       return Object.values(value.deviceRatio || {}).some(ratio => ratio > 0);
@@ -305,11 +299,13 @@ const OrdersPage = () => {
         gender: data.genderFilter,
         notes: data.notes,
         selectedClientNetwork: data.selectedClientNetwork,
-        // Injection settings
-        enableInjection: data.enableInjection,
-        injectFiller: data.injectFiller,
-        injectCold: data.injectCold,
-        injectLive: data.injectLive,
+        // Injection settings - automatically inject all non-FTD lead types
+        injectionMode: data.injectionMode,
+        injectionStartTime: data.injectionStartTime,
+        injectionEndTime: data.injectionEndTime,
+        injectFiller: data.filler > 0, // Auto-inject if filler leads requested
+        injectCold: data.cold > 0,     // Auto-inject if cold leads requested
+        injectLive: data.live > 0,     // Auto-inject if live leads requested
         injectionSettings: {
           // Device configuration
           deviceSelectionMode: data.deviceSelectionMode,
@@ -1158,45 +1154,6 @@ const OrdersPage = () => {
                   )
                 )}
               />
-
-              {/* Lead types to inject */}
-              <Grid item xs={12}>
-                <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                  Lead Types to Inject (FTDs are always manual):
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                  <Controller
-                    name="injectFiller"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControlLabel
-                        control={<Checkbox {...field} checked={field.value} />}
-                        label="Filler Leads"
-                      />
-                    )}
-                  />
-                  <Controller
-                    name="injectCold"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControlLabel
-                        control={<Checkbox {...field} checked={field.value} />}
-                        label="Cold Leads"
-                      />
-                    )}
-                  />
-                  <Controller
-                    name="injectLive"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControlLabel
-                        control={<Checkbox {...field} checked={field.value} />}
-                        label="Live Leads"
-                      />
-                    )}
-                  />
-                </Box>
-              </Grid>
 
               {/* Device Configuration Section */}
               <Grid item xs={12}>
