@@ -1141,16 +1141,16 @@ class LeadInjector:
         """Capture browser session and send to backend for storage."""
         try:
             print("🔍 Starting browser session capture...")
-            
+
             # Get current URL for domain extraction
             current_url = page.url
             domain = urlparse(current_url).netloc
             print(f"INFO: Capturing session from domain: {domain}")
-            
+
             # Capture cookies from the browser context
             cookies = page.context.cookies()
             print(f"📄 Captured {len(cookies)} cookies")
-            
+
             # Capture localStorage
             try:
                 local_storage = page.evaluate("""() => {
@@ -1164,9 +1164,9 @@ class LeadInjector:
             except Exception as e:
                 print(f"WARNING: Could not capture localStorage: {str(e)}")
                 local_storage = {}
-            
+
             print(f"💾 Captured {len(local_storage)} localStorage items")
-            
+
             # Capture sessionStorage
             try:
                 session_storage = page.evaluate("""() => {
@@ -1180,22 +1180,22 @@ class LeadInjector:
             except Exception as e:
                 print(f"WARNING: Could not capture sessionStorage: {str(e)}")
                 session_storage = {}
-            
+
             print(f"🗂️ Captured {len(session_storage)} sessionStorage items")
-            
+
             # Get user agent
             user_agent = page.evaluate("() => navigator.userAgent")
-            
+
             # Get viewport size
             viewport = page.viewport_size or {'width': 1366, 'height': 768}
-            
+
             # Generate unique session ID
             import time
             import random
             timestamp = int(time.time() * 1000)
             random_part = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
             session_id = f"session_{timestamp}_{random_part}"
-            
+
             # Create session data structure
             session_data = {
                 'sessionId': session_id,
@@ -1224,12 +1224,12 @@ class LeadInjector:
                     'capturedAt': time.time()
                 }
             }
-            
+
             print(f"✅ Session data prepared: {len(cookies)} cookies, {len(local_storage)} localStorage, {len(session_storage)} sessionStorage")
-            
+
             # Send session data to backend
             return self._send_session_to_backend(lead_data, session_data)
-            
+
         except Exception as e:
             print(f"❌ Error capturing session: {str(e)}")
             traceback.print_exc()
@@ -1241,23 +1241,23 @@ class LeadInjector:
             # Get backend URL from environment or use default
             backend_url = os.getenv('BACKEND_URL', 'http://localhost:5000')
             lead_id = lead_data.get('leadId') or lead_data.get('_id')
-            
+
             if not lead_id:
                 print("ERROR: No lead ID found in lead data")
                 return False
-            
+
             # Prepare API request
             api_url = f"{backend_url}/api/leads/{lead_id}/session"
-            
+
             # Add order and user information if available
             payload = {
                 'sessionData': session_data,
                 'orderId': lead_data.get('orderId'),
                 'assignedBy': lead_data.get('assignedBy')
             }
-            
+
             print(f"📡 Sending session data to backend: {api_url}")
-            
+
             # Send POST request to store session
             response = requests.post(
                 api_url,
@@ -1265,7 +1265,7 @@ class LeadInjector:
                 headers={'Content-Type': 'application/json'},
                 timeout=30
             )
-            
+
             if response.status_code == 200 or response.status_code == 201:
                 result = response.json()
                 print(f"✅ Session stored successfully in backend!")
@@ -1275,7 +1275,7 @@ class LeadInjector:
                 print(f"❌ Backend returned error: {response.status_code}")
                 print(f"Response: {response.text}")
                 return False
-                
+
         except requests.exceptions.RequestException as e:
             print(f"❌ Network error sending session to backend: {str(e)}")
             return False
@@ -1401,7 +1401,8 @@ def get_proxy_config(country_name):
 
         # To get a new proxy for each lead, we generate a new random session ID.
         session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
-        username = f"34998931-zone-custom-country-{iso_code}-sessid-{session_id}"
+        # Use correct 922proxy format: USERNAME-region-COUNTRY-sessid-SESSION
+        username = f"34998931-region-{iso_code.upper()}-sessid-{session_id}"
         print(f"INFO: Generated new session username: {username}")
 
         # Proxy configuration for 922proxy
