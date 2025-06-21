@@ -23,6 +23,9 @@ const campaignRoutes = require("./routes/campaigns");
 // Import middleware
 const errorHandler = require("./middleware/errorHandler");
 
+// Import services
+const SessionCleanupService = require("./services/sessionCleanupService");
+
 const app = express();
 
 // Set trust proxy to fix express-rate-limit issue behind a proxy
@@ -49,6 +52,17 @@ const db = mongoose.connection;
 db.on("error", console.error.bind(console, "MongoDB connection error:"));
 db.once("open", () => {
   console.log("Connected to MongoDB");
+  
+  // Initialize session cleanup service after database connection
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      const sessionCleanupService = new SessionCleanupService();
+      sessionCleanupService.initializeScheduledJobs();
+      console.log("✅ Session cleanup service initialized");
+    } catch (error) {
+      console.error("❌ Failed to initialize session cleanup service:", error);
+    }
+  }
 });
 
 // Security middleware

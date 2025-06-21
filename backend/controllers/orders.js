@@ -2975,6 +2975,21 @@ exports.startManualFTDInjection = async (req, res, next) => {
     // Use the first FTD lead for manual injection
     const leadToInject = ftdLeads[0];
 
+    // Generate proxy configuration for manual injection
+    let proxyConfig = null;
+    try {
+      const { generateProxyConfig } = require("../utils/proxyManager");
+      const proxyResult = await generateProxyConfig(leadToInject.country);
+      proxyConfig = proxyResult.config;
+      console.log(`[DEBUG] Generated proxy for manual injection: ${leadToInject.country}`);
+    } catch (error) {
+      console.error(`[ERROR] Failed to generate proxy for manual injection:`, error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to generate proxy configuration for manual injection",
+      });
+    }
+
     // Prepare injection data for the manual script
     const injectionData = {
       leadId: leadToInject._id.toString(),
@@ -2986,7 +3001,7 @@ exports.startManualFTDInjection = async (req, res, next) => {
       country_code: leadToInject.prefix?.replace("+", "") || "1",
       targetUrl:
         process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
-      proxy: null, // No proxy for manual injection to keep it simple
+      proxy: proxyConfig, // Include proxy configuration for manual injection
     };
 
     // Spawn the manual injector script
@@ -3417,6 +3432,21 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
       }
     }
 
+    // Generate proxy configuration for manual injection
+    let proxyConfig = null;
+    try {
+      const { generateProxyConfig } = require("../utils/proxyManager");
+      const proxyResult = await generateProxyConfig(lead.country);
+      proxyConfig = proxyResult.config;
+      console.log(`[DEBUG] Generated proxy for manual injection: ${lead.country}`);
+    } catch (error) {
+      console.error(`[ERROR] Failed to generate proxy for manual injection:`, error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to generate proxy configuration for manual injection",
+      });
+    }
+
     // Prepare injection data for the manual script
     const injectionData = {
       leadId: lead._id.toString(),
@@ -3429,7 +3459,7 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
       targetUrl:
         process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
       fingerprint: fingerprintConfig, // Include fingerprint configuration
-      proxy: null, // No proxy for manual injection to keep it simple
+      proxy: proxyConfig, // Include proxy configuration for manual injection
     };
 
     // Spawn the manual injector script

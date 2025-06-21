@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -16,6 +16,7 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  Button,
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -34,9 +35,19 @@ import {
   Comment as CommentIcon,
   AttachFile as AttachFileIcon,
   ExpandMore as ExpandMoreIcon,
+  Computer as SessionIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
+import { useSelector } from 'react-redux';
+import { selectUser } from '../store/slices/authSlice';
+import SessionStatusChip from './SessionStatusChip';
+import SessionAccessButton from './SessionAccessButton';
+import SessionMetadataDialog from './SessionMetadataDialog';
 
 const LeadDetailCard = ({ lead }) => {
+  const user = useSelector(selectUser);
+  const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
+
   const formatDate = (date) => {
     return date ? new Date(date).toLocaleDateString() : 'N/A';
   };
@@ -363,8 +374,164 @@ const LeadDetailCard = ({ lead }) => {
               )}
             </Grid>
           </Grid>
+
+          {/* Browser Session Information - Only show for FTD leads */}
+          {lead.leadType === 'ftd' && (
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="subtitle1" gutterBottom color="primary">
+                <SessionIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Browser Session
+              </Typography>
+              
+              {lead.browserSession && lead.browserSession.sessionId ? (
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Typography variant="body2" color="text.secondary">Status</Typography>
+                    <Box sx={{ mt: 0.5 }}>
+                      <SessionStatusChip sessionData={lead.browserSession} />
+                    </Box>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Typography variant="body2" color="text.secondary">Created</Typography>
+                    <Typography variant="body1">
+                      {formatDateTime(lead.browserSession.createdAt)}
+                    </Typography>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Typography variant="body2" color="text.secondary">Last Accessed</Typography>
+                    <Typography variant="body1">
+                      {formatDateTime(lead.browserSession.lastAccessedAt)}
+                    </Typography>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Typography variant="body2" color="text.secondary">Domain</Typography>
+                    <Typography variant="body1">
+                      {lead.browserSession.metadata?.domain || 'N/A'}
+                    </Typography>
+                  </Grid>
+
+                  {/* Session Data Summary */}
+                  <Grid item xs={12}>
+                    <Box sx={{ 
+                      bgcolor: 'action.hover', 
+                      p: 2, 
+                      borderRadius: 1, 
+                      mt: 1,
+                      border: '1px solid',
+                      borderColor: 'divider'
+                    }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Session Data Summary
+                      </Typography>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={4}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              🍪 Cookies: {lead.browserSession.cookies?.length || 0}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              💾 localStorage: {lead.browserSession.localStorage ? 
+                                Object.keys(lead.browserSession.localStorage).length : 0} items
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              🗂️ sessionStorage: {lead.browserSession.sessionStorage ? 
+                                Object.keys(lead.browserSession.sessionStorage).length : 0} items
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      </Grid>
+                      
+                      {/* Session Health Warning */}
+                      {(() => {
+                        const createdAt = new Date(lead.browserSession.createdAt);
+                        const expirationDate = new Date(createdAt.getTime() + (30 * 24 * 60 * 60 * 1000));
+                        const daysUntilExpiration = Math.ceil((expirationDate - new Date()) / (24 * 60 * 60 * 1000));
+                        
+                        if (daysUntilExpiration <= 0) {
+                          return (
+                            <Box sx={{ mt: 2 }}>
+                              <Typography variant="body2" color="error.main" sx={{ fontWeight: 'bold' }}>
+                                ⚠️ Session Expired - Cannot be accessed
+                              </Typography>
+                            </Box>
+                          );
+                        } else if (daysUntilExpiration <= 7) {
+                          return (
+                            <Box sx={{ mt: 2 }}>
+                              <Typography variant="body2" color="warning.main" sx={{ fontWeight: 'bold' }}>
+                                ⏰ Session expires in {daysUntilExpiration} day(s) - Access soon!
+                              </Typography>
+                            </Box>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </Box>
+                  </Grid>
+                  
+                  <Grid item xs={12}>
+                    <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                      <SessionAccessButton
+                        lead={lead}
+                        user={user}
+                        variant="button"
+                        onSessionAccess={(lead, response) => {
+                          console.log('Session access initiated:', response);
+                        }}
+                      />
+                      
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<InfoIcon />}
+                        onClick={() => setSessionDialogOpen(true)}
+                      >
+                        View Details
+                      </Button>
+                    </Box>
+                  </Grid>
+                </Grid>
+              ) : (
+                <Box sx={{ 
+                  bgcolor: 'action.hover', 
+                  p: 2, 
+                  borderRadius: 1,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  textAlign: 'center'
+                }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    No browser session data available for this FTD lead.
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    A session will be created automatically when the FTD injection is completed.
+                  </Typography>
+                </Box>
+              )}
+            </Grid>
+          )}
         </Grid>
       </CardContent>
+
+      {/* Session Metadata Dialog */}
+      <SessionMetadataDialog
+        open={sessionDialogOpen}
+        onClose={() => setSessionDialogOpen(false)}
+        lead={lead}
+        sessionData={lead.browserSession}
+      />
     </Card>
   );
 };

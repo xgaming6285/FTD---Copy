@@ -9,6 +9,7 @@ const express = require("express");
 const ClientNetwork = require("../models/ClientNetwork");
 const ClientBroker = require("../models/ClientBroker");
 const Campaign = require("../models/Campaign");
+const sessionSecurity = require("../utils/sessionSecurity");
 
 // @desc    Get all leads with filtering and pagination
 // @route   GET /api/leads
@@ -1978,6 +1979,939 @@ exports.assignCampaignToLead = async (req, res, next) => {
       },
     });
   } catch (error) {
+    next(error);
+  }
+};
+
+// Session Management Controllers
+
+// @desc    Store session data for a lead
+// @route   POST /api/leads/:id/session
+// @access  Private (Admin, Affiliate Manager)
+exports.storeLeadSession = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors.array(),
+      });
+    }
+
+    const { sessionData, orderId } = req.body;
+    const leadId = req.params.id;
+
+    // Validate lead exists
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    // Check if affiliate manager has access to this lead
+    if (req.user.role === "affiliate_manager") {
+      // Check if lead is assigned to this affiliate manager or if they created it
+      if (
+        lead.assignedTo?.toString() !== req.user._id.toString() &&
+        lead.createdBy?.toString() !== req.user._id.toString()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - lead not assigned to you",
+        });
+      }
+    }
+
+    // Validate order if provided
+    if (orderId) {
+      const Order = require("../models/Order");
+      const order = await Order.findById(orderId);
+      if (!order) {
+        return res.status(404).json({
+          success: false,
+          message: "Order not found",
+        });
+      }
+    }
+
+    // Validate session data integrity
+    const integrityValidation = sessionSecurity.validateSessionIntegrity(sessionData);
+    if (!integrityValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: "Session data validation failed",
+        errors: integrityValidation.errors,
+        warnings: integrityValidation.warnings
+      });
+    }
+
+    // Encrypt session data before storage
+    const encryptedSessionData = sessionSecurity.encryptSessionData(sessionData);
+
+    // Store the encrypted session using the Lead model method
+    const sessionId = lead.storeBrowserSession(encryptedSessionData, orderId, req.user._id);
+    await lead.save();
+
+    // Log session storage
+    sessionSecurity.logSessionAccess({
+      sessionId: sessionData.sessionId,
+      leadId: lead._id.toString(),
+      userId: req.user._id.toString(),
+      userRole: req.user.role,
+      action: 'store',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent'),
+      success: true,
+      metadata: {
+        orderId: orderId,
+        domain: sessionData.metadata?.domain,
+        cookieCount: sessionData.cookies?.length || 0
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Session data stored and encrypted successfully",
+      data: {
+        leadId: lead._id,
+        sessionId: sessionId,
+        currentSessionId: lead.currentSessionId,
+        sessionCreatedAt: sessionData.createdAt || new Date(),
+        sessionMetadata: sessionData.metadata,
+        encryptionStatus: "encrypted",
+        integrityHash: sessionSecurity.generateSessionHash(sessionData)
+      },
+    });
+  } catch (error) {
+    console.error("Error storing session:", error);
+    next(error);
+  }
+};
+
+// @desc    Retrieve session data for a lead
+// @route   GET /api/leads/:id/session
+// @access  Private (Admin, Affiliate Manager, Agent - if assigned)
+exports.getLeadSession = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors.array(),
+      });
+    }
+
+    const leadId = req.params.id;
+    const { sessionId, includeHistory = false } = req.query;
+
+    // Validate lead exists
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    // Check access permissions
+    if (req.user.role === "agent") {
+      // Agents can only access sessions for leads assigned to them
+      if (lead.assignedTo?.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - lead not assigned to you",
+        });
+      }
+    } else if (req.user.role === "affiliate_manager") {
+      // Affiliate managers can access sessions for leads they manage
+      if (
+        lead.assignedTo?.toString() !== req.user._id.toString() &&
+        lead.createdBy?.toString() !== req.user._id.toString()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - lead not assigned to you",
+        });
+      }
+    }
+
+    // Get encrypted session data using Lead model methods
+    let encryptedSessionData;
+    if (sessionId) {
+      encryptedSessionData = lead.getSessionById(sessionId);
+    } else {
+      encryptedSessionData = lead.getCurrentBrowserSession();
+    }
+
+    if (!encryptedSessionData) {
+      // Log failed access attempt
+      sessionSecurity.logSessionAccess({
+        sessionId: sessionId || 'unknown',
+        leadId: leadId,
+        userId: req.user._id.toString(),
+        userRole: req.user.role,
+        action: 'access',
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('User-Agent'),
+        success: false,
+        errorMessage: sessionId ? "Session not found" : "No active session found"
+      });
+
+      return res.status(404).json({
+        success: false,
+        message: sessionId ? "Session not found" : "No active session found for this lead",
+      });
+    }
+
+    // Decrypt session data
+    let sessionData;
+    try {
+      sessionData = sessionSecurity.decryptSessionData(encryptedSessionData);
+    } catch (decryptionError) {
+      console.error('❌ Session decryption failed:', decryptionError);
+      
+      // Log failed decryption attempt
+      sessionSecurity.logSessionAccess({
+        sessionId: encryptedSessionData.sessionId || 'unknown',
+        leadId: leadId,
+        userId: req.user._id.toString(),
+        userRole: req.user.role,
+        action: 'access',
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('User-Agent'),
+        success: false,
+        errorMessage: 'Session decryption failed'
+      });
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to decrypt session data",
+      });
+    }
+
+    // Validate session integrity
+    const integrityValidation = sessionSecurity.validateSessionIntegrity(sessionData);
+    if (!integrityValidation.isValid) {
+      console.warn('⚠️ Session integrity validation failed:', integrityValidation.errors);
+      
+      if (integrityValidation.isTampered) {
+        // Log potential tampering attempt
+        sessionSecurity.logSessionAccess({
+          sessionId: sessionData.sessionId,
+          leadId: leadId,
+          userId: req.user._id.toString(),
+          userRole: req.user.role,
+          action: 'access',
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.get('User-Agent'),
+          success: false,
+          errorMessage: 'Session appears to be tampered with'
+        });
+
+        return res.status(400).json({
+          success: false,
+          message: "Session data appears to be tampered with",
+        });
+      }
+    }
+
+    // Prepare response data (without sensitive encrypted data)
+    const responseData = {
+      leadId,
+      currentSession: {
+        sessionId: sessionData.sessionId,
+        createdAt: sessionData.createdAt,
+        lastAccessedAt: sessionData.lastAccessedAt,
+        isActive: sessionData.isActive,
+        metadata: sessionData.metadata,
+        userAgent: sessionData.userAgent,
+        viewport: sessionData.viewport,
+        cookieCount: sessionData.cookies?.length || 0,
+        localStorageItemCount: sessionData.localStorage ? Object.keys(sessionData.localStorage).length : 0,
+        sessionStorageItemCount: sessionData.sessionStorage ? Object.keys(sessionData.sessionStorage).length : 0,
+        integrityHash: sessionSecurity.generateSessionHash(sessionData)
+      },
+      hasActiveSession: lead.hasActiveBrowserSession(),
+      validationResult: {
+        isValid: integrityValidation.isValid,
+        warnings: integrityValidation.warnings,
+        isExpired: integrityValidation.isExpired
+      }
+    };
+
+    // Include session history if requested (decrypt each session)
+    if (includeHistory === "true" || includeHistory === true) {
+      const sessionHistory = lead.sessionHistory || [];
+      responseData.sessionHistory = sessionHistory.map(encryptedSession => {
+        try {
+          const decryptedSession = sessionSecurity.decryptSessionData(encryptedSession);
+          return {
+            sessionId: decryptedSession.sessionId,
+            createdAt: decryptedSession.createdAt,
+            lastAccessedAt: decryptedSession.lastAccessedAt,
+            isActive: decryptedSession.isActive,
+            metadata: decryptedSession.metadata,
+            cookieCount: decryptedSession.cookies?.length || 0,
+            integrityHash: sessionSecurity.generateSessionHash(decryptedSession)
+          };
+        } catch (error) {
+          console.error('❌ Failed to decrypt session history item:', error);
+          return {
+            sessionId: encryptedSession.sessionId || 'unknown',
+            error: 'Failed to decrypt session data'
+          };
+        }
+      });
+    }
+
+    // Update last accessed time
+    lead.updateSessionAccess(sessionData.sessionId);
+    await lead.save();
+
+    // Log successful access
+    sessionSecurity.logSessionAccess({
+      sessionId: sessionData.sessionId,
+      leadId: leadId,
+      userId: req.user._id.toString(),
+      userRole: req.user.role,
+      action: 'access',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent'),
+      success: true,
+      metadata: {
+        domain: sessionData.metadata?.domain,
+        cookieCount: sessionData.cookies?.length || 0
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Session data retrieved successfully",
+      data: responseData,
+    });
+  } catch (error) {
+    console.error("Error retrieving session:", error);
+    next(error);
+  }
+};
+
+// @desc    Update session data for a lead
+// @route   PUT /api/leads/:id/session
+// @access  Private (Admin, Affiliate Manager)
+exports.updateLeadSession = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors.array(),
+      });
+    }
+
+    const leadId = req.params.id;
+    const { sessionId, sessionData, isActive, metadata } = req.body;
+
+    // Validate lead exists
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    // Check access permissions
+    if (req.user.role === "affiliate_manager") {
+      if (
+        lead.assignedTo?.toString() !== req.user._id.toString() &&
+        lead.createdBy?.toString() !== req.user._id.toString()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - lead not assigned to you",
+        });
+      }
+    }
+
+    // Find the session to update
+    let sessionToUpdate = null;
+    let isCurrentSession = false;
+
+    // Check current session first
+    if (lead.browserSession && lead.browserSession.sessionId === sessionId) {
+      sessionToUpdate = lead.browserSession;
+      isCurrentSession = true;
+    } else {
+      // Check session history
+      const historySession = lead.sessionHistory?.find(
+        (session) => session.sessionId === sessionId
+      );
+      if (historySession) {
+        sessionToUpdate = historySession;
+      }
+    }
+
+    if (!sessionToUpdate) {
+      return res.status(404).json({
+        success: false,
+        message: "Session not found",
+      });
+    }
+
+    // Update session data
+    if (sessionData) {
+      // Update specific fields from sessionData
+      if (sessionData.cookies) sessionToUpdate.cookies = sessionData.cookies;
+      if (sessionData.localStorage) sessionToUpdate.localStorage = sessionData.localStorage;
+      if (sessionData.sessionStorage) sessionToUpdate.sessionStorage = sessionData.sessionStorage;
+      if (sessionData.userAgent) sessionToUpdate.userAgent = sessionData.userAgent;
+      if (sessionData.viewport) sessionToUpdate.viewport = sessionData.viewport;
+    }
+
+    // Update session status
+    if (typeof isActive === "boolean") {
+      sessionToUpdate.isActive = isActive;
+      
+      // If deactivating current session, clear currentSessionId
+      if (!isActive && isCurrentSession) {
+        lead.currentSessionId = null;
+      }
+      
+      // If activating a session, make it the current session
+      if (isActive && !isCurrentSession) {
+        // Deactivate current session first
+        if (lead.browserSession) {
+          lead.browserSession.isActive = false;
+        }
+        
+        // Move session to current and set as active
+        lead.browserSession = sessionToUpdate;
+        lead.currentSessionId = sessionId;
+        
+        // Remove from history if it was there
+        lead.sessionHistory = lead.sessionHistory?.filter(
+          (session) => session.sessionId !== sessionId
+        ) || [];
+      }
+    }
+
+    // Update metadata
+    if (metadata) {
+      sessionToUpdate.metadata = { ...sessionToUpdate.metadata, ...metadata };
+    }
+
+    // Update last accessed time
+    sessionToUpdate.lastAccessedAt = new Date();
+
+    await lead.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Session updated successfully",
+      data: {
+        leadId,
+        sessionId,
+        isActive: sessionToUpdate.isActive,
+        lastAccessedAt: sessionToUpdate.lastAccessedAt,
+        isCurrentSession: lead.currentSessionId === sessionId,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating session:", error);
+    next(error);
+  }
+};
+
+// @desc    Clear session data for a lead
+// @route   DELETE /api/leads/:id/session
+// @access  Private (Admin, Affiliate Manager)
+exports.clearLeadSession = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors.array(),
+      });
+    }
+
+    const leadId = req.params.id;
+    const { sessionId, clearAll = false } = req.query;
+
+    // Validate lead exists
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    // Check access permissions
+    if (req.user.role === "affiliate_manager") {
+      if (
+        lead.assignedTo?.toString() !== req.user._id.toString() &&
+        lead.createdBy?.toString() !== req.user._id.toString()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - lead not assigned to you",
+        });
+      }
+    }
+
+    let clearedSessions = 0;
+    let message = "";
+
+    if (clearAll === "true" || clearAll === true) {
+      // Clear all sessions
+      if (lead.browserSession) {
+        lead.browserSession = undefined;
+        clearedSessions++;
+      }
+      if (lead.sessionHistory && lead.sessionHistory.length > 0) {
+        clearedSessions += lead.sessionHistory.length;
+        lead.sessionHistory = [];
+      }
+      lead.currentSessionId = null;
+      message = `All ${clearedSessions} sessions cleared successfully`;
+    } else if (sessionId) {
+      // Clear specific session
+      let sessionFound = false;
+
+      // Check current session
+      if (lead.browserSession && lead.browserSession.sessionId === sessionId) {
+        lead.browserSession = undefined;
+        lead.currentSessionId = null;
+        clearedSessions = 1;
+        sessionFound = true;
+      } else {
+        // Check session history
+        const initialLength = lead.sessionHistory?.length || 0;
+        lead.sessionHistory = lead.sessionHistory?.filter(
+          (session) => session.sessionId !== sessionId
+        ) || [];
+        
+        if (lead.sessionHistory.length < initialLength) {
+          clearedSessions = 1;
+          sessionFound = true;
+        }
+      }
+
+      if (!sessionFound) {
+        return res.status(404).json({
+          success: false,
+          message: "Session not found",
+        });
+      }
+
+      message = "Session cleared successfully";
+    } else {
+      // Clear current session only
+      if (lead.browserSession) {
+        lead.browserSession = undefined;
+        lead.currentSessionId = null;
+        clearedSessions = 1;
+        message = "Current session cleared successfully";
+      } else {
+        return res.status(404).json({
+          success: false,
+          message: "No active session to clear",
+        });
+      }
+    }
+
+    await lead.save();
+
+    res.status(200).json({
+      success: true,
+      message,
+      data: {
+        leadId,
+        clearedSessions,
+        hasActiveSession: !!lead.browserSession,
+        remainingSessions: lead.sessionHistory?.length || 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error clearing session:", error);
+    next(error);
+  }
+};
+
+// @desc    Trigger session restoration for agent access
+// @route   POST /api/leads/:id/access-session
+// @access  Private (Admin, Affiliate Manager, Agent - if assigned)
+exports.accessLeadSession = async (req, res, next) => {
+  try {
+    const leadId = req.params.id;
+    const userAgent = req.get('User-Agent');
+    const ipAddress = req.ip || req.connection.remoteAddress;
+
+    // Log session access attempt using security utility
+    sessionSecurity.logSessionAccess({
+      sessionId: 'pending',
+      leadId: leadId,
+      userId: req.user._id.toString(),
+      userRole: req.user.role,
+      action: 'access_attempt',
+      ipAddress: ipAddress,
+      userAgent: userAgent,
+      success: true,
+      metadata: {
+        requestType: 'session_restoration'
+      }
+    });
+
+    // Validate lead exists
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+      console.log(`❌ Session access denied - Lead not found: ${leadId}`);
+      
+      // Log failed access attempt
+      sessionSecurity.logSessionAccess({
+        sessionId: 'unknown',
+        leadId: leadId,
+        userId: req.user._id.toString(),
+        userRole: req.user.role,
+        action: 'access',
+        ipAddress: ipAddress,
+        userAgent: userAgent,
+        success: false,
+        errorMessage: 'Lead not found'
+      });
+
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    // Check access permissions
+    if (req.user.role === "agent") {
+      // Agents can only access sessions for leads assigned to them
+      if (lead.assignedTo?.toString() !== req.user._id.toString()) {
+        console.log(`❌ Session access denied - Agent ${req.user._id} not assigned to lead ${leadId}`);
+        
+        // Log unauthorized access attempt
+        sessionSecurity.logSessionAccess({
+          sessionId: 'unknown',
+          leadId: leadId,
+          userId: req.user._id.toString(),
+          userRole: req.user.role,
+          action: 'access',
+          ipAddress: ipAddress,
+          userAgent: userAgent,
+          success: false,
+          errorMessage: 'Access denied - lead not assigned'
+        });
+
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - lead not assigned to you",
+        });
+      }
+    } else if (req.user.role === "affiliate_manager") {
+      // Affiliate managers can access sessions for leads they manage
+      if (
+        lead.assignedTo?.toString() !== req.user._id.toString() &&
+        lead.createdBy?.toString() !== req.user._id.toString()
+      ) {
+        console.log(`❌ Session access denied - Affiliate manager ${req.user._id} not authorized for lead ${leadId}`);
+        
+        // Log unauthorized access attempt
+        sessionSecurity.logSessionAccess({
+          sessionId: 'unknown',
+          leadId: leadId,
+          userId: req.user._id.toString(),
+          userRole: req.user.role,
+          action: 'access',
+          ipAddress: ipAddress,
+          userAgent: userAgent,
+          success: false,
+          errorMessage: 'Access denied - not authorized for lead'
+        });
+
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - lead not assigned to you",
+        });
+      }
+    }
+
+    // Check if lead has an active session
+    if (!lead.hasActiveBrowserSession()) {
+      console.log(`❌ Session access denied - No active session for lead ${leadId}`);
+      
+      // Log no session available
+      sessionSecurity.logSessionAccess({
+        sessionId: 'none',
+        leadId: leadId,
+        userId: req.user._id.toString(),
+        userRole: req.user.role,
+        action: 'access',
+        ipAddress: ipAddress,
+        userAgent: userAgent,
+        success: false,
+        errorMessage: 'No active session found'
+      });
+
+      return res.status(404).json({
+        success: false,
+        message: "No active session found for this lead",
+      });
+    }
+
+    // Get encrypted session data
+    const encryptedSessionData = lead.getCurrentBrowserSession();
+    
+    // Decrypt session data
+    let sessionData;
+    try {
+      sessionData = sessionSecurity.decryptSessionData(encryptedSessionData);
+    } catch (decryptionError) {
+      console.error('❌ Session decryption failed:', decryptionError);
+      
+      // Log decryption failure
+      sessionSecurity.logSessionAccess({
+        sessionId: encryptedSessionData.sessionId || 'unknown',
+        leadId: leadId,
+        userId: req.user._id.toString(),
+        userRole: req.user.role,
+        action: 'access',
+        ipAddress: ipAddress,
+        userAgent: userAgent,
+        success: false,
+        errorMessage: 'Session decryption failed'
+      });
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to decrypt session data",
+      });
+    }
+    
+    // Validate session data integrity
+    const integrityValidation = sessionSecurity.validateSessionIntegrity(sessionData);
+    if (!integrityValidation.isValid) {
+      console.log(`❌ Session access denied - Invalid session for lead ${leadId}:`, integrityValidation.errors);
+      
+      // Log validation failure
+      sessionSecurity.logSessionAccess({
+        sessionId: sessionData.sessionId,
+        leadId: leadId,
+        userId: req.user._id.toString(),
+        userRole: req.user.role,
+        action: 'access',
+        ipAddress: ipAddress,
+        userAgent: userAgent,
+        success: false,
+        errorMessage: `Session validation failed: ${integrityValidation.errors.join(', ')}`
+      });
+
+      if (integrityValidation.isTampered) {
+        return res.status(400).json({
+          success: false,
+          message: "Session data appears to be tampered with",
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: `Session is invalid: ${integrityValidation.errors.join(', ')}`,
+      });
+    }
+
+    // Rate limiting check - prevent excessive session access
+    const now = new Date();
+    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+    
+    if (sessionData.lastAccessedAt && sessionData.lastAccessedAt > fiveMinutesAgo) {
+      const remainingTime = Math.ceil((sessionData.lastAccessedAt.getTime() + 5 * 60 * 1000 - now.getTime()) / 1000);
+      console.log(`⏰ Session access rate limited for lead ${leadId} - ${remainingTime}s remaining`);
+      
+      // Log rate limiting
+      sessionSecurity.logSessionAccess({
+        sessionId: sessionData.sessionId,
+        leadId: leadId,
+        userId: req.user._id.toString(),
+        userRole: req.user.role,
+        action: 'access',
+        ipAddress: ipAddress,
+        userAgent: userAgent,
+        success: false,
+        errorMessage: 'Rate limited - too many recent access attempts'
+      });
+
+      return res.status(429).json({
+        success: false,
+        message: `Session was recently accessed. Please wait ${remainingTime} seconds before accessing again.`,
+        retryAfter: remainingTime
+      });
+    }
+
+    // Update last accessed time
+    lead.updateSessionAccess(sessionData.sessionId);
+    await lead.save();
+
+    // Log successful session access
+    sessionSecurity.logSessionAccess({
+      sessionId: sessionData.sessionId,
+      leadId: leadId,
+      userId: req.user._id.toString(),
+      userRole: req.user.role,
+      action: 'access',
+      ipAddress: ipAddress,
+      userAgent: userAgent,
+      success: true,
+      metadata: {
+        domain: sessionData.metadata?.domain,
+        cookieCount: sessionData.cookies?.length || 0,
+        integrityHash: sessionSecurity.generateSessionHash(sessionData)
+      }
+    });
+
+    // Trigger the Python script to restore session
+    const { spawn } = require('child_process');
+    const path = require('path');
+    
+    // Path to the agent session browser script
+    const scriptPath = path.join(__dirname, '../../agent_session_browser.py');
+    
+    // Prepare session data for the Python script (use decrypted data)
+    const sessionDataForScript = {
+      leadId: lead._id.toString(),
+      sessionId: sessionData.sessionId,
+      cookies: sessionData.cookies,
+      localStorage: sessionData.localStorage,
+      sessionStorage: sessionData.sessionStorage,
+      userAgent: sessionData.userAgent,
+      viewport: sessionData.viewport,
+      domain: sessionData.metadata?.domain,
+      leadInfo: {
+        firstName: lead.firstName,
+        lastName: lead.lastName,
+        email: lead.newEmail,
+        phone: lead.newPhone,
+        country: lead.country
+      }
+    };
+
+    // Launch the Python script in the background
+    try {
+      const pythonProcess = spawn('python', [scriptPath, JSON.stringify(sessionDataForScript)], {
+        detached: true,
+        stdio: 'ignore'
+      });
+
+      pythonProcess.unref(); // Allow the Node.js process to exit independently
+
+      console.log(`🚀 Session restoration script launched for lead ${leadId}`);
+      console.log(`📋 Session ID: ${sessionData.sessionId}`);
+      console.log(`🌐 Domain: ${sessionData.metadata?.domain || 'N/A'}`);
+
+      // Log successful script launch
+      sessionSecurity.logSessionAccess({
+        sessionId: sessionData.sessionId,
+        leadId: leadId,
+        userId: req.user._id.toString(),
+        userRole: req.user.role,
+        action: 'script_launch',
+        ipAddress: ipAddress,
+        userAgent: userAgent,
+        success: true,
+        metadata: {
+          domain: sessionData.metadata?.domain,
+          scriptPath: 'agent_session_browser.py'
+        }
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Session restoration initiated successfully. Browser window should open shortly.",
+        data: {
+          leadId,
+          sessionId: sessionData.sessionId,
+          domain: sessionData.metadata?.domain,
+          lastAccessedAt: new Date(),
+          leadInfo: {
+            name: `${lead.firstName} ${lead.lastName}`,
+            email: lead.newEmail
+          },
+          securityStatus: {
+            encrypted: true,
+            validated: true,
+            integrityHash: sessionSecurity.generateSessionHash(sessionData)
+          }
+        },
+      });
+
+    } catch (scriptError) {
+      console.error("Error launching session restoration script:", scriptError);
+      
+      // Log script launch failure
+      console.log(`❌ Script launch failed for lead ${leadId}:`, scriptError.message);
+      
+      sessionSecurity.logSessionAccess({
+        sessionId: sessionData.sessionId,
+        leadId: leadId,
+        userId: req.user._id.toString(),
+        userRole: req.user.role,
+        action: 'script_launch',
+        ipAddress: ipAddress,
+        userAgent: userAgent,
+        success: false,
+        errorMessage: `Script launch failed: ${scriptError.message}`
+      });
+      
+      // Still return success for the API call, but indicate script launch failed
+      res.status(200).json({
+        success: true,
+        message: "Session data retrieved successfully, but browser restoration script failed to launch. Please contact support.",
+        data: {
+          leadId,
+          sessionId: sessionData.sessionId,
+          domain: sessionData.metadata?.domain,
+          lastAccessedAt: new Date(),
+          scriptError: "Failed to launch browser restoration script",
+          securityStatus: {
+            encrypted: true,
+            validated: true,
+            integrityHash: sessionSecurity.generateSessionHash(sessionData)
+          }
+        },
+      });
+    }
+
+  } catch (error) {
+    console.error("Error accessing session:", error);
+    
+    // Log error details
+    console.log(`❌ Session access error for lead ${req.params.id}:`, {
+      error: error.message,
+      userId: req.user._id,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Log system error
+    sessionSecurity.logSessionAccess({
+      sessionId: 'unknown',
+      leadId: req.params.id,
+      userId: req.user._id.toString(),
+      userRole: req.user.role,
+      action: 'access',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent'),
+      success: false,
+      errorMessage: `System error: ${error.message}`
+    });
+    
     next(error);
   }
 };

@@ -56,6 +56,8 @@ import api from '../services/api';
 import { selectUser } from '../store/slices/authSlice';
 import { getSortedCountries } from '../constants/countries';
 import LeadDetailCard from '../components/LeadDetailCard';
+import SessionAccessButton from '../components/SessionAccessButton';
+import SessionStatusChip from '../components/SessionStatusChip';
 
 // --- Best Practice: Define constants and schemas outside the component ---
 // This prevents them from being recreated on every render.
@@ -1513,6 +1515,75 @@ const OrdersPage = () => {
 
               <Grid item xs={12}><Typography variant="subtitle2">Notes</Typography><Typography variant="body2">{selectedOrder.notes || 'N/A'}</Typography></Grid>
               <Grid item xs={12}><Typography variant="subtitle2">Created</Typography><Typography variant="body2">{new Date(selectedOrder.createdAt).toLocaleString()}</Typography></Grid>
+              
+              {/* Session Statistics for FTD leads */}
+              {selectedOrder.leads?.some(lead => lead.leadType === 'ftd') && (
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" gutterBottom>Session Statistics</Typography>
+                  <Box sx={{ 
+                    bgcolor: 'action.hover', 
+                    p: 2, 
+                    borderRadius: 1,
+                    border: '1px solid',
+                    borderColor: 'divider'
+                  }}>
+                    {(() => {
+                      const ftdLeads = selectedOrder.leads.filter(lead => lead.leadType === 'ftd');
+                      const leadsWithSessions = ftdLeads.filter(lead => 
+                        lead.browserSession && lead.browserSession.sessionId
+                      );
+                      const activeSessions = leadsWithSessions.filter(lead => 
+                        lead.browserSession.isActive
+                      );
+                      const expiredSessions = leadsWithSessions.filter(lead => {
+                        const createdAt = new Date(lead.browserSession.createdAt);
+                        const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+                        return createdAt < thirtyDaysAgo;
+                      });
+                      const expiringSessions = leadsWithSessions.filter(lead => {
+                        const createdAt = new Date(lead.browserSession.createdAt);
+                        const expirationDate = new Date(createdAt.getTime() + (30 * 24 * 60 * 60 * 1000));
+                        const sevenDaysFromNow = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000));
+                        const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+                        return createdAt >= thirtyDaysAgo && expirationDate < sevenDaysFromNow;
+                      });
+
+                      return (
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Typography variant="body2" color="text.secondary">
+                              Total FTD Leads: <strong>{ftdLeads.length}</strong>
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Typography variant="body2" color="success.main">
+                              With Sessions: <strong>{leadsWithSessions.length}</strong>
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Typography variant="body2" color="primary.main">
+                              Active: <strong>{activeSessions.length}</strong>
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Typography variant="body2" color="error.main">
+                              Expired: <strong>{expiredSessions.length}</strong>
+                            </Typography>
+                          </Grid>
+                          {expiringSessions.length > 0 && (
+                            <Grid item xs={12}>
+                              <Typography variant="body2" color="warning.main" sx={{ fontWeight: 'bold' }}>
+                                ⚠️ {expiringSessions.length} session(s) expiring within 7 days
+                              </Typography>
+                            </Grid>
+                          )}
+                        </Grid>
+                      );
+                    })()}
+                  </Box>
+                </Grid>
+              )}
+              
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                   <Typography variant="subtitle2">Assigned Leads ({selectedOrder.leads?.length || 0})</Typography>
@@ -1542,7 +1613,8 @@ const OrdersPage = () => {
                       <TableCell>Type</TableCell><TableCell>Name</TableCell>
                       <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Country</TableCell>
                       <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Email</TableCell>
-                      <TableCell>Details</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Session</TableCell>
+                      <TableCell>Actions</TableCell>
                     </TableRow></TableHead>
                     <TableBody>
                       {selectedOrder.leads.map((lead) => (
@@ -1552,54 +1624,85 @@ const OrdersPage = () => {
                             <TableCell>{lead.firstName} {lead.lastName}</TableCell>
                             <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{lead.country}</TableCell>
                             <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{lead.newEmail}</TableCell>
+                            <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                              {lead.leadType === 'ftd' && lead.browserSession && lead.browserSession.sessionId ? (
+                                <SessionStatusChip sessionData={lead.browserSession} />
+                              ) : (
+                                lead.leadType === 'ftd' ? (
+                                  <Typography variant="caption" color="text.secondary">
+                                    No Session
+                                  </Typography>
+                                ) : (
+                                  <Typography variant="caption" color="text.secondary">
+                                    N/A
+                                  </Typography>
+                                )
+                              )}
+                            </TableCell>
                             <TableCell>
-                              <IconButton
-                                size="small"
-                                onClick={() => toggleLeadExpansion(lead._id)}
-                                aria-label={expandedLeads[lead._id] ? 'collapse' : 'expand'}
-                              >
-                                {expandedLeads[lead._id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                              </IconButton>
+                              <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => toggleLeadExpansion(lead._id)}
+                                  aria-label={expandedLeads[lead._id] ? 'collapse' : 'expand'}
+                                >
+                                  {expandedLeads[lead._id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                </IconButton>
 
-                              {/* Individual Manual FTD Injection Button */}
-                              {lead.leadType === 'ftd' && (user?.role === 'admin' || user?.role === 'affiliate_manager') && (() => {
-                                // Check if this lead has been processed
-                                const networkHistory = lead.clientNetworkHistory?.find(
-                                  (history) => history.orderId?.toString() === selectedOrder._id.toString()
-                                );
-                                const isCompleted = networkHistory && networkHistory.injectionStatus === "completed";
-                                const isProcessing = processingLeads[lead._id];
-
-                                // Only show button if not completed
-                                if (!isCompleted) {
-                                  return (
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleOpenManualFTDInjection(selectedOrder, lead)}
-                                      title={`Manual FTD Injection for ${lead.firstName} ${lead.lastName}`}
-                                      color="primary"
-                                      disabled={isProcessing}
-                                    >
-                                      {isProcessing ? <CircularProgress size={16} /> : <SendIcon fontSize="small" />}
-                                    </IconButton>
+                                {/* Individual Manual FTD Injection Button */}
+                                {lead.leadType === 'ftd' && (user?.role === 'admin' || user?.role === 'affiliate_manager') && (() => {
+                                  // Check if this lead has been processed
+                                  const networkHistory = lead.clientNetworkHistory?.find(
+                                    (history) => history.orderId?.toString() === selectedOrder._id.toString()
                                   );
-                                }
+                                  const isCompleted = networkHistory && networkHistory.injectionStatus === "completed";
+                                  const isProcessing = processingLeads[lead._id];
 
-                                // Show completed status
-                                return (
-                                  <Chip
-                                    label="Injected"
+                                  // Only show button if not completed
+                                  if (!isCompleted) {
+                                    return (
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleOpenManualFTDInjection(selectedOrder, lead)}
+                                        title={`Manual FTD Injection for ${lead.firstName} ${lead.lastName}`}
+                                        color="primary"
+                                        disabled={isProcessing}
+                                      >
+                                        {isProcessing ? <CircularProgress size={16} /> : <SendIcon fontSize="small" />}
+                                      </IconButton>
+                                    );
+                                  }
+
+                                  // Show completed status
+                                  return (
+                                    <Chip
+                                      label="Injected"
+                                      size="small"
+                                      color="success"
+                                      variant="outlined"
+                                    />
+                                  );
+                                })()}
+
+                                {/* Session Access Button - Only for FTD leads with active sessions */}
+                                {lead.leadType === 'ftd' && lead.browserSession && lead.browserSession.sessionId && (
+                                  <SessionAccessButton
+                                    lead={lead}
+                                    user={user}
                                     size="small"
-                                    color="success"
-                                    variant="outlined"
+                                    variant="icon"
+                                    onSessionAccess={(lead, response) => {
+                                      console.log('Session access initiated for lead:', lead._id, response);
+                                      // You could add additional logic here, like refreshing the lead data
+                                    }}
                                   />
-                                );
-                              })()}
+                                )}
+                              </Box>
                             </TableCell>
                           </TableRow>
                           {expandedLeads[lead._id] && (
                             <TableRow>
-                              <TableCell colSpan={5} sx={{ py: 0, border: 0 }}>
+                              <TableCell colSpan={6} sx={{ py: 0, border: 0 }}>
                                 <Collapse in={expandedLeads[lead._id]} timeout="auto" unmountOnExit>
                                   <Box sx={{ p: 2 }}>
                                     <LeadDetailCard lead={lead} />

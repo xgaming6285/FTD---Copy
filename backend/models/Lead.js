@@ -337,6 +337,150 @@ const leadSchema = new mongoose.Schema(
         },
       },
     ],
+
+    // Browser Session Storage for FTD Injection
+    browserSession: {
+      cookies: [
+        {
+          name: { type: String, required: true },
+          value: { type: String, required: true },
+          domain: { type: String },
+          path: { type: String, default: "/" },
+          expires: { type: Date },
+          httpOnly: { type: Boolean, default: false },
+          secure: { type: Boolean, default: false },
+          sameSite: { 
+            type: String, 
+            enum: ["Strict", "Lax", "None"],
+            default: "Lax"
+          }
+        }
+      ],
+      localStorage: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+      },
+      sessionStorage: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+      },
+      userAgent: {
+        type: String,
+        trim: true
+      },
+      viewport: {
+        width: { type: Number, default: 1366 },
+        height: { type: Number, default: 768 }
+      },
+      sessionId: {
+        type: String,
+        unique: true,
+        sparse: true,
+        index: true
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now
+      },
+      lastAccessedAt: {
+        type: Date,
+        default: Date.now
+      },
+      isActive: {
+        type: Boolean,
+        default: true
+      },
+      metadata: {
+        domain: { type: String, trim: true },
+        success: { type: Boolean, default: false },
+        injectionType: { 
+          type: String, 
+          enum: ["manual_ftd", "auto_ftd"],
+          default: "manual_ftd"
+        },
+        notes: { type: String, trim: true }
+      }
+    },
+
+    // Session History for tracking multiple sessions
+    sessionHistory: [
+      {
+        sessionId: {
+          type: String,
+          required: true,
+          index: true
+        },
+        cookies: [
+          {
+            name: { type: String, required: true },
+            value: { type: String, required: true },
+            domain: { type: String },
+            path: { type: String, default: "/" },
+            expires: { type: Date },
+            httpOnly: { type: Boolean, default: false },
+            secure: { type: Boolean, default: false },
+            sameSite: { 
+              type: String, 
+              enum: ["Strict", "Lax", "None"],
+              default: "Lax"
+            }
+          }
+        ],
+        localStorage: {
+          type: mongoose.Schema.Types.Mixed,
+          default: {}
+        },
+        sessionStorage: {
+          type: mongoose.Schema.Types.Mixed,
+          default: {}
+        },
+        userAgent: {
+          type: String,
+          trim: true
+        },
+        viewport: {
+          width: { type: Number, default: 1366 },
+          height: { type: Number, default: 768 }
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now
+        },
+        lastAccessedAt: {
+          type: Date,
+          default: Date.now
+        },
+        isActive: {
+          type: Boolean,
+          default: false
+        },
+        metadata: {
+          domain: { type: String, trim: true },
+          success: { type: Boolean, default: false },
+          injectionType: { 
+            type: String, 
+            enum: ["manual_ftd", "auto_ftd"],
+            default: "manual_ftd"
+          },
+          notes: { type: String, trim: true },
+          orderId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Order"
+          },
+          assignedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User"
+          }
+        }
+      }
+    ],
+
+    // Reference to current active session
+    currentSessionId: {
+      type: String,
+      sparse: true,
+      index: true
+    },
   },
   {
     timestamps: true,
@@ -392,6 +536,16 @@ leadSchema.index({ "campaignHistory.assignedAt": -1 });
 leadSchema.index({ leadType: 1, isAssigned: 1, status: 1 }); // Common filtering pattern
 leadSchema.index({ assignedTo: 1, status: 1 }); // Agent's leads by status
 leadSchema.index({ prefix: 1 }); // Add index for prefix field
+
+// Browser session indexes for performance
+leadSchema.index({ "browserSession.sessionId": 1 }); // Session lookup
+leadSchema.index({ "browserSession.isActive": 1 }); // Active sessions
+leadSchema.index({ "browserSession.createdAt": -1 }); // Recent sessions
+leadSchema.index({ "browserSession.lastAccessedAt": -1 }); // Last accessed sessions
+leadSchema.index({ currentSessionId: 1 }); // Current session reference
+leadSchema.index({ "sessionHistory.sessionId": 1 }); // Session history lookup
+leadSchema.index({ "sessionHistory.isActive": 1 }); // Active sessions in history
+leadSchema.index({ "sessionHistory.createdAt": -1 }); // Session history by date
 
 leadSchema.index(
   {
@@ -909,6 +1063,239 @@ leadSchema.statics.getDeviceTypeStats = function () {
       },
     },
   ]);
+};
+
+// Browser Session Management Methods
+
+// Generate unique session ID
+leadSchema.statics.generateSessionId = function () {
+  const crypto = require('crypto');
+  const timestamp = Date.now().toString();
+  const randomBytes = crypto.randomBytes(16).toString('hex');
+  return `session_${timestamp}_${randomBytes}`;
+};
+
+// Store browser session data for this lead
+leadSchema.methods.storeBrowserSession = function (sessionData, orderId = null, assignedBy = null) {
+  const sessionId = this.constructor.generateSessionId();
+  
+  // Validate required session data
+  if (!sessionData || typeof sessionData !== 'object') {
+    throw new Error('Session data is required and must be an object');
+  }
+
+  // Prepare session object
+  const session = {
+    sessionId: sessionId,
+    cookies: sessionData.cookies || [],
+    localStorage: sessionData.localStorage || {},
+    sessionStorage: sessionData.sessionStorage || {},
+    userAgent: sessionData.userAgent || '',
+    viewport: sessionData.viewport || { width: 1366, height: 768 },
+    createdAt: new Date(),
+    lastAccessedAt: new Date(),
+    isActive: true,
+    metadata: {
+      domain: sessionData.domain || '',
+      success: sessionData.success || false,
+      injectionType: sessionData.injectionType || 'manual_ftd',
+      notes: sessionData.notes || '',
+      orderId: orderId,
+      assignedBy: assignedBy
+    }
+  };
+
+  // Deactivate current session if exists
+  if (this.browserSession && this.browserSession.sessionId) {
+    this.deactivateCurrentSession();
+  }
+
+  // Set as current browser session
+  this.browserSession = {
+    ...session,
+    sessionId: sessionId
+  };
+
+  // Add to session history
+  this.sessionHistory.push(session);
+
+  // Set current session reference
+  this.currentSessionId = sessionId;
+
+  return sessionId;
+};
+
+// Get current active browser session
+leadSchema.methods.getCurrentBrowserSession = function () {
+  if (!this.browserSession || !this.browserSession.isActive) {
+    return null;
+  }
+  return this.browserSession;
+};
+
+// Get session by ID from history
+leadSchema.methods.getSessionById = function (sessionId) {
+  if (this.browserSession && this.browserSession.sessionId === sessionId) {
+    return this.browserSession;
+  }
+  
+  return this.sessionHistory.find(session => session.sessionId === sessionId) || null;
+};
+
+// Update session last accessed time
+leadSchema.methods.updateSessionAccess = function (sessionId = null) {
+  const targetSessionId = sessionId || this.currentSessionId;
+  
+  if (!targetSessionId) {
+    return false;
+  }
+
+  // Update current session if it matches
+  if (this.browserSession && this.browserSession.sessionId === targetSessionId) {
+    this.browserSession.lastAccessedAt = new Date();
+  }
+
+  // Update in session history
+  const historySession = this.sessionHistory.find(session => session.sessionId === targetSessionId);
+  if (historySession) {
+    historySession.lastAccessedAt = new Date();
+  }
+
+  return true;
+};
+
+// Deactivate current session
+leadSchema.methods.deactivateCurrentSession = function () {
+  if (this.browserSession && this.browserSession.isActive) {
+    this.browserSession.isActive = false;
+    
+    // Update in session history as well
+    const historySession = this.sessionHistory.find(
+      session => session.sessionId === this.browserSession.sessionId
+    );
+    if (historySession) {
+      historySession.isActive = false;
+    }
+  }
+};
+
+// Activate a session from history
+leadSchema.methods.activateSession = function (sessionId) {
+  const session = this.getSessionById(sessionId);
+  
+  if (!session) {
+    throw new Error('Session not found');
+  }
+
+  // Deactivate current session
+  this.deactivateCurrentSession();
+
+  // Set as current session
+  this.browserSession = {
+    ...session,
+    isActive: true,
+    lastAccessedAt: new Date()
+  };
+
+  // Update current session reference
+  this.currentSessionId = sessionId;
+
+  // Update in history
+  const historySession = this.sessionHistory.find(s => s.sessionId === sessionId);
+  if (historySession) {
+    historySession.isActive = true;
+    historySession.lastAccessedAt = new Date();
+  }
+
+  return session;
+};
+
+// Check if lead has active browser session
+leadSchema.methods.hasActiveBrowserSession = function () {
+  return this.browserSession && this.browserSession.isActive && this.browserSession.sessionId;
+};
+
+// Validate session data integrity
+leadSchema.methods.validateSessionData = function (sessionId = null) {
+  const session = sessionId ? this.getSessionById(sessionId) : this.getCurrentBrowserSession();
+  
+  if (!session) {
+    return { valid: false, reason: 'Session not found' };
+  }
+
+  // Check if session is expired (30 days default)
+  const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+  if (session.createdAt < thirtyDaysAgo) {
+    return { valid: false, reason: 'Session expired' };
+  }
+
+  // Check if session has required data
+  if (!session.cookies || !Array.isArray(session.cookies)) {
+    return { valid: false, reason: 'Invalid cookies data' };
+  }
+
+  return { valid: true, session: session };
+};
+
+// Get all sessions for this lead
+leadSchema.methods.getAllSessions = function () {
+  const sessions = [...this.sessionHistory];
+  
+  // Add current session if it's not in history
+  if (this.browserSession && this.browserSession.sessionId) {
+    const existsInHistory = sessions.some(s => s.sessionId === this.browserSession.sessionId);
+    if (!existsInHistory) {
+      sessions.push(this.browserSession);
+    }
+  }
+
+  return sessions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+};
+
+// Clear expired sessions (older than specified days)
+leadSchema.methods.clearExpiredSessions = function (daysOld = 30) {
+  const cutoffDate = new Date(Date.now() - (daysOld * 24 * 60 * 60 * 1000));
+  
+  // Filter out expired sessions from history
+  this.sessionHistory = this.sessionHistory.filter(session => 
+    session.createdAt >= cutoffDate
+  );
+
+  // Check if current session is expired
+  if (this.browserSession && this.browserSession.createdAt < cutoffDate) {
+    this.browserSession = {};
+    this.currentSessionId = null;
+  }
+};
+
+// Static method to find leads with active sessions
+leadSchema.statics.findLeadsWithActiveSessions = function (options = {}) {
+  const query = {
+    'browserSession.isActive': true,
+    'browserSession.sessionId': { $exists: true, $ne: null }
+  };
+
+  if (options.leadType) {
+    query.leadType = options.leadType;
+  }
+
+  if (options.assignedTo) {
+    query.assignedTo = options.assignedTo;
+  }
+
+  return this.find(query);
+};
+
+// Static method to find leads with expired sessions
+leadSchema.statics.findLeadsWithExpiredSessions = function (daysOld = 30) {
+  const cutoffDate = new Date(Date.now() - (daysOld * 24 * 60 * 60 * 1000));
+  
+  return this.find({
+    $or: [
+      { 'browserSession.createdAt': { $lt: cutoffDate } },
+      { 'sessionHistory.createdAt': { $lt: cutoffDate } }
+    ]
+  });
 };
 
 module.exports = mongoose.model("Lead", leadSchema);
