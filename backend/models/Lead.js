@@ -95,7 +95,7 @@ const leadSchema = new mongoose.Schema(
         injectionStatus: {
           type: String,
           enum: ["pending", "successful", "failed"],
-          default: "pending",
+          default: "pending"
         },
         // Track which client network was used as intermediary (for session tracking only)
         intermediaryClientNetwork: {
@@ -105,7 +105,7 @@ const leadSchema = new mongoose.Schema(
         domain: {
           type: String,
           trim: true,
-        },
+        }
       },
     ],
     // History of client network assignments
@@ -138,7 +138,7 @@ const leadSchema = new mongoose.Schema(
         injectionStatus: {
           type: String,
           enum: ["pending", "completed", "failed"],
-          default: "pending",
+          default: "pending"
         },
         injectionType: {
           type: String,
@@ -151,47 +151,6 @@ const leadSchema = new mongoose.Schema(
         injectionNotes: {
           type: String,
           trim: true,
-        },
-      },
-    ],
-    // History of campaign assignments
-    campaignHistory: [
-      {
-        campaign: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Campaign",
-          required: true,
-        },
-        assignedAt: {
-          type: Date,
-          default: Date.now,
-        },
-        assignedBy: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
-        orderId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Order",
-        },
-        // Campaign performance tracking for this lead
-        performance: {
-          status: {
-            type: String,
-            enum: ["active", "contacted", "converted", "inactive"],
-            default: "active",
-          },
-          contactedAt: {
-            type: Date,
-          },
-          convertedAt: {
-            type: Date,
-          },
-          notes: {
-            type: String,
-            trim: true,
-          },
         },
       },
     ],
@@ -284,14 +243,14 @@ const leadSchema = new mongoose.Schema(
     brokerAvailabilityStatus: {
       type: String,
       enum: ["available", "sleep", "not_available_brokers"],
-      default: "available",
+      default: "available"
     },
 
     // Track when lead was put to sleep due to no available brokers
     sleepDetails: {
       putToSleepAt: { type: Date },
       reason: { type: String },
-      lastCheckedAt: { type: Date },
+      lastCheckedAt: { type: Date }
     },
 
     // Device fingerprint association (one-to-one)
@@ -299,7 +258,7 @@ const leadSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Fingerprint",
       sparse: true,
-      index: true,
+      index: true
     },
 
     // Device type for this lead (cached from fingerprint for quick access)
@@ -307,180 +266,34 @@ const leadSchema = new mongoose.Schema(
       type: String,
       enum: ["windows", "android", "ios", "mac"],
       sparse: true,
-      index: true,
+      index: true
     },
 
     // Proxy tracking for this lead
-    proxyAssignments: [
-      {
-        proxy: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Proxy",
-          required: true,
-        },
-        orderId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Order",
-          required: true,
-        },
-        assignedAt: {
-          type: Date,
-          default: Date.now,
-        },
-        status: {
-          type: String,
-          enum: ["active", "completed", "failed"],
-          default: "active",
-        },
-        completedAt: {
-          type: Date,
-        },
+    proxyAssignments: [{
+      proxy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Proxy",
+        required: true
       },
-    ],
-
-    // Browser Session Storage for FTD Injection
-    browserSession: {
-      cookies: [
-        {
-          name: { type: String, required: true },
-          value: { type: String, required: true },
-          domain: { type: String },
-          path: { type: String, default: "/" },
-          expires: { type: Date },
-          httpOnly: { type: Boolean, default: false },
-          secure: { type: Boolean, default: false },
-          sameSite: { 
-            type: String, 
-            enum: ["Strict", "Lax", "None"],
-            default: "Lax"
-          }
-        }
-      ],
-      localStorage: {
-        type: mongoose.Schema.Types.Mixed,
-        default: {}
+      orderId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Order",
+        required: true
       },
-      sessionStorage: {
-        type: mongoose.Schema.Types.Mixed,
-        default: {}
-      },
-      userAgent: {
-        type: String,
-        trim: true
-      },
-      viewport: {
-        width: { type: Number, default: 1366 },
-        height: { type: Number, default: 768 }
-      },
-      sessionId: {
-        type: String,
-        unique: true,
-        sparse: true,
-        index: true
-      },
-      createdAt: {
+      assignedAt: {
         type: Date,
         default: Date.now
       },
-      lastAccessedAt: {
-        type: Date,
-        default: Date.now
+      status: {
+        type: String,
+        enum: ["active", "completed", "failed"],
+        default: "active"
       },
-      isActive: {
-        type: Boolean,
-        default: true
-      },
-      metadata: {
-        domain: { type: String, trim: true },
-        success: { type: Boolean, default: false },
-        injectionType: { 
-          type: String, 
-          enum: ["manual_ftd", "auto_ftd"],
-          default: "manual_ftd"
-        },
-        notes: { type: String, trim: true }
+      completedAt: {
+        type: Date
       }
-    },
-
-    // Session History for tracking multiple sessions
-    sessionHistory: [
-      {
-        sessionId: {
-          type: String,
-          required: true,
-          index: true
-        },
-        cookies: [
-          {
-            name: { type: String, required: true },
-            value: { type: String, required: true },
-            domain: { type: String },
-            path: { type: String, default: "/" },
-            expires: { type: Date },
-            httpOnly: { type: Boolean, default: false },
-            secure: { type: Boolean, default: false },
-            sameSite: { 
-              type: String, 
-              enum: ["Strict", "Lax", "None"],
-              default: "Lax"
-            }
-          }
-        ],
-        localStorage: {
-          type: mongoose.Schema.Types.Mixed,
-          default: {}
-        },
-        sessionStorage: {
-          type: mongoose.Schema.Types.Mixed,
-          default: {}
-        },
-        userAgent: {
-          type: String,
-          trim: true
-        },
-        viewport: {
-          width: { type: Number, default: 1366 },
-          height: { type: Number, default: 768 }
-        },
-        createdAt: {
-          type: Date,
-          default: Date.now
-        },
-        lastAccessedAt: {
-          type: Date,
-          default: Date.now
-        },
-        isActive: {
-          type: Boolean,
-          default: false
-        },
-        metadata: {
-          domain: { type: String, trim: true },
-          success: { type: Boolean, default: false },
-          injectionType: { 
-            type: String, 
-            enum: ["manual_ftd", "auto_ftd"],
-            default: "manual_ftd"
-          },
-          notes: { type: String, trim: true },
-          orderId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Order"
-          },
-          assignedBy: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "User"
-          }
-        }
-      }
-    ],
-
-    // Reference to current active session
-    currentSessionId: {
-      type: String,
-      sparse: true,
-      index: true
-    },
+    }],
   },
   {
     timestamps: true,
@@ -508,44 +321,19 @@ leadSchema.index({ updatedAt: -1 }); // Track updates efficiently
 // Client broker history indexes for better performance
 leadSchema.index({ "clientBrokerHistory.clientBroker": 1 });
 leadSchema.index({ "clientBrokerHistory.orderId": 1 });
-leadSchema.index({
-  "clientBrokerHistory.clientBroker": 1,
-  "clientBrokerHistory.orderId": 1,
-});
+leadSchema.index({ "clientBrokerHistory.clientBroker": 1, "clientBrokerHistory.orderId": 1 });
 leadSchema.index({ "clientBrokerHistory.assignedAt": -1 });
 
 // Client network history indexes for better performance
 leadSchema.index({ "clientNetworkHistory.clientNetwork": 1 });
 leadSchema.index({ "clientNetworkHistory.orderId": 1 });
-leadSchema.index({
-  "clientNetworkHistory.clientNetwork": 1,
-  "clientNetworkHistory.orderId": 1,
-});
+leadSchema.index({ "clientNetworkHistory.clientNetwork": 1, "clientNetworkHistory.orderId": 1 });
 leadSchema.index({ "clientNetworkHistory.assignedAt": -1 });
-
-// Campaign history indexes for better performance
-leadSchema.index({ "campaignHistory.campaign": 1 });
-leadSchema.index({ "campaignHistory.orderId": 1 });
-leadSchema.index({
-  "campaignHistory.campaign": 1,
-  "campaignHistory.orderId": 1,
-});
-leadSchema.index({ "campaignHistory.assignedAt": -1 });
 
 // Compound indexes for common query patterns
 leadSchema.index({ leadType: 1, isAssigned: 1, status: 1 }); // Common filtering pattern
 leadSchema.index({ assignedTo: 1, status: 1 }); // Agent's leads by status
 leadSchema.index({ prefix: 1 }); // Add index for prefix field
-
-// Browser session indexes for performance
-leadSchema.index({ "browserSession.sessionId": 1 }); // Session lookup
-leadSchema.index({ "browserSession.isActive": 1 }); // Active sessions
-leadSchema.index({ "browserSession.createdAt": -1 }); // Recent sessions
-leadSchema.index({ "browserSession.lastAccessedAt": -1 }); // Last accessed sessions
-leadSchema.index({ currentSessionId: 1 }); // Current session reference
-leadSchema.index({ "sessionHistory.sessionId": 1 }); // Session history lookup
-leadSchema.index({ "sessionHistory.isActive": 1 }); // Active sessions in history
-leadSchema.index({ "sessionHistory.createdAt": -1 }); // Session history by date
 
 leadSchema.index(
   {
@@ -635,18 +423,12 @@ leadSchema.statics.getLeadStats = function () {
 // Check if lead is already assigned to a specific client broker
 leadSchema.methods.isAssignedToClientBroker = function (clientBrokerId) {
   return this.assignedClientBrokers.some(
-    (brokerId) => brokerId.toString() === clientBrokerId.toString()
+    brokerId => brokerId.toString() === clientBrokerId.toString()
   );
 };
 
 // Assign a client broker to this lead
-leadSchema.methods.assignClientBroker = function (
-  clientBrokerId,
-  assignedBy,
-  orderId,
-  intermediaryClientNetwork = null,
-  domain = null
-) {
+leadSchema.methods.assignClientBroker = function (clientBrokerId, assignedBy, orderId, intermediaryClientNetwork = null, domain = null) {
   // Add to current assignments if not already assigned
   if (!this.isAssignedToClientBroker(clientBrokerId)) {
     this.assignedClientBrokers.push(clientBrokerId);
@@ -659,14 +441,14 @@ leadSchema.methods.assignClientBroker = function (
     orderId: orderId,
     intermediaryClientNetwork: intermediaryClientNetwork,
     domain: domain,
-    injectionStatus: "pending",
+    injectionStatus: "pending"
   });
 };
 
 // Unassign a client broker from this lead
 leadSchema.methods.unassignClientBroker = function (clientBrokerId) {
   const index = this.assignedClientBrokers.findIndex(
-    (brokerId) => brokerId.toString() === clientBrokerId.toString()
+    brokerId => brokerId.toString() === clientBrokerId.toString()
   );
   if (index > -1) {
     this.assignedClientBrokers.splice(index, 1);
@@ -674,14 +456,9 @@ leadSchema.methods.unassignClientBroker = function (clientBrokerId) {
 };
 
 // Update injection status for a specific assignment
-leadSchema.methods.updateInjectionStatus = function (
-  orderId,
-  status,
-  domain = null
-) {
+leadSchema.methods.updateInjectionStatus = function (orderId, status, domain = null) {
   const assignment = this.clientBrokerHistory.find(
-    (history) =>
-      history.orderId && history.orderId.toString() === orderId.toString()
+    history => history.orderId && history.orderId.toString() === orderId.toString()
   );
 
   if (assignment) {
@@ -694,7 +471,7 @@ leadSchema.methods.updateInjectionStatus = function (
 
 // Get all client brokers this lead has been assigned to (returns ObjectIds)
 leadSchema.methods.getAssignedClientBrokers = function () {
-  return this.assignedClientBrokers.map((id) => id.toString());
+  return this.assignedClientBrokers.map(id => id.toString());
 };
 
 // Get client broker assignment history
@@ -704,21 +481,19 @@ leadSchema.methods.getClientBrokerHistory = function () {
 
 // Check if lead can be assigned to a client broker (not already assigned)
 leadSchema.statics.canAssignToClientBroker = function (leadId, clientBrokerId) {
-  return this.findById(leadId).then((lead) => {
+  return this.findById(leadId).then(lead => {
     if (!lead) return false;
     return !lead.isAssignedToClientBroker(clientBrokerId);
   });
 };
 
 // Put lead to sleep when no available brokers
-leadSchema.methods.putToSleep = function (
-  reason = "No available client brokers"
-) {
+leadSchema.methods.putToSleep = function (reason = "No available client brokers") {
   this.brokerAvailabilityStatus = "sleep";
   this.sleepDetails = {
     putToSleepAt: new Date(),
     reason: reason,
-    lastCheckedAt: new Date(),
+    lastCheckedAt: new Date()
   };
 };
 
@@ -731,47 +506,35 @@ leadSchema.methods.wakeUp = function () {
 // Static method to find leads that need to be woken up when new brokers are added
 leadSchema.statics.findSleepingLeads = function () {
   return this.find({
-    brokerAvailabilityStatus: { $in: ["sleep", "not_available_brokers"] },
+    brokerAvailabilityStatus: { $in: ["sleep", "not_available_brokers"] }
   });
 };
 
 // Check if lead is already assigned to a specific client network in a specific order
-leadSchema.methods.isAssignedToClientNetwork = function (
-  clientNetworkId,
-  orderId = null
-) {
-  return this.clientNetworkHistory.some((history) => {
-    const networkMatch =
-      history.clientNetwork.toString() === clientNetworkId.toString();
-    if (orderId) {
-      return (
-        networkMatch &&
-        history.orderId &&
-        history.orderId.toString() === orderId.toString()
-      );
+leadSchema.methods.isAssignedToClientNetwork = function (clientNetworkId, orderId = null) {
+  return this.clientNetworkHistory.some(
+    history => {
+      const networkMatch = history.clientNetwork.toString() === clientNetworkId.toString();
+      if (orderId) {
+        return networkMatch && history.orderId && history.orderId.toString() === orderId.toString();
+      }
+      return networkMatch;
     }
-    return networkMatch;
-  });
+  );
 };
 
 // Add client network assignment to history
-leadSchema.methods.addClientNetworkAssignment = function (
-  clientNetworkId,
-  assignedBy,
-  orderId
-) {
+leadSchema.methods.addClientNetworkAssignment = function (clientNetworkId, assignedBy, orderId) {
   // Check if already assigned to this network in this order
   if (this.isAssignedToClientNetwork(clientNetworkId, orderId)) {
-    throw new Error(
-      "Lead is already assigned to this client network in this order"
-    );
+    throw new Error('Lead is already assigned to this client network in this order');
   }
 
   // Add to history
   this.clientNetworkHistory.push({
     clientNetwork: clientNetworkId,
     assignedBy: assignedBy,
-    orderId: orderId,
+    orderId: orderId
   });
 };
 
@@ -782,124 +545,39 @@ leadSchema.methods.getClientNetworkHistory = function () {
 
 // Get all client networks this lead has been assigned to
 leadSchema.methods.getAssignedClientNetworks = function () {
-  return [
-    ...new Set(
-      this.clientNetworkHistory.map((history) =>
-        history.clientNetwork.toString()
-      )
-    ),
-  ];
-};
-
-// Check if lead is already assigned to a specific campaign in a specific order
-leadSchema.methods.isAssignedToCampaign = function (
-  campaignId,
-  orderId = null
-) {
-  return this.campaignHistory.some((history) => {
-    const campaignMatch = history.campaign.toString() === campaignId.toString();
-    if (orderId) {
-      return (
-        campaignMatch &&
-        history.orderId &&
-        history.orderId.toString() === orderId.toString()
-      );
-    }
-    return campaignMatch;
-  });
-};
-
-// Add campaign assignment to history
-leadSchema.methods.addCampaignAssignment = function (
-  campaignId,
-  assignedBy,
-  orderId
-) {
-  // Check if already assigned to this campaign in this order
-  if (this.isAssignedToCampaign(campaignId, orderId)) {
-    throw new Error("Lead is already assigned to this campaign in this order");
-  }
-
-  // Add to history
-  this.campaignHistory.push({
-    campaign: campaignId,
-    assignedBy: assignedBy,
-    orderId: orderId,
-  });
-};
-
-// Get campaign assignment history
-leadSchema.methods.getCampaignHistory = function () {
-  return this.campaignHistory;
-};
-
-// Get all campaigns this lead has been assigned to
-leadSchema.methods.getAssignedCampaigns = function () {
-  return [
-    ...new Set(
-      this.campaignHistory.map((history) => history.campaign.toString())
-    ),
-  ];
-};
-
-// Update campaign performance for a specific assignment
-leadSchema.methods.updateCampaignPerformance = function (
-  campaignId,
-  orderId,
-  performanceData
-) {
-  const assignment = this.campaignHistory.find(
-    (history) =>
-      history.campaign.toString() === campaignId.toString() &&
-      history.orderId &&
-      history.orderId.toString() === orderId.toString()
-  );
-
-  if (assignment) {
-    Object.assign(assignment.performance, performanceData);
-  } else {
-    throw new Error("Campaign assignment not found for this lead and order");
-  }
+  return [...new Set(this.clientNetworkHistory.map(history => history.clientNetwork.toString()))];
 };
 
 // Device and Fingerprint Management Methods
 
 // Assign a device fingerprint to this lead
 leadSchema.methods.assignFingerprint = async function (deviceType, createdBy) {
-  const Fingerprint = require("./Fingerprint");
+  const Fingerprint = require('./Fingerprint');
 
   // Validate parameters
   if (!deviceType) {
-    throw new Error("deviceType is required for fingerprint assignment");
+    throw new Error('deviceType is required for fingerprint assignment');
   }
   if (!createdBy) {
-    throw new Error("createdBy is required for fingerprint assignment");
+    throw new Error('createdBy is required for fingerprint assignment');
   }
 
   // Check if lead already has a fingerprint
   if (this.fingerprint) {
-    throw new Error("Lead already has a fingerprint assigned");
+    throw new Error('Lead already has a fingerprint assigned');
   }
 
   try {
-    console.log(
-      `[DEBUG] Creating fingerprint for lead ${this._id} with deviceType: ${deviceType}`
-    );
+    console.log(`[DEBUG] Creating fingerprint for lead ${this._id} with deviceType: ${deviceType}`);
 
     // Create new fingerprint for this lead
-    const fingerprint = await Fingerprint.createForLead(
-      this._id,
-      deviceType,
-      createdBy
-    );
+    const fingerprint = await Fingerprint.createForLead(this._id, deviceType, createdBy);
 
     // Update lead with fingerprint reference and device type
     this.fingerprint = fingerprint._id;
     this.deviceType = deviceType;
 
-    console.log(
-      `[DEBUG] Successfully assigned fingerprint ${fingerprint.deviceId} to lead ${this._id}`
-    );
+    console.log(`[DEBUG] Successfully assigned fingerprint ${fingerprint.deviceId} to lead ${this._id}`);
 
     return fingerprint;
   } catch (error) {
@@ -914,16 +592,13 @@ leadSchema.methods.getFingerprint = async function () {
     return null;
   }
 
-  const Fingerprint = require("./Fingerprint");
+  const Fingerprint = require('./Fingerprint');
   return await Fingerprint.findById(this.fingerprint);
 };
 
 // Update device type and create new fingerprint if needed
-leadSchema.methods.updateDeviceType = async function (
-  newDeviceType,
-  createdBy
-) {
-  const Fingerprint = require("./Fingerprint");
+leadSchema.methods.updateDeviceType = async function (newDeviceType, createdBy) {
+  const Fingerprint = require('./Fingerprint');
 
   // If device type is the same, no need to update
   if (this.deviceType === newDeviceType) {
@@ -936,11 +611,7 @@ leadSchema.methods.updateDeviceType = async function (
   }
 
   // Create new fingerprint with new device type
-  const fingerprint = await Fingerprint.createForLead(
-    this._id,
-    newDeviceType,
-    createdBy
-  );
+  const fingerprint = await Fingerprint.createForLead(this._id, newDeviceType, createdBy);
 
   // Update lead
   this.fingerprint = fingerprint._id;
@@ -955,9 +626,8 @@ leadSchema.methods.updateDeviceType = async function (
 leadSchema.methods.assignProxy = function (proxyId, orderId) {
   // Check if lead already has an active proxy for this order
   const existingAssignment = this.proxyAssignments.find(
-    (assignment) =>
-      assignment.orderId.toString() === orderId.toString() &&
-      assignment.status === "active"
+    assignment => assignment.orderId.toString() === orderId.toString() &&
+      assignment.status === 'active'
   );
 
   if (existingAssignment) {
@@ -969,7 +639,7 @@ leadSchema.methods.assignProxy = function (proxyId, orderId) {
     proxy: proxyId,
     orderId: orderId,
     assignedAt: new Date(),
-    status: "active",
+    status: 'active'
   });
 
   return true;
@@ -978,23 +648,18 @@ leadSchema.methods.assignProxy = function (proxyId, orderId) {
 // Get active proxy for a specific order
 leadSchema.methods.getActiveProxy = function (orderId) {
   const assignment = this.proxyAssignments.find(
-    (assignment) =>
-      assignment.orderId.toString() === orderId.toString() &&
-      assignment.status === "active"
+    assignment => assignment.orderId.toString() === orderId.toString() &&
+      assignment.status === 'active'
   );
 
   return assignment ? assignment.proxy : null;
 };
 
 // Complete proxy assignment (mark as completed)
-leadSchema.methods.completeProxyAssignment = function (
-  orderId,
-  status = "completed"
-) {
+leadSchema.methods.completeProxyAssignment = function (orderId, status = 'completed') {
   const assignment = this.proxyAssignments.find(
-    (assignment) =>
-      assignment.orderId.toString() === orderId.toString() &&
-      assignment.status === "active"
+    assignment => assignment.orderId.toString() === orderId.toString() &&
+      assignment.status === 'active'
   );
 
   if (assignment) {
@@ -1013,9 +678,7 @@ leadSchema.methods.getProxyAssignments = function () {
 
 // Check if lead has active proxy assignments
 leadSchema.methods.hasActiveProxyAssignments = function () {
-  return this.proxyAssignments.some(
-    (assignment) => assignment.status === "active"
-  );
+  return this.proxyAssignments.some(assignment => assignment.status === 'active');
 };
 
 // Static method to find leads by device type
@@ -1045,10 +708,10 @@ leadSchema.statics.getDeviceTypeStats = function () {
       $group: {
         _id: {
           deviceType: "$deviceType",
-          leadType: "$leadType",
+          leadType: "$leadType"
         },
-        count: { $sum: 1 },
-      },
+        count: { $sum: 1 }
+      }
     },
     {
       $group: {
@@ -1057,245 +720,12 @@ leadSchema.statics.getDeviceTypeStats = function () {
         byLeadType: {
           $push: {
             leadType: "$_id.leadType",
-            count: "$count",
-          },
-        },
-      },
-    },
+            count: "$count"
+          }
+        }
+      }
+    }
   ]);
-};
-
-// Browser Session Management Methods
-
-// Generate unique session ID
-leadSchema.statics.generateSessionId = function () {
-  const crypto = require('crypto');
-  const timestamp = Date.now().toString();
-  const randomBytes = crypto.randomBytes(16).toString('hex');
-  return `session_${timestamp}_${randomBytes}`;
-};
-
-// Store browser session data for this lead
-leadSchema.methods.storeBrowserSession = function (sessionData, orderId = null, assignedBy = null) {
-  const sessionId = this.constructor.generateSessionId();
-  
-  // Validate required session data
-  if (!sessionData || typeof sessionData !== 'object') {
-    throw new Error('Session data is required and must be an object');
-  }
-
-  // Prepare session object
-  const session = {
-    sessionId: sessionId,
-    cookies: sessionData.cookies || [],
-    localStorage: sessionData.localStorage || {},
-    sessionStorage: sessionData.sessionStorage || {},
-    userAgent: sessionData.userAgent || '',
-    viewport: sessionData.viewport || { width: 1366, height: 768 },
-    createdAt: new Date(),
-    lastAccessedAt: new Date(),
-    isActive: true,
-    metadata: {
-      domain: sessionData.domain || '',
-      success: sessionData.success || false,
-      injectionType: sessionData.injectionType || 'manual_ftd',
-      notes: sessionData.notes || '',
-      orderId: orderId,
-      assignedBy: assignedBy
-    }
-  };
-
-  // Deactivate current session if exists
-  if (this.browserSession && this.browserSession.sessionId) {
-    this.deactivateCurrentSession();
-  }
-
-  // Set as current browser session
-  this.browserSession = {
-    ...session,
-    sessionId: sessionId
-  };
-
-  // Add to session history
-  this.sessionHistory.push(session);
-
-  // Set current session reference
-  this.currentSessionId = sessionId;
-
-  return sessionId;
-};
-
-// Get current active browser session
-leadSchema.methods.getCurrentBrowserSession = function () {
-  if (!this.browserSession || !this.browserSession.isActive) {
-    return null;
-  }
-  return this.browserSession;
-};
-
-// Get session by ID from history
-leadSchema.methods.getSessionById = function (sessionId) {
-  if (this.browserSession && this.browserSession.sessionId === sessionId) {
-    return this.browserSession;
-  }
-  
-  return this.sessionHistory.find(session => session.sessionId === sessionId) || null;
-};
-
-// Update session last accessed time
-leadSchema.methods.updateSessionAccess = function (sessionId = null) {
-  const targetSessionId = sessionId || this.currentSessionId;
-  
-  if (!targetSessionId) {
-    return false;
-  }
-
-  // Update current session if it matches
-  if (this.browserSession && this.browserSession.sessionId === targetSessionId) {
-    this.browserSession.lastAccessedAt = new Date();
-  }
-
-  // Update in session history
-  const historySession = this.sessionHistory.find(session => session.sessionId === targetSessionId);
-  if (historySession) {
-    historySession.lastAccessedAt = new Date();
-  }
-
-  return true;
-};
-
-// Deactivate current session
-leadSchema.methods.deactivateCurrentSession = function () {
-  if (this.browserSession && this.browserSession.isActive) {
-    this.browserSession.isActive = false;
-    
-    // Update in session history as well
-    const historySession = this.sessionHistory.find(
-      session => session.sessionId === this.browserSession.sessionId
-    );
-    if (historySession) {
-      historySession.isActive = false;
-    }
-  }
-};
-
-// Activate a session from history
-leadSchema.methods.activateSession = function (sessionId) {
-  const session = this.getSessionById(sessionId);
-  
-  if (!session) {
-    throw new Error('Session not found');
-  }
-
-  // Deactivate current session
-  this.deactivateCurrentSession();
-
-  // Set as current session
-  this.browserSession = {
-    ...session,
-    isActive: true,
-    lastAccessedAt: new Date()
-  };
-
-  // Update current session reference
-  this.currentSessionId = sessionId;
-
-  // Update in history
-  const historySession = this.sessionHistory.find(s => s.sessionId === sessionId);
-  if (historySession) {
-    historySession.isActive = true;
-    historySession.lastAccessedAt = new Date();
-  }
-
-  return session;
-};
-
-// Check if lead has active browser session
-leadSchema.methods.hasActiveBrowserSession = function () {
-  return this.browserSession && this.browserSession.isActive && this.browserSession.sessionId;
-};
-
-// Validate session data integrity
-leadSchema.methods.validateSessionData = function (sessionId = null) {
-  const session = sessionId ? this.getSessionById(sessionId) : this.getCurrentBrowserSession();
-  
-  if (!session) {
-    return { valid: false, reason: 'Session not found' };
-  }
-
-  // Check if session is expired (30 days default)
-  const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
-  if (session.createdAt < thirtyDaysAgo) {
-    return { valid: false, reason: 'Session expired' };
-  }
-
-  // Check if session has required data
-  if (!session.cookies || !Array.isArray(session.cookies)) {
-    return { valid: false, reason: 'Invalid cookies data' };
-  }
-
-  return { valid: true, session: session };
-};
-
-// Get all sessions for this lead
-leadSchema.methods.getAllSessions = function () {
-  const sessions = [...this.sessionHistory];
-  
-  // Add current session if it's not in history
-  if (this.browserSession && this.browserSession.sessionId) {
-    const existsInHistory = sessions.some(s => s.sessionId === this.browserSession.sessionId);
-    if (!existsInHistory) {
-      sessions.push(this.browserSession);
-    }
-  }
-
-  return sessions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-};
-
-// Clear expired sessions (older than specified days)
-leadSchema.methods.clearExpiredSessions = function (daysOld = 30) {
-  const cutoffDate = new Date(Date.now() - (daysOld * 24 * 60 * 60 * 1000));
-  
-  // Filter out expired sessions from history
-  this.sessionHistory = this.sessionHistory.filter(session => 
-    session.createdAt >= cutoffDate
-  );
-
-  // Check if current session is expired
-  if (this.browserSession && this.browserSession.createdAt < cutoffDate) {
-    this.browserSession = {};
-    this.currentSessionId = null;
-  }
-};
-
-// Static method to find leads with active sessions
-leadSchema.statics.findLeadsWithActiveSessions = function (options = {}) {
-  const query = {
-    'browserSession.isActive': true,
-    'browserSession.sessionId': { $exists: true, $ne: null }
-  };
-
-  if (options.leadType) {
-    query.leadType = options.leadType;
-  }
-
-  if (options.assignedTo) {
-    query.assignedTo = options.assignedTo;
-  }
-
-  return this.find(query);
-};
-
-// Static method to find leads with expired sessions
-leadSchema.statics.findLeadsWithExpiredSessions = function (daysOld = 30) {
-  const cutoffDate = new Date(Date.now() - (daysOld * 24 * 60 * 60 * 1000));
-  
-  return this.find({
-    $or: [
-      { 'browserSession.createdAt': { $lt: cutoffDate } },
-      { 'sessionHistory.createdAt': { $lt: cutoffDate } }
-    ]
-  });
 };
 
 module.exports = mongoose.model("Lead", leadSchema);

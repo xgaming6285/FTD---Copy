@@ -7,160 +7,160 @@ const proxySchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      index: true,
+      index: true
     },
-
+    
     // Proxy configuration
     config: {
       server: {
         type: String,
-        required: true,
+        required: true
       },
       username: {
         type: String,
-        required: true,
+        required: true
       },
       password: {
         type: String,
-        required: true,
+        required: true
       },
       host: {
         type: String,
-        required: true,
+        required: true
       },
       port: {
         type: Number,
-        required: true,
-      },
+        required: true
+      }
     },
-
+    
     // Proxy details
     country: {
       type: String,
       required: true,
-      index: true,
+      index: true
     },
-
+    
     countryCode: {
       type: String,
       required: true,
-      index: true,
+      index: true
     },
-
+    
     // Proxy status
     status: {
       type: String,
       enum: ["active", "failed", "testing"],
       default: "testing",
-      index: true,
+      index: true
     },
-
+    
     // Usage tracking
     usage: {
       totalConnections: {
         type: Number,
-        default: 0,
+        default: 0
       },
       activeConnections: {
         type: Number,
-        default: 0,
+        default: 0
       },
       maxConcurrentConnections: {
         type: Number,
-        default: 5, // Limit concurrent connections per proxy
+        default: 5 // Limit concurrent connections per proxy
       },
       lastUsedAt: {
         type: Date,
-        default: Date.now,
+        default: Date.now
       },
       firstUsedAt: {
         type: Date,
-        default: Date.now,
-      },
+        default: Date.now
+      }
     },
-
+    
     // Health monitoring
     health: {
       isHealthy: {
         type: Boolean,
         default: true,
-        index: true,
+        index: true
       },
       lastHealthCheck: {
         type: Date,
-        default: Date.now,
+        default: Date.now
       },
       healthCheckInterval: {
         type: Number,
-        default: 300000, // 5 minutes in milliseconds
+        default: 300000 // 5 minutes in milliseconds
       },
       failedHealthChecks: {
         type: Number,
-        default: 0,
+        default: 0
       },
       maxFailedChecks: {
         type: Number,
-        default: 3,
+        default: 3
       },
       responseTime: {
         type: Number,
-        default: 0,
+        default: 0
       },
       lastError: {
         type: String,
-        default: null,
-      },
+        default: null
+      }
     },
-
+    
     // Associated lead using this proxy (one-to-one relationship)
     assignedLead: {
       leadId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Lead",
         sparse: true,
-        index: true,
+        index: true
       },
       orderId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Order",
-        sparse: true,
+        sparse: true
       },
       assignedAt: {
-        type: Date,
+        type: Date
       },
       status: {
         type: String,
         enum: ["active", "completed", "failed"],
-        default: "active",
+        default: "active"
       },
       completedAt: {
-        type: Date,
-      },
+        type: Date
+      }
     },
-
+    
     // Creation metadata
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: true
     },
-
+    
     // Session information from 922proxy
     sessionInfo: {
       sessionId: {
         type: String,
-        required: true,
+        required: true
       },
       originalUsername: {
         type: String,
-        required: true,
-      },
-    },
+        required: true
+      }
+    }
   },
   {
     timestamps: true,
     toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    toObject: { virtuals: true }
   }
 );
 
@@ -179,40 +179,30 @@ proxySchema.virtual("description").get(function () {
 
 // Virtual for availability
 proxySchema.virtual("isAvailable").get(function () {
-  return (
-    this.status === "active" &&
-    this.health.isHealthy &&
-    !this.assignedLead.leadId
-  ); // Proxy is available only if no lead is assigned
+  return this.status === "active" && 
+         this.health.isHealthy && 
+         !this.assignedLead.leadId; // Proxy is available only if no lead is assigned
 });
 
 // Virtual for can accept FTD
 proxySchema.virtual("canAcceptFTD").get(function () {
-  return (
-    this.isAvailable &&
-    this.usage.activeConnections < this.usage.maxConcurrentConnections
-  );
+  return this.isAvailable && 
+         this.usage.activeConnections < this.usage.maxConcurrentConnections;
 });
 
 // Static method to create proxy from 922proxy configuration
-proxySchema.statics.createFromConfig = async function (
-  country,
-  countryCode,
-  createdBy
-) {
-  const { generateProxyConfig } = require("../utils/proxyManager");
-
+proxySchema.statics.createFromConfig = async function(country, countryCode, createdBy) {
+  const { generateProxyConfig } = require('../utils/proxyManager');
+  
   try {
     const proxyConfig = await generateProxyConfig(country, countryCode);
-
+    
     if (!proxyConfig) {
       throw new Error(`Failed to generate proxy config for ${country}`);
     }
-
-    const proxyId = `${countryCode}_${Date.now()}_${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-
+    
+    const proxyId = `${countryCode}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
     const proxyData = {
       proxyId,
       config: proxyConfig.config,
@@ -221,36 +211,29 @@ proxySchema.statics.createFromConfig = async function (
       status: "testing",
       sessionInfo: {
         sessionId: proxyConfig.sessionId,
-        originalUsername: proxyConfig.originalUsername,
+        originalUsername: proxyConfig.originalUsername
       },
-      createdBy,
+      createdBy
     };
-
+    
     const proxy = await this.create(proxyData);
-
-    // Test the proxy immediately after creation (but don't fail if health check fails)
-    try {
-      const isHealthy = await proxy.testConnection();
-      if (isHealthy) {
-        proxy.status = "active";
-        console.log(`✅ Proxy created and verified for ${country}`);
-      } else {
-        proxy.status = "active"; // Still mark as active, health check can fail due to network issues
-        console.warn(
-          `⚠️ Proxy health check failed for ${country}, but proxy created as active`
-        );
-      }
-    } catch (healthError) {
-      // Health check failed, but still create the proxy as active
+    
+    // Test the proxy immediately after creation
+    const isHealthy = await proxy.testConnection();
+    if (isHealthy) {
       proxy.status = "active";
-      console.warn(
-        `⚠️ Proxy health check error for ${country}, but proxy created as active:`,
-        healthError.message
-      );
+      await proxy.save();
+      console.log(`✅ Proxy created and verified for ${country}`);
+    } else {
+      proxy.status = "failed";
+      await proxy.save();
+      console.warn(`⚠️ Proxy health check failed for ${country}, but proxy object created`);
+      
+      // Instead of throwing an error, we'll return the proxy but mark it as failed
+      // This allows the injection process to continue without a proxy if needed
+      throw new Error(`Proxy health check failed for ${country}`);
     }
-
-    await proxy.save();
-
+    
     return proxy;
   } catch (error) {
     console.error(`Error creating proxy for ${country}:`, error);
@@ -259,131 +242,146 @@ proxySchema.statics.createFromConfig = async function (
 };
 
 // Method to test proxy connection
-proxySchema.methods.testConnection = async function () {
+proxySchema.methods.testConnection = async function() {
+  const axios = require('axios');
+  const { HttpsProxyAgent } = require('https-proxy-agent');
   const startTime = Date.now();
-
+  
   try {
-    console.log(
-      `[PROXY-DEBUG] Testing proxy for ${this.country}: ${this.config.host}:${this.config.port}`
-    );
+    const proxyUrl = `http://${this.config.username}:${this.config.password}@${this.config.host}:${this.config.port}`;
+    console.log(`[PROXY-DEBUG] Testing proxy for ${this.country}: ${this.config.host}:${this.config.port}`);
     console.log(`[PROXY-DEBUG] Username: ${this.config.username}`);
-
-    // Simple proxy test - just check if we can get an IP
-    const { testProxyConnection } = require("../utils/proxyManager");
-    const testResult = await testProxyConnection(this.config);
-
-    const responseTime = Date.now() - startTime;
-
-    if (testResult && testResult.success) {
-      // Update health status
-      this.health.isHealthy = true;
-      this.health.lastHealthCheck = new Date();
-      this.health.failedHealthChecks = 0;
-      this.health.responseTime = responseTime;
-      this.health.lastError = null;
-
-      console.log(
-        `✅ Proxy health check passed for ${this.country}: ${
-          testResult.ip || "unknown"
-        } (${responseTime}ms)`
-      );
-      return true;
-    } else {
-      throw new Error(testResult?.error || "Proxy test failed");
+    
+    // Try multiple test URLs for better reliability
+    const testUrls = [
+      'https://api.ipify.org',
+      'https://httpbin.org/ip',
+      'https://ip.oxylabs.io/location'
+    ];
+    
+    let lastError = null;
+    
+    for (const testUrl of testUrls) {
+      try {
+        console.log(`[PROXY-DEBUG] Testing with URL: ${testUrl}`);
+        
+        const response = await axios.get(testUrl, {
+          httpsAgent: new HttpsProxyAgent(proxyUrl),
+          timeout: 15000, // Increased timeout
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        
+        const responseTime = Date.now() - startTime;
+        
+        // Update health status
+        this.health.isHealthy = true;
+        this.health.lastHealthCheck = new Date();
+        this.health.failedHealthChecks = 0;
+        this.health.responseTime = responseTime;
+        this.health.lastError = null;
+        
+        let ipAddress = 'unknown';
+        try {
+          if (testUrl.includes('ipify') || testUrl.includes('httpbin')) {
+            ipAddress = typeof response.data === 'string' ? response.data.trim() : response.data.origin || response.data.ip || 'unknown';
+          } else if (testUrl.includes('oxylabs')) {
+            const locationData = JSON.parse(response.data);
+            ipAddress = locationData.ip || 'unknown';
+          }
+        } catch (parseError) {
+          console.warn(`[PROXY-DEBUG] Could not parse IP from response: ${parseError.message}`);
+        }
+        
+        console.log(`✅ Proxy health check passed for ${this.country}: ${ipAddress} (${responseTime}ms) via ${testUrl}`);
+        return true;
+        
+      } catch (error) {
+        lastError = error;
+        console.warn(`[PROXY-DEBUG] Test failed with ${testUrl}: ${error.message}`);
+        continue; // Try next URL
+      }
     }
+    
+    // If we get here, all URLs failed
+    throw lastError || new Error('All proxy test URLs failed');
+    
   } catch (error) {
     const responseTime = Date.now() - startTime;
-
+    
     // Update health status
     this.health.isHealthy = false;
     this.health.lastHealthCheck = new Date();
     this.health.failedHealthChecks += 1;
     this.health.responseTime = responseTime;
     this.health.lastError = error.message;
-
+    
     // Mark as failed if too many failed checks
     if (this.health.failedHealthChecks >= this.health.maxFailedChecks) {
       this.status = "failed";
     }
-
-    console.error(
-      `❌ Proxy health check failed for ${this.country}:`,
-      error.message
-    );
+    
+    console.error(`❌ Proxy health check failed for ${this.country}:`, error.message);
+    console.error(`[PROXY-DEBUG] Full error:`, error);
     return false;
   }
 };
 
 // Method to assign lead to this proxy (one-to-one relationship)
-proxySchema.methods.assignLead = function (
-  leadId,
-  orderId,
-  leadType = "non-ftd"
-) {
+proxySchema.methods.assignLead = function(leadId, orderId, leadType = "non-ftd") {
   // Check if proxy already has a lead assigned
   if (this.assignedLead.leadId) {
     return false; // Proxy already has a lead assigned
   }
-
+  
   // Assign the lead to this proxy
   this.assignedLead = {
     leadId,
     orderId,
     assignedAt: new Date(),
-    status: "active",
+    status: "active"
   };
-
+  
   // Update usage counters
   this.usage.activeConnections = 1;
   this.usage.totalConnections += 1;
   this.usage.lastUsedAt = new Date();
-
+  
   return true;
 };
 
 // Method to unassign lead from this proxy
-proxySchema.methods.unassignLead = function (leadId, status = "completed") {
+proxySchema.methods.unassignLead = function(leadId, status = "completed") {
   // Check if the lead is assigned to this proxy
-  if (
-    !this.assignedLead.leadId ||
-    this.assignedLead.leadId.toString() !== leadId.toString()
-  ) {
+  if (!this.assignedLead.leadId || this.assignedLead.leadId.toString() !== leadId.toString()) {
     return false; // Lead not assigned to this proxy
   }
-
+  
   // Complete the assignment
   this.assignedLead.status = status;
   this.assignedLead.completedAt = new Date();
-
+  
   // Update usage counters
   this.usage.activeConnections = 0;
-
+  
   return true;
 };
 
 // Static method to find available proxy for country
-proxySchema.statics.findAvailableProxy = async function (
-  country,
-  countryCode,
-  leadType = "non-ftd"
-) {
+proxySchema.statics.findAvailableProxy = async function(country, countryCode, leadType = "non-ftd") {
   const query = {
     country,
     status: "active",
     "health.isHealthy": true,
-    "assignedLead.leadId": { $exists: false }, // Only find proxies with no assigned lead
+    "assignedLead.leadId": { $exists: false } // Only find proxies with no assigned lead
   };
-
+  
   return this.findOne(query).sort({ createdAt: 1 });
 };
 
 // Static method to find or create proxy for country
-proxySchema.statics.findOrCreateProxy = async function (
-  country,
-  countryCode,
-  createdBy,
-  leadType = "non-ftd"
-) {
+proxySchema.statics.findOrCreateProxy = async function(country, countryCode, createdBy, leadType = "non-ftd") {
   // Always create a new proxy for one-to-one relationship
   try {
     const proxy = await this.createFromConfig(country, countryCode, createdBy);
@@ -395,11 +393,11 @@ proxySchema.statics.findOrCreateProxy = async function (
 };
 
 // Static method to cleanup failed proxies
-proxySchema.statics.cleanupFailedProxies = async function () {
+proxySchema.statics.cleanupFailedProxies = async function() {
   const failedProxies = await this.find({
-    status: "failed",
+    status: "failed"
   });
-
+  
   for (const proxy of failedProxies) {
     // If proxy has no active connections, it can be safely removed
     if (proxy.usage.activeConnections === 0) {
@@ -407,18 +405,18 @@ proxySchema.statics.cleanupFailedProxies = async function () {
       console.log(`Cleaned up failed proxy: ${proxy.description}`);
     }
   }
-
+  
   return failedProxies.length;
 };
 
 // Pre-save middleware
-proxySchema.pre("save", function (next) {
+proxySchema.pre("save", function(next) {
   // Ensure active connections doesn't go negative
   if (this.usage.activeConnections < 0) {
     this.usage.activeConnections = 0;
   }
-
+  
   next();
 });
 
-module.exports = mongoose.model("Proxy", proxySchema);
+module.exports = mongoose.model("Proxy", proxySchema); 

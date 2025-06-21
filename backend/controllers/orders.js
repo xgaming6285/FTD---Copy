@@ -4,7 +4,6 @@ const Order = require("../models/Order");
 const Lead = require("../models/Lead");
 const ClientNetwork = require("../models/ClientNetwork");
 const ClientBroker = require("../models/ClientBroker");
-const Campaign = require("../models/Campaign");
 const { spawn } = require("child_process");
 const path = require("path");
 
@@ -541,13 +540,6 @@ exports.createOrder = async (req, res, next) => {
         includeTypes: { filler: true, cold: true, live: true },
       },
       selectedClientNetwork,
-      selectedCampaign,
-      // Extract injection time fields from root level
-      injectionMode,
-      injectionStartTime,
-      injectionEndTime,
-      minInterval,
-      maxInterval,
     } = req.body;
 
     const { ftd = 0, filler = 0, cold = 0, live = 0 } = requests || {};
@@ -572,46 +564,6 @@ exports.createOrder = async (req, res, next) => {
           success: false,
           message:
             "Access denied - client network not assigned to you or inactive",
-        });
-      }
-    }
-
-    // Validate that campaign is mandatory and exists
-    if (!selectedCampaign) {
-      return res.status(400).json({
-        success: false,
-        message: "Campaign selection is mandatory for all orders",
-      });
-    }
-
-    // Validate campaign exists and is active
-    const Campaign = require("../models/Campaign");
-    const campaign = await Campaign.findById(selectedCampaign);
-    if (!campaign) {
-      return res.status(404).json({
-        success: false,
-        message: "Selected campaign not found",
-      });
-    }
-
-    if (!campaign.isActive || campaign.status !== "active") {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Cannot use inactive campaign - only active campaigns are allowed",
-      });
-    }
-
-    // Validate campaign access for affiliate managers
-    if (req.user.role === "affiliate_manager") {
-      const isAssigned = campaign.assignedAffiliateManagers.some(
-        (managerId) => managerId.toString() === req.user._id.toString()
-      );
-
-      if (!isAssigned) {
-        return res.status(403).json({
-          success: false,
-          message: "Access denied - campaign not assigned to you",
         });
       }
     }
@@ -824,19 +776,12 @@ exports.createOrder = async (req, res, next) => {
       countryFilter: country || null,
       genderFilter: gender || null,
       selectedClientNetwork: selectedClientNetwork || null,
-      selectedCampaign: selectedCampaign || null,
 
       // Add injection settings - always enabled
       injectionSettings: {
         enabled: true,
-        mode: injectionMode || injectionSettings.mode || "bulk",
-        scheduledTime: {
-          startTime:
-            injectionStartTime || injectionSettings.scheduledTime?.startTime,
-          endTime: injectionEndTime || injectionSettings.scheduledTime?.endTime,
-          minInterval: minInterval ? minInterval * 1000 : 30000, // Convert seconds to milliseconds
-          maxInterval: maxInterval ? maxInterval * 1000 : 300000, // Convert seconds to milliseconds
-        },
+        mode: injectionSettings.mode || "bulk",
+        scheduledTime: injectionSettings.scheduledTime,
         status: "pending",
         includeTypes: {
           filler: true,
@@ -879,17 +824,6 @@ exports.createOrder = async (req, res, next) => {
         } catch (error) {
           console.warn(
             `Could not assign client network to lead ${lead._id}: ${error.message}`
-          );
-        }
-      }
-
-      // Add campaign assignment to history if specified
-      if (selectedCampaign) {
-        try {
-          lead.addCampaignAssignment(selectedCampaign, req.user._id, order._id);
-        } catch (error) {
-          console.warn(
-            `Could not assign campaign to lead ${lead._id}: ${error.message}`
           );
         }
       }
@@ -2058,12 +1992,7 @@ const startBulkInjection = async (order) => {
 
 const startScheduledInjection = async (order) => {
   try {
-    console.log(`📅 Starting scheduled injection for order ${order._id}`);
-    console.log(`📋 Order contains ${order.leads.length} total leads`);
-    console.log(
-      `🎯 Injectable lead types:`,
-      getInjectableLeadTypes(order.injectionSettings.includeTypes)
-    );
+    console.log(`Starting scheduled injection for order ${order._id}`);
 
     // Get leads that should be injected
     const Lead = require("../models/Lead");
@@ -2074,22 +2003,6 @@ const startScheduledInjection = async (order) => {
       },
     });
 
-    console.log(`🔍 Found ${leadsToInject.length} leads to inject:`);
-    leadsToInject.forEach((lead, index) => {
-      console.log(
-        `   ${index + 1}. ${lead.firstName} ${lead.lastName} (${lead.leadType})`
-      );
-    });
-
-    if (leadsToInject.length === 0) {
-      console.log(`⚠️  No injectable leads found for order ${order._id}`);
-      await Order.findByIdAndUpdate(order._id, {
-        "injectionSettings.status": "completed",
-        "injectionProgress.completedAt": new Date(),
-      });
-      return;
-    }
-
     // Schedule injections at random intervals within the specified time window
     scheduleRandomInjections(leadsToInject, order);
   } catch (error) {
@@ -2097,7 +2010,6 @@ const startScheduledInjection = async (order) => {
       `Error in scheduled injection for order ${order._id}:`,
       error
     );
-    console.error("Error stack:", error.stack);
     await Order.findByIdAndUpdate(order._id, {
       "injectionSettings.status": "failed",
     });
@@ -2272,27 +2184,16 @@ const injectSingleLead = async (lead, orderId) => {
           );
         }
       } else {
-        console.error(
-          `❌ Failed to assign proxy to lead ${lead._id} - STOPPING INJECTION`
+        console.warn(
+          `⚠️ Failed to assign proxy to lead ${lead._id}, proceeding without proxy`
         );
-        await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed injection
-        return false; // Stop injection immediately
+        proxyConfig = null; // Proceed without proxy
       }
     } catch (error) {
-      console.error(
-        `❌ Error assigning proxy to lead ${lead._id}: ${error.message} - STOPPING INJECTION`
+      console.warn(
+        `⚠️ Error assigning proxy to lead ${lead._id}: ${error.message}, proceeding without proxy`
       );
-      await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed injection
-      return false; // Stop injection immediately
-    }
-
-    // Verify proxy assignment succeeded
-    if (!proxyConfig) {
-      console.error(
-        `❌ No proxy configuration available for lead ${lead._id} - STOPPING INJECTION`
-      );
-      await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed injection
-      return false; // Stop injection immediately
+      proxyConfig = null; // Proceed without proxy
     }
 
     // Get fingerprint configuration for injection
@@ -2767,45 +2668,15 @@ const scheduleRandomInjections = (leads, order) => {
     order.injectionSettings.scheduledTime.startTime.includes(":") &&
     order.injectionSettings.scheduledTime.startTime.length <= 5
   ) {
-    // HH:MM format - calculate delay from current time
+    // HH:MM format
     const [startHour, startMinute] =
       order.injectionSettings.scheduledTime.startTime.split(":").map(Number);
     const [endHour, endMinute] = order.injectionSettings.scheduledTime.endTime
       .split(":")
       .map(Number);
 
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    // Create target times for today
-    const startTime = new Date(
-      today.getTime() + (startHour * 60 + startMinute) * 60 * 1000
-    );
-    const endTime = new Date(
-      today.getTime() + (endHour * 60 + endMinute) * 60 * 1000
-    );
-
-    // If start time is in the past, assume it's for tomorrow
-    if (startTime <= now) {
-      startTime.setDate(startTime.getDate() + 1);
-      endTime.setDate(endTime.getDate() + 1);
-    }
-
-    // Calculate delays from now
-    startTimeMs = Math.max(0, startTime.getTime() - now.getTime());
-    endTimeMs = Math.max(0, endTime.getTime() - now.getTime());
-
-    console.log(`🕐 Current time: ${now.toLocaleTimeString()}`);
-    console.log(
-      `🎯 Start time: ${startTime.toLocaleTimeString()} (in ${Math.round(
-        startTimeMs / 1000 / 60
-      )} minutes)`
-    );
-    console.log(
-      `🏁 End time: ${endTime.toLocaleTimeString()} (in ${Math.round(
-        endTimeMs / 1000 / 60
-      )} minutes)`
-    );
+    startTimeMs = (startHour * 60 + startMinute) * 60 * 1000;
+    endTimeMs = (endHour * 60 + endMinute) * 60 * 1000;
   } else {
     // ISO8601 format
     const startTime = new Date(order.injectionSettings.scheduledTime.startTime);
@@ -2824,116 +2695,19 @@ const scheduleRandomInjections = (leads, order) => {
     return;
   }
 
-  console.log(
-    `📅 Scheduling ${leads.length} leads for random injection over ${Math.round(
-      windowMs / 1000 / 60
-    )} minutes window`
-  );
-
-  // Improved scheduling algorithm with proper random intervals
-  const minIntervalMs =
-    order.injectionSettings.scheduledTime.minInterval || 30000; // Default 30 seconds
-  const maxIntervalMs =
-    order.injectionSettings.scheduledTime.maxInterval || 300000; // Default 5 minutes
-
-  // Ensure min/max intervals are reasonable for the time window
-  const effectiveMinInterval = Math.min(
-    minIntervalMs,
-    windowMs / leads.length / 2
-  );
-  const effectiveMaxInterval = Math.min(
-    maxIntervalMs,
-    (windowMs / leads.length) * 2
-  );
-
-  console.log(
-    `⏱️  Using interval range: ${Math.round(
-      effectiveMinInterval / 1000
-    )}s - ${Math.round(effectiveMaxInterval / 1000)}s between injections`
-  );
-
-  // Schedule each lead with progressive random delays
-  let currentDelay = startTimeMs;
-
   leads.forEach((lead, index) => {
-    // Add a random interval for this injection
-    const randomInterval =
-      effectiveMinInterval +
-      Math.random() * (effectiveMaxInterval - effectiveMinInterval);
-    currentDelay += randomInterval;
-
-    // Ensure we don't exceed the end time window
-    if (currentDelay > endTimeMs) {
-      // If we exceed the window, distribute remaining leads evenly in remaining time
-      const remainingLeads = leads.length - index;
-      const remainingTime = endTimeMs - (currentDelay - randomInterval);
-      const evenInterval = remainingTime / remainingLeads;
-      currentDelay = currentDelay - randomInterval + evenInterval;
-    }
-
-    console.log(
-      `⏰ Lead ${index + 1}/${
-        leads.length
-      } scheduled for injection in ${Math.round(
-        currentDelay / 1000 / 60
-      )} minutes (${lead.firstName} ${lead.lastName})`
-    );
+    // Generate random delay within the time window
+    const randomDelay = Math.random() * windowMs;
+    const totalDelay = startTimeMs + randomDelay;
 
     setTimeout(async () => {
-      try {
-        console.log(
-          `⏰ TIMEOUT TRIGGERED for lead ${index + 1}/${leads.length}: ${
-            lead.firstName
-          } ${lead.lastName}`
-        );
-
-        // Check if injection is still active before proceeding
-        const currentOrder = await Order.findById(order._id);
-        console.log(
-          `📊 Order status check: ${
-            currentOrder
-              ? currentOrder.injectionSettings.status
-              : "ORDER NOT FOUND"
-          }`
-        );
-
-        if (
-          currentOrder &&
-          currentOrder.injectionSettings.status === "in_progress"
-        ) {
-          console.log(
-            `🚀 Starting scheduled injection for lead ${index + 1}/${
-              leads.length
-            }: ${lead.firstName} ${lead.lastName}`
-          );
-
-          const injectionResult = await injectSingleLead(lead, order._id);
-          console.log(
-            `✅ Injection completed for ${lead.firstName} ${lead.lastName}:`,
-            injectionResult
-          );
-        } else {
-          console.log(
-            `⏸️  Skipping injection for lead ${lead.firstName} ${
-              lead.lastName
-            } - injection status: ${
-              currentOrder?.injectionSettings?.status || "UNKNOWN"
-            }`
-          );
-        }
-      } catch (error) {
-        console.error(
-          `❌ Error in scheduled injection for lead ${lead.firstName} ${lead.lastName}:`,
-          error
-        );
-        console.error("Error stack:", error.stack);
+      // Check if injection is still active before proceeding
+      const currentOrder = await Order.findById(order._id);
+      if (currentOrder.injectionSettings.status === "in_progress") {
+        await injectSingleLead(lead, order._id);
       }
-    }, currentDelay);
+    }, totalDelay);
   });
-
-  console.log(
-    `✅ Successfully scheduled ${leads.length} leads for random injection over the specified time window`
-  );
 };
 
 // @desc    Start manual FTD injection (opens browser for manual filling)
@@ -2975,21 +2749,6 @@ exports.startManualFTDInjection = async (req, res, next) => {
     // Use the first FTD lead for manual injection
     const leadToInject = ftdLeads[0];
 
-    // Generate proxy configuration for manual injection
-    let proxyConfig = null;
-    try {
-      const { generateProxyConfig } = require("../utils/proxyManager");
-      const proxyResult = await generateProxyConfig(leadToInject.country);
-      proxyConfig = proxyResult.config;
-      console.log(`[DEBUG] Generated proxy for manual injection: ${leadToInject.country}`);
-    } catch (error) {
-      console.error(`[ERROR] Failed to generate proxy for manual injection:`, error);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to generate proxy configuration for manual injection",
-      });
-    }
-
     // Prepare injection data for the manual script
     const injectionData = {
       leadId: leadToInject._id.toString(),
@@ -3001,7 +2760,7 @@ exports.startManualFTDInjection = async (req, res, next) => {
       country_code: leadToInject.prefix?.replace("+", "") || "1",
       targetUrl:
         process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
-      proxy: proxyConfig, // Include proxy configuration for manual injection
+      proxy: null, // No proxy for manual injection to keep it simple
     };
 
     // Spawn the manual injector script
@@ -3432,21 +3191,6 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
       }
     }
 
-    // Generate proxy configuration for manual injection
-    let proxyConfig = null;
-    try {
-      const { generateProxyConfig } = require("../utils/proxyManager");
-      const proxyResult = await generateProxyConfig(lead.country);
-      proxyConfig = proxyResult.config;
-      console.log(`[DEBUG] Generated proxy for manual injection: ${lead.country}`);
-    } catch (error) {
-      console.error(`[ERROR] Failed to generate proxy for manual injection:`, error);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to generate proxy configuration for manual injection",
-      });
-    }
-
     // Prepare injection data for the manual script
     const injectionData = {
       leadId: lead._id.toString(),
@@ -3459,7 +3203,7 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
       targetUrl:
         process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
       fingerprint: fingerprintConfig, // Include fingerprint configuration
-      proxy: proxyConfig, // Include proxy configuration for manual injection
+      proxy: null, // No proxy for manual injection to keep it simple
     };
 
     // Spawn the manual injector script

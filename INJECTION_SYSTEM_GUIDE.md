@@ -40,9 +40,7 @@ When creating an order, injection is automatically enabled for all non-FTD leads
     "mode": "bulk", // or "scheduled"
     "scheduledTime": {
       "startTime": "10:00", // for scheduled mode
-      "endTime": "12:00",
-      "minInterval": 30, // Minimum seconds between injections (default: 30)
-      "maxInterval": 300 // Maximum seconds between injections (default: 300)
+      "endTime": "12:00"
     },
     "includeTypes": {
       "filler": true, // Always true
@@ -53,22 +51,6 @@ When creating an order, injection is automatically enabled for all non-FTD leads
   }
 }
 ```
-
-### Random Interval Configuration
-
-When using scheduled injection mode, you can now control the timing between injections:
-
-- **minInterval**: Minimum time (in seconds) between injections (default: 30 seconds)
-- **maxInterval**: Maximum time (in seconds) between injections (default: 5 minutes)
-- The system will randomly space injections within this range
-- Prevents multiple injections from happening simultaneously
-- Ensures realistic timing patterns for better bot detection avoidance
-
-#### Example Scenarios:
-
-1. **Fast injection**: minInterval=10, maxInterval=60 (10 seconds to 1 minute)
-2. **Slow injection**: minInterval=300, maxInterval=900 (5 to 15 minutes)
-3. **Balanced injection**: minInterval=30, maxInterval=300 (30 seconds to 5 minutes - default)
 
 ### 2. Injection Modes
 
@@ -82,9 +64,7 @@ When using scheduled injection mode, you can now control the timing between inje
 
 - Leads are injected at random intervals within specified time window
 - Supports both HH:MM format (e.g., "10:00") and ISO8601 format
-- **New Feature**: Configurable minimum and maximum intervals between injections
-- Prevents multiple injections from happening too close together
-- Ensures proper spacing between each injection with random timing
+- Distributes injections evenly across the time period
 
 ### 3. Lead Processing Flow
 

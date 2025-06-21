@@ -732,12 +732,6 @@ class QuantumAIInjector:
         try:
             self.target_url = target_url
 
-            # Early validation: Ensure proxy configuration is available
-            if not self.proxy_config:
-                print("FATAL: No proxy configuration available for QuantumAI injection")
-                print("FATAL: QuantumAI injection cannot proceed without proxy - STOPPING IMMEDIATELY")
-                return False
-
             with sync_playwright() as p:
                 print("INFO: Launching browser for QuantumAI injection...")
                 browser = p.chromium.launch(**self._setup_browser_config())
@@ -814,27 +808,10 @@ class QuantumAIInjector:
                     final_url = page.url
                     print(f"INFO: Final URL: {final_url}")
                     self._take_screenshot(page, "final_result")
-                    
-                    # Capture browser session after successful injection
-                    print("INFO: Attempting to capture browser session...")
-                    session_success = self._capture_and_store_session(page, lead_data, True)
-                    if session_success:
-                        print("SUCCESS: Browser session captured and stored successfully!")
-                    else:
-                        print("WARNING: Failed to capture browser session, but injection was successful.")
-                    
                     return True
                 else:
                     print("ERROR: All QuantumAI form submission attempts failed")
                     self._take_screenshot(page, "all_forms_failed")
-                    
-                    # Try to capture session even if injection failed (for debugging)
-                    print("INFO: Attempting to capture session for debugging...")
-                    try:
-                        self._capture_and_store_session(page, lead_data, False)
-                    except:
-                        pass
-                    
                     return False
 
         except Exception as e:
@@ -854,153 +831,6 @@ class QuantumAIInjector:
                     browser.close()
                 except:
                     pass
-
-    def _capture_and_store_session(self, page, lead_data, success_status):
-        """Capture browser session and send to backend for storage."""
-        try:
-            print("🔍 Starting browser session capture...")
-            
-            # Get current URL for domain extraction
-            current_url = page.url
-            domain = urlparse(current_url).netloc
-            print(f"INFO: Capturing session from domain: {domain}")
-            
-            # Capture cookies from the browser context
-            cookies = page.context.cookies()
-            print(f"📄 Captured {len(cookies)} cookies")
-            
-            # Capture localStorage
-            try:
-                local_storage = page.evaluate("""() => {
-                    const storage = {};
-                    for (let i = 0; i < window.localStorage.length; i++) {
-                        const key = window.localStorage.key(i);
-                        storage[key] = window.localStorage.getItem(key);
-                    }
-                    return storage;
-                }""")
-            except Exception as e:
-                print(f"WARNING: Could not capture localStorage: {str(e)}")
-                local_storage = {}
-            
-            print(f"💾 Captured {len(local_storage)} localStorage items")
-            
-            # Capture sessionStorage
-            try:
-                session_storage = page.evaluate("""() => {
-                    const storage = {};
-                    for (let i = 0; i < window.sessionStorage.length; i++) {
-                        const key = window.sessionStorage.key(i);
-                        storage[key] = window.sessionStorage.getItem(key);
-                    }
-                    return storage;
-                }""")
-            except Exception as e:
-                print(f"WARNING: Could not capture sessionStorage: {str(e)}")
-                session_storage = {}
-            
-            print(f"🗂️ Captured {len(session_storage)} sessionStorage items")
-            
-            # Get user agent
-            user_agent = page.evaluate("() => navigator.userAgent")
-            
-            # Get viewport size
-            viewport = page.viewport_size or {'width': 1366, 'height': 768}
-            
-            # Generate unique session ID
-            import time
-            import random
-            timestamp = int(time.time() * 1000)
-            random_part = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-            session_id = f"session_{timestamp}_{random_part}"
-            
-            # Create session data structure
-            session_data = {
-                'sessionId': session_id,
-                'cookies': [
-                    {
-                        'name': cookie['name'],
-                        'value': cookie['value'],
-                        'domain': cookie.get('domain', ''),
-                        'path': cookie.get('path', '/'),
-                        'expires': cookie.get('expires'),
-                        'httpOnly': cookie.get('httpOnly', False),
-                        'secure': cookie.get('secure', False),
-                        'sameSite': cookie.get('sameSite', 'Lax')
-                    }
-                    for cookie in cookies
-                ],
-                'localStorage': local_storage,
-                'sessionStorage': session_storage,
-                'userAgent': user_agent,
-                'viewport': viewport,
-                'metadata': {
-                    'domain': domain,
-                    'success': success_status,
-                    'injectionType': 'auto_ftd',
-                    'notes': f'QuantumAI FTD injection completed on {domain}',
-                    'capturedAt': time.time()
-                }
-            }
-            
-            print(f"✅ Session data prepared: {len(cookies)} cookies, {len(local_storage)} localStorage, {len(session_storage)} sessionStorage")
-            
-            # Send session data to backend
-            return self._send_session_to_backend(lead_data, session_data)
-            
-        except Exception as e:
-            print(f"❌ Error capturing session: {str(e)}")
-            traceback.print_exc()
-            return False
-
-    def _send_session_to_backend(self, lead_data, session_data):
-        """Send captured session data to the Node.js backend."""
-        try:
-            # Get backend URL from environment or use default
-            backend_url = os.getenv('BACKEND_URL', 'http://localhost:5000')
-            lead_id = lead_data.get('leadId') or lead_data.get('_id')
-            
-            if not lead_id:
-                print("ERROR: No lead ID found in lead data")
-                return False
-            
-            # Prepare API request
-            api_url = f"{backend_url}/api/leads/{lead_id}/session"
-            
-            # Add order and user information if available
-            payload = {
-                'sessionData': session_data,
-                'orderId': lead_data.get('orderId'),
-                'assignedBy': lead_data.get('assignedBy')
-            }
-            
-            print(f"📡 Sending session data to backend: {api_url}")
-            
-            # Send POST request to store session
-            response = requests.post(
-                api_url,
-                json=payload,
-                headers={'Content-Type': 'application/json'},
-                timeout=30
-            )
-            
-            if response.status_code == 200 or response.status_code == 201:
-                result = response.json()
-                print(f"✅ Session stored successfully in backend!")
-                print(f"🔑 Session ID: {session_data['sessionId']}")
-                return True
-            else:
-                print(f"❌ Backend returned error: {response.status_code}")
-                print(f"Response: {response.text}")
-                return False
-                
-        except requests.exceptions.RequestException as e:
-            print(f"❌ Network error sending session to backend: {str(e)}")
-            return False
-        except Exception as e:
-            print(f"❌ Error sending session to backend: {str(e)}")
-            traceback.print_exc()
-            return False
 
 def main():
     """Main function to run the QuantumAI injector."""
@@ -1026,9 +856,7 @@ def main():
             print(f"  - Port: {proxy_config.get('port', 'Not set')}")
             print(f"  - Country: {proxy_config.get('country', 'Not set')}")
         else:
-            print("FATAL: No proxy configuration provided to QuantumAI injector")
-            print("FATAL: QuantumAI injection cannot proceed without proxy - STOPPING IMMEDIATELY")
-            sys.exit(1)
+            print("DEBUG: No proxy configuration received - QuantumAI will use real IP")
 
         # Extract target URL from lead data or use default
         target_url = lead_data.get('targetUrl', 'https://k8ro.info/bKkkBWkK')
