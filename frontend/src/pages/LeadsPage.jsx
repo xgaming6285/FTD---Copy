@@ -74,6 +74,7 @@ import {
 // Project Components & Services
 import AddLeadForm from "../components/AddLeadForm";
 import DocumentPreview from "../components/DocumentPreview";
+import SessionAccessButton from "../components/SessionAccessButton";
 import api from "../services/api";
 import { selectUser } from "../store/slices/authSlice";
 import { getSortedCountries } from "../constants/countries";
@@ -1843,6 +1844,22 @@ const LeadRow = React.memo(({ lead, canAssignLeads, canDeleteLeads, isAdminOrMan
       <TableCell sx={{ py: 0.5 }}>
         <Stack direction="row" spacing={0.5}>
           <FormControl size="small" sx={{ minWidth: 100 }}><Select value={lead.status} onChange={(e) => onUpdateStatus(lead._id, e.target.value)} size="small" disabled={!isOwner} sx={{ '& .MuiSelect-select': { py: 0.5, fontSize: '0.875rem' } }}>{Object.values(LEAD_STATUSES).map(status => <MenuItem key={status} value={status} sx={{ fontSize: '0.875rem' }}>{status.charAt(0).toUpperCase() + status.slice(1)}</MenuItem>)}</Select></FormControl>
+          {/* Session Access Button for FTD leads */}
+          {lead.leadType === 'ftd' && (
+            <Tooltip title="Access FTD Browser Session">
+              <span>
+                              <SessionAccessButton
+                lead={lead}
+                user={user}
+                size="small"
+                variant="icon"
+                onSessionAccess={(lead, response) => {
+                  console.log('Session access initiated for lead:', lead._id, response);
+                }}
+              />
+              </span>
+            </Tooltip>
+          )}
           <IconButton size="small" onClick={() => onComment(lead)} disabled={!isOwner}><CommentIcon sx={{ fontSize: '1.25rem' }} /></IconButton>
           {(user?.role === ROLES.ADMIN || (isLeadManager && lead.createdBy === user?.id)) && (
             <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleEditLead(lead); }} title="Edit Lead">
@@ -1944,6 +1961,22 @@ const LeadCard = React.memo(({ lead, canAssignLeads, canDeleteLeads, selectedLea
             >
               <ExpandMoreIcon />
             </IconButton>
+            {/* Session Access Button for FTD leads */}
+            {lead.leadType === 'ftd' && (
+              <Tooltip title="Access FTD Browser Session">
+                <span>
+                  <SessionAccessButton
+                    lead={lead}
+                    user={user}
+                    size="small"
+                    variant="icon"
+                                    onSessionAccess={(lead, response) => {
+                  console.log('Session access initiated for lead:', lead._id, response);
+                }}
+                  />
+                </span>
+              </Tooltip>
+            )}
             <IconButton size="small" onClick={() => onComment(lead)} sx={{ color: 'info.main' }}><CommentIcon /></IconButton>
             {(user?.role === ROLES.ADMIN || (isLeadManager && lead.createdBy === user?.id)) && (
               <IconButton

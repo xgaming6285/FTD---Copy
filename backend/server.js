@@ -19,6 +19,7 @@ const agentRoutes = require("./routes/agents");
 const clientNetworkRoutes = require("./routes/clientNetworks");
 const clientBrokerRoutes = require("./routes/clientBrokers");
 const campaignRoutes = require("./routes/campaigns");
+const testRoutes = require("./routes/test");
 
 // Import middleware
 const errorHandler = require("./middleware/errorHandler");
@@ -166,6 +167,7 @@ app.use("/api/agents", agentRoutes);
 app.use("/api/client-networks", clientNetworkRoutes);
 app.use("/api/client-brokers", clientBrokerRoutes);
 app.use("/api/campaigns", campaignRoutes);
+app.use("/api/test", testRoutes);
 
 // Import health check route
 const healthRoutes = require("./routes/health");

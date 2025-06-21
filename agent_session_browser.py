@@ -39,6 +39,28 @@ class AgentSessionBrowser:
             
             playwright = await async_playwright().start()
             
+            # Get fingerprint configuration if available
+            fingerprint = self.session_data.get('fingerprint')
+            is_test_mode = self.session_data.get('metadata', {}).get('testMode', False)
+            
+            # Determine device configuration from fingerprint or defaults
+            if fingerprint:
+                device_config = self._create_device_config_from_fingerprint(fingerprint)
+                logger.info(f"📱 Using {fingerprint.get('deviceType', 'unknown')} device configuration from fingerprint")
+                logger.info(f"📐 Viewport: {device_config['viewport']['width']}x{device_config['viewport']['height']}")
+                logger.info(f"🖥️ Mobile: {device_config.get('is_mobile', False)}")
+            else:
+                # Use viewport from session data or defaults
+                viewport = self.session_data.get('viewport', {'width': 1366, 'height': 768})
+                device_config = {
+                    'viewport': viewport,
+                    'user_agent': self.session_data.get('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'),
+                    'is_mobile': False,
+                    'has_touch': False,
+                    'device_scale_factor': 1
+                }
+                logger.info(f"🖥️ Using default desktop configuration: {viewport['width']}x{viewport['height']}")
+            
             # Browser launch options
             browser_options = {
                 'headless': False,  # Always show browser for agent interaction
@@ -51,17 +73,20 @@ class AgentSessionBrowser:
                     '--no-default-browser-check',
                     '--disable-extensions-except=/path/to/extension',
                     '--load-extension=/path/to/extension',
-                    f'--window-size={self.session_data.get("viewport", {}).get("width", 1366)},{self.session_data.get("viewport", {}).get("height", 768)}'
+                    f'--window-size={device_config["viewport"]["width"]},{device_config["viewport"]["height"]}'
                 ]
             }
             
             # Launch browser
             self.browser = await playwright.chromium.launch(**browser_options)
             
-            # Create context with session configuration
+            # Create context with device configuration
             context_options = {
-                'viewport': self.session_data.get('viewport', {'width': 1366, 'height': 768}),
-                'user_agent': self.session_data.get('userAgent', ''),
+                'viewport': device_config['viewport'],
+                'user_agent': device_config.get('user_agent', ''),
+                'is_mobile': device_config.get('is_mobile', False),
+                'has_touch': device_config.get('has_touch', False),
+                'device_scale_factor': device_config.get('device_scale_factor', 1),
                 'ignore_https_errors': True,
                 'java_script_enabled': True,
                 'accept_downloads': True,
@@ -111,12 +136,115 @@ class AgentSessionBrowser:
             # Create new page
             self.page = await self.context.new_page()
             
+            # Apply fingerprint properties if available
+            if fingerprint:
+                await self._apply_fingerprint_to_page(self.page, fingerprint)
+            
             logger.info("✅ Browser setup completed successfully")
             return True
             
         except Exception as e:
             logger.error(f"❌ Error setting up browser: {e}")
             return False
+
+    def _create_device_config_from_fingerprint(self, fingerprint):
+        """Create Playwright device configuration from fingerprint data."""
+        screen = fingerprint.get('screen', {})
+        navigator = fingerprint.get('navigator', {})
+        mobile = fingerprint.get('mobile', {})
+
+        return {
+            'viewport': {
+                'width': screen.get('availWidth', screen.get('width', 1366)),
+                'height': screen.get('availHeight', screen.get('height', 768))
+            },
+            'device_scale_factor': screen.get('devicePixelRatio', 1),
+            'is_mobile': mobile.get('isMobile', False),
+            'has_touch': navigator.get('maxTouchPoints', 0) > 0,
+            'user_agent': navigator.get('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+        }
+
+    async def _apply_fingerprint_to_page(self, page, fingerprint):
+        """Apply fingerprint properties to the page context."""
+        try:
+            # Set injection mode flag first (most important)
+            await page.evaluate("() => { localStorage.setItem('isInjectionMode', 'true'); }")
+            logger.info("INFO: Set injection mode flag for the landing page")
+
+            # Apply fingerprint properties
+            navigator = fingerprint.get('navigator', {})
+            screen = fingerprint.get('screen', {})
+            mobile = fingerprint.get('mobile', {})
+
+            # Apply device-specific properties
+            await page.evaluate(f"""() => {{
+                try {{
+                    // Set basic navigator properties
+                    Object.defineProperty(navigator, 'platform', {{
+                        get: () => {json.dumps(navigator.get('platform', 'Win32'))}
+                    }});
+                    
+                    Object.defineProperty(navigator, 'hardwareConcurrency', {{
+                        get: () => {navigator.get('hardwareConcurrency', 4)}
+                    }});
+                    
+                    Object.defineProperty(navigator, 'deviceMemory', {{
+                        get: () => {navigator.get('deviceMemory', 8)}
+                    }});
+                    
+                    Object.defineProperty(navigator, 'maxTouchPoints', {{
+                        get: () => {navigator.get('maxTouchPoints', 0)}
+                    }});
+
+                    // Set screen properties
+                    Object.defineProperty(screen, 'width', {{
+                        get: () => {screen.get('width', 1366)}
+                    }});
+                    
+                    Object.defineProperty(screen, 'height', {{
+                        get: () => {screen.get('height', 768)}
+                    }});
+                    
+                    Object.defineProperty(screen, 'availWidth', {{
+                        get: () => {screen.get('availWidth', screen.get('width', 1366))}
+                    }});
+                    
+                    Object.defineProperty(screen, 'availHeight', {{
+                        get: () => {screen.get('availHeight', screen.get('height', 768))}
+                    }});
+                    
+                    Object.defineProperty(screen, 'colorDepth', {{
+                        get: () => {screen.get('colorDepth', 24)}
+                    }});
+                    
+                    Object.defineProperty(screen, 'pixelDepth', {{
+                        get: () => {screen.get('pixelDepth', 24)}
+                    }});
+
+                    // Set injection mode flag (redundant but important)
+                    localStorage.setItem('isInjectionMode', 'true');
+
+                    console.log('Fingerprint properties applied successfully');
+                    console.log('Device type: {fingerprint.get("deviceType", "unknown")}');
+                    console.log('Screen: {screen.get("width", 1366)}x{screen.get("height", 768)}');
+                    console.log('Mobile: {mobile.get("isMobile", False)}');
+                }} catch (error) {{
+                    console.error('Error applying fingerprint:', error);
+                    // Ensure injection mode is still set
+                    localStorage.setItem('isInjectionMode', 'true');
+                }}
+            }};""")
+
+            logger.info(f"INFO: Applied fingerprint properties for device: {fingerprint.get('deviceId', 'unknown')} ({fingerprint.get('deviceType', 'unknown')})")
+
+        except Exception as e:
+            logger.error(f"WARNING: Failed to apply fingerprint properties: {str(e)}")
+            # Always ensure injection mode is set
+            try:
+                await page.evaluate("() => { localStorage.setItem('isInjectionMode', 'true'); }")
+                logger.info("INFO: Set injection mode flag despite fingerprint error")
+            except Exception as e2:
+                logger.error(f"WARNING: Could not set injection mode flag: {str(e2)}")
 
     async def restore_session_storage(self):
         """Restore localStorage and sessionStorage data"""
@@ -157,39 +285,65 @@ class AgentSessionBrowser:
             logger.error(f"❌ Error restoring storage data: {e}")
 
     async def navigate_to_domain(self):
-        """Navigate to the stored domain"""
+        """Navigate to the stored domain or Google homepage"""
         try:
             domain = self.session_data.get('domain')
-            if not domain:
-                logger.warning("⚠️ No domain specified in session data")
-                return False
+            target_url = None
             
-            # Ensure domain has protocol
-            if not domain.startswith(('http://', 'https://')):
-                domain = f'https://{domain}'
-            
-            logger.info(f"🌐 Navigating to: {domain}")
+            if domain:
+                # Ensure domain has protocol
+                if not domain.startswith(('http://', 'https://')):
+                    domain = f'https://{domain}'
+                target_url = domain
+                logger.info(f"🌐 Navigating to stored domain: {domain}")
+            else:
+                # Navigate to Google homepage if no domain specified
+                target_url = 'https://www.google.com'
+                logger.info("🌐 No domain specified, navigating to Google homepage")
             
             # Navigate with extended timeout
-            await self.page.goto(domain, wait_until='domcontentloaded', timeout=30000)
+            await self.page.goto(target_url, wait_until='domcontentloaded', timeout=30000)
             
             # Wait a bit for any dynamic content to load
             await self.page.wait_for_timeout(2000)
             
-            logger.info(f"✅ Successfully navigated to {domain}")
+            logger.info(f"✅ Successfully navigated to {target_url}")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error navigating to domain: {e}")
-            return False
+            logger.error(f"❌ Error navigating to {target_url}: {e}")
+            # Try navigating to Google homepage as fallback
+            try:
+                logger.info("🔄 Attempting fallback navigation to Google homepage...")
+                await self.page.goto('https://www.google.com', wait_until='domcontentloaded', timeout=30000)
+                await self.page.wait_for_timeout(2000)
+                logger.info("✅ Successfully navigated to Google homepage (fallback)")
+                return True
+            except Exception as fallback_error:
+                logger.error(f"❌ Fallback navigation also failed: {fallback_error}")
+                return False
 
     async def setup_page_info(self):
         """Add informational elements to the page"""
         try:
             lead_info = self.session_data.get('leadInfo', {})
             session_id = self.session_data.get('sessionId', 'Unknown')
+            is_test_mode = self.session_data.get('metadata', {}).get('testMode', False)
+            fingerprint = self.session_data.get('fingerprint')
+            
+            # Determine device info for banner
+            device_info = "Desktop"
+            if fingerprint:
+                device_type = fingerprint.get('deviceType', 'unknown')
+                screen = fingerprint.get('screen', {})
+                device_info = f"{device_type.upper()} ({screen.get('width', '?')}x{screen.get('height', '?')})"
+            elif self.session_data.get('viewport'):
+                viewport = self.session_data.get('viewport')
+                device_info = f"Desktop ({viewport.get('width', '?')}x{viewport.get('height', '?')})"
             
             # Add session info banner to the page
+            banner_text = "🔗 FTD Session Restored" if not is_test_mode else "🧪 FTD Test Mode"
+            
             await self.page.evaluate("""
                 (info) => {
                     // Create info banner
@@ -214,8 +368,9 @@ class AgentSessionBrowser:
                     
                     banner.innerHTML = `
                         <div>
-                            <strong>🔗 FTD Session Restored</strong> - 
+                            <strong>${info.bannerText}</strong> - 
                             Lead: ${info.leadName} (${info.email}) | 
+                            Device: ${info.deviceInfo} | 
                             Session: ${info.sessionId.substring(0, 16)}...
                         </div>
                         <button onclick="this.parentElement.style.display='none'" 
@@ -244,8 +399,10 @@ class AgentSessionBrowser:
                     }, 10000);
                 }
             """, {
+                'bannerText': banner_text,
                 'leadName': f"{lead_info.get('firstName', '')} {lead_info.get('lastName', '')}".strip(),
                 'email': lead_info.get('email', ''),
+                'deviceInfo': device_info,
                 'sessionId': session_id
             })
             
@@ -253,6 +410,131 @@ class AgentSessionBrowser:
             
         except Exception as e:
             logger.error(f"❌ Error setting up page info: {e}")
+
+    async def auto_fill_ftd_form(self):
+        """Auto-fill the FTD form if in test mode and on FTD domain"""
+        try:
+            is_test_mode = self.session_data.get('metadata', {}).get('testMode', False)
+            current_url = self.page.url
+            
+            if not is_test_mode:
+                logger.info("ℹ️ Not in test mode, skipping auto-fill")
+                return
+                
+            if 'ftd-copy.vercel.app' not in current_url:
+                logger.info("ℹ️ Not on FTD domain, skipping auto-fill")
+                return
+                
+            lead_info = self.session_data.get('leadInfo', {})
+            if not lead_info:
+                logger.warning("⚠️ No lead info available for auto-fill")
+                return
+                
+            logger.info("🖊️ Attempting to auto-fill FTD form...")
+            
+            # Wait for form elements to be available
+            await self.page.wait_for_timeout(3000)
+            
+            # Set injection mode flag
+            await self.page.evaluate("() => { localStorage.setItem('isInjectionMode', 'true'); }")
+            
+            # Try to fill form fields
+            form_filled = False
+            
+            try:
+                # Fill first name
+                if lead_info.get('firstName'):
+                    first_name_filled = await self.page.fill('input[name="firstName"], input[id="firstName"], input[placeholder*="first" i]', lead_info['firstName'])
+                    if first_name_filled:
+                        logger.info(f"✅ Filled first name: {lead_info['firstName']}")
+                        form_filled = True
+            except Exception as e:
+                logger.warning(f"⚠️ Could not fill first name: {e}")
+                
+            try:
+                # Fill last name
+                if lead_info.get('lastName'):
+                    await self.page.fill('input[name="lastName"], input[id="lastName"], input[placeholder*="last" i]', lead_info['lastName'])
+                    logger.info(f"✅ Filled last name: {lead_info['lastName']}")
+                    form_filled = True
+            except Exception as e:
+                logger.warning(f"⚠️ Could not fill last name: {e}")
+                
+            try:
+                # Fill email
+                if lead_info.get('email'):
+                    await self.page.fill('input[type="email"], input[name="email"], input[id="email"]', lead_info['email'])
+                    logger.info(f"✅ Filled email: {lead_info['email']}")
+                    form_filled = True
+            except Exception as e:
+                logger.warning(f"⚠️ Could not fill email: {e}")
+                
+            try:
+                # Fill phone
+                if lead_info.get('phone'):
+                    await self.page.fill('input[type="tel"], input[name="phone"], input[id="phone"]', lead_info['phone'])
+                    logger.info(f"✅ Filled phone: {lead_info['phone']}")
+                    form_filled = True
+            except Exception as e:
+                logger.warning(f"⚠️ Could not fill phone: {e}")
+                
+            try:
+                # Select country if available
+                if lead_info.get('country'):
+                    # Try different country selection methods
+                    country_selectors = [
+                        'select[name="country"]',
+                        'select[id="country"]', 
+                        'select[class*="country"]'
+                    ]
+                    
+                    for selector in country_selectors:
+                        try:
+                            await self.page.select_option(selector, lead_info['country'])
+                            logger.info(f"✅ Selected country: {lead_info['country']}")
+                            form_filled = True
+                            break
+                        except:
+                            continue
+            except Exception as e:
+                logger.warning(f"⚠️ Could not select country: {e}")
+            
+            if form_filled:
+                logger.info("✅ FTD form auto-fill completed successfully")
+                
+                # Add a visual indicator that form was auto-filled
+                await self.page.evaluate("""
+                    () => {
+                        const indicator = document.createElement('div');
+                        indicator.style.cssText = `
+                            position: fixed;
+                            top: 60px;
+                            right: 20px;
+                            background: #4CAF50;
+                            color: white;
+                            padding: 10px 15px;
+                            border-radius: 5px;
+                            font-family: Arial, sans-serif;
+                            font-size: 12px;
+                            z-index: 10001;
+                            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+                        `;
+                        indicator.textContent = '✅ Form Auto-Filled';
+                        document.body.appendChild(indicator);
+                        
+                        // Auto-remove after 5 seconds
+                        setTimeout(() => {
+                            if (indicator.parentElement) {
+                                indicator.parentElement.removeChild(indicator);
+                            }
+                        }, 5000);
+                    }
+                """)
+            else:
+                logger.warning("⚠️ No form fields were successfully filled")
+                
+        except Exception as e:
+            logger.error(f"❌ Error during auto-fill: {e}")
 
     async def keep_browser_open(self):
         """Keep the browser open for agent interaction"""
@@ -273,10 +555,19 @@ class AgentSessionBrowser:
     async def run(self):
         """Main execution flow"""
         try:
+            fingerprint = self.session_data.get('fingerprint')
+            device_type = fingerprint.get('deviceType', 'desktop') if fingerprint else 'desktop'
+            
             logger.info("🎯 Starting agent session restoration...")
             logger.info(f"📋 Lead: {self.session_data.get('leadInfo', {}).get('firstName', '')} {self.session_data.get('leadInfo', {}).get('lastName', '')}")
             logger.info(f"🔑 Session ID: {self.session_data.get('sessionId', 'Unknown')}")
             logger.info(f"🌐 Domain: {self.session_data.get('domain', 'Not specified')}")
+            logger.info(f"📱 Device Type: {device_type}")
+            
+            if fingerprint:
+                screen = fingerprint.get('screen', {})
+                logger.info(f"📐 Screen Resolution: {screen.get('width', '?')}x{screen.get('height', '?')}")
+                logger.info(f"🖥️ Mobile Device: {fingerprint.get('mobile', {}).get('isMobile', False)}")
             
             # Setup browser
             if not await self.setup_browser():
@@ -284,20 +575,31 @@ class AgentSessionBrowser:
                 return False
             
             # Navigate to domain first (before restoring storage)
-            if not await self.navigate_to_domain():
-                # If navigation fails, try to navigate to a generic page
-                logger.warning("⚠️ Navigation failed, opening blank page")
-                await self.page.goto('about:blank')
+            navigation_success = await self.navigate_to_domain()
             
             # Restore storage data
             await self.restore_session_storage()
             
             # If we have a domain and navigation failed initially, try again after storage restoration
-            if self.session_data.get('domain') and not await self.navigate_to_domain():
-                logger.warning("⚠️ Second navigation attempt failed")
+            if self.session_data.get('domain') and not navigation_success:
+                logger.info("🔄 Retrying navigation after storage restoration...")
+                navigation_success = await self.navigate_to_domain()
+            
+            # If still no successful navigation, ensure we're at least on Google homepage
+            if not navigation_success:
+                try:
+                    logger.info("🔄 Final attempt: navigating to Google homepage...")
+                    await self.page.goto('https://www.google.com', wait_until='domcontentloaded', timeout=30000)
+                    logger.info("✅ Successfully navigated to Google homepage")
+                except Exception as e:
+                    logger.warning(f"⚠️ Even Google homepage navigation failed: {e}")
+                    # Continue anyway - agent can manually navigate
             
             # Setup page information
             await self.setup_page_info()
+            
+            # Auto-fill FTD form if in test mode and on FTD domain
+            await self.auto_fill_ftd_form()
             
             # Keep browser open for agent interaction
             await self.keep_browser_open()
