@@ -866,9 +866,11 @@ class LeadInjector:
             # Store target URL for proxy configuration
             self.target_url = target_url
 
-            # Get proxy configuration
+            # Early validation: Ensure proxy configuration is available
             if not self.proxy_config:
-                print("WARNING: No proxy configuration available. Proceeding without proxy for testing.")
+                print("FATAL: No proxy configuration available for injection")
+                print("FATAL: Injection cannot proceed without proxy - STOPPING IMMEDIATELY")
+                return False
 
             with sync_playwright() as p:
                 # Launch browser with configuration
@@ -1306,13 +1308,9 @@ def main():
                 print("INFO: Test mode detected - proceeding without proxy.")
                 proxy_config = None
             else:
-                print("WARNING: No proxy configuration provided. Attempting to get fallback proxy.")
-                country_name = injection_data.get("country", "United States")
-                proxy_config = get_proxy_config(country_name)
-
-                if not proxy_config:
-                    print("WARNING: Could not obtain proxy configuration. Proceeding without proxy for testing.")
-                    proxy_config = None
+                print("FATAL: No proxy configuration provided and fallback proxy setup failed.")
+                print("FATAL: Injection cannot proceed without proxy - STOPPING IMMEDIATELY")
+                sys.exit(1)
 
         # Get target URL
         target_url = injection_data.get('targetUrl', "https://ftd-copy.vercel.app/landing")

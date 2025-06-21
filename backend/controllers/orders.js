@@ -542,6 +542,12 @@ exports.createOrder = async (req, res, next) => {
       },
       selectedClientNetwork,
       selectedCampaign,
+      // Extract injection time fields from root level
+      injectionMode,
+      injectionStartTime,
+      injectionEndTime,
+      minInterval,
+      maxInterval,
     } = req.body;
 
     const { ftd = 0, filler = 0, cold = 0, live = 0 } = requests || {};
@@ -823,8 +829,14 @@ exports.createOrder = async (req, res, next) => {
       // Add injection settings - always enabled
       injectionSettings: {
         enabled: true,
-        mode: injectionSettings.mode || "bulk",
-        scheduledTime: injectionSettings.scheduledTime,
+        mode: injectionMode || injectionSettings.mode || "bulk",
+        scheduledTime: {
+          startTime:
+            injectionStartTime || injectionSettings.scheduledTime?.startTime,
+          endTime: injectionEndTime || injectionSettings.scheduledTime?.endTime,
+          minInterval: minInterval ? minInterval * 1000 : 30000, // Convert seconds to milliseconds
+          maxInterval: maxInterval ? maxInterval * 1000 : 300000, // Convert seconds to milliseconds
+        },
         status: "pending",
         includeTypes: {
           filler: true,
@@ -2238,16 +2250,27 @@ const injectSingleLead = async (lead, orderId) => {
           );
         }
       } else {
-        console.warn(
-          `⚠️ Failed to assign proxy to lead ${lead._id}, proceeding without proxy`
+        console.error(
+          `❌ Failed to assign proxy to lead ${lead._id} - STOPPING INJECTION`
         );
-        proxyConfig = null; // Proceed without proxy
+        await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed injection
+        return false; // Stop injection immediately
       }
     } catch (error) {
-      console.warn(
-        `⚠️ Error assigning proxy to lead ${lead._id}: ${error.message}, proceeding without proxy`
+      console.error(
+        `❌ Error assigning proxy to lead ${lead._id}: ${error.message} - STOPPING INJECTION`
       );
-      proxyConfig = null; // Proceed without proxy
+      await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed injection
+      return false; // Stop injection immediately
+    }
+
+    // Verify proxy assignment succeeded
+    if (!proxyConfig) {
+      console.error(
+        `❌ No proxy configuration available for lead ${lead._id} - STOPPING INJECTION`
+      );
+      await updateOrderInjectionProgress(orderId, 1, 0); // Count as failed injection
+      return false; // Stop injection immediately
     }
 
     // Get fingerprint configuration for injection
@@ -2722,15 +2745,45 @@ const scheduleRandomInjections = (leads, order) => {
     order.injectionSettings.scheduledTime.startTime.includes(":") &&
     order.injectionSettings.scheduledTime.startTime.length <= 5
   ) {
-    // HH:MM format
+    // HH:MM format - calculate delay from current time
     const [startHour, startMinute] =
       order.injectionSettings.scheduledTime.startTime.split(":").map(Number);
     const [endHour, endMinute] = order.injectionSettings.scheduledTime.endTime
       .split(":")
       .map(Number);
 
-    startTimeMs = (startHour * 60 + startMinute) * 60 * 1000;
-    endTimeMs = (endHour * 60 + endMinute) * 60 * 1000;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Create target times for today
+    const startTime = new Date(
+      today.getTime() + (startHour * 60 + startMinute) * 60 * 1000
+    );
+    const endTime = new Date(
+      today.getTime() + (endHour * 60 + endMinute) * 60 * 1000
+    );
+
+    // If start time is in the past, assume it's for tomorrow
+    if (startTime <= now) {
+      startTime.setDate(startTime.getDate() + 1);
+      endTime.setDate(endTime.getDate() + 1);
+    }
+
+    // Calculate delays from now
+    startTimeMs = Math.max(0, startTime.getTime() - now.getTime());
+    endTimeMs = Math.max(0, endTime.getTime() - now.getTime());
+
+    console.log(`🕐 Current time: ${now.toLocaleTimeString()}`);
+    console.log(
+      `🎯 Start time: ${startTime.toLocaleTimeString()} (in ${Math.round(
+        startTimeMs / 1000 / 60
+      )} minutes)`
+    );
+    console.log(
+      `🏁 End time: ${endTime.toLocaleTimeString()} (in ${Math.round(
+        endTimeMs / 1000 / 60
+      )} minutes)`
+    );
   } else {
     // ISO8601 format
     const startTime = new Date(order.injectionSettings.scheduledTime.startTime);
@@ -2749,19 +2802,92 @@ const scheduleRandomInjections = (leads, order) => {
     return;
   }
 
+  console.log(
+    `📅 Scheduling ${leads.length} leads for random injection over ${Math.round(
+      windowMs / 1000 / 60
+    )} minutes window`
+  );
+
+  // Improved scheduling algorithm with proper random intervals
+  const minIntervalMs =
+    order.injectionSettings.scheduledTime.minInterval || 30000; // Default 30 seconds
+  const maxIntervalMs =
+    order.injectionSettings.scheduledTime.maxInterval || 300000; // Default 5 minutes
+
+  // Ensure min/max intervals are reasonable for the time window
+  const effectiveMinInterval = Math.min(
+    minIntervalMs,
+    windowMs / leads.length / 2
+  );
+  const effectiveMaxInterval = Math.min(
+    maxIntervalMs,
+    (windowMs / leads.length) * 2
+  );
+
+  console.log(
+    `⏱️  Using interval range: ${Math.round(
+      effectiveMinInterval / 1000
+    )}s - ${Math.round(effectiveMaxInterval / 1000)}s between injections`
+  );
+
+  // Schedule each lead with progressive random delays
+  let currentDelay = startTimeMs;
+
   leads.forEach((lead, index) => {
-    // Generate random delay within the time window
-    const randomDelay = Math.random() * windowMs;
-    const totalDelay = startTimeMs + randomDelay;
+    // Add a random interval for this injection
+    const randomInterval =
+      effectiveMinInterval +
+      Math.random() * (effectiveMaxInterval - effectiveMinInterval);
+    currentDelay += randomInterval;
+
+    // Ensure we don't exceed the end time window
+    if (currentDelay > endTimeMs) {
+      // If we exceed the window, distribute remaining leads evenly in remaining time
+      const remainingLeads = leads.length - index;
+      const remainingTime = endTimeMs - (currentDelay - randomInterval);
+      const evenInterval = remainingTime / remainingLeads;
+      currentDelay = currentDelay - randomInterval + evenInterval;
+    }
+
+    console.log(
+      `⏰ Lead ${index + 1}/${
+        leads.length
+      } scheduled for injection in ${Math.round(
+        currentDelay / 1000 / 60
+      )} minutes (${lead.firstName} ${lead.lastName})`
+    );
 
     setTimeout(async () => {
-      // Check if injection is still active before proceeding
-      const currentOrder = await Order.findById(order._id);
-      if (currentOrder.injectionSettings.status === "in_progress") {
-        await injectSingleLead(lead, order._id);
+      try {
+        // Check if injection is still active before proceeding
+        const currentOrder = await Order.findById(order._id);
+        if (
+          currentOrder &&
+          currentOrder.injectionSettings.status === "in_progress"
+        ) {
+          console.log(
+            `🚀 Starting scheduled injection for lead ${index + 1}/${
+              leads.length
+            }: ${lead.firstName} ${lead.lastName}`
+          );
+          await injectSingleLead(lead, order._id);
+        } else {
+          console.log(
+            `⏸️  Skipping injection for lead ${lead.firstName} ${lead.lastName} - injection no longer active`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `❌ Error in scheduled injection for lead ${lead.firstName} ${lead.lastName}:`,
+          error
+        );
       }
-    }, totalDelay);
+    }, currentDelay);
   });
+
+  console.log(
+    `✅ Successfully scheduled ${leads.length} leads for random injection over the specified time window`
+  );
 };
 
 // @desc    Start manual FTD injection (opens browser for manual filling)

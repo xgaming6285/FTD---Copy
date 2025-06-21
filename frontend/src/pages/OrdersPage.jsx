@@ -79,6 +79,11 @@ const createOrderSchema = (userRole) => {
     injectionMode: yup.string().oneOf(['bulk', 'scheduled']).default('bulk'),
     injectionStartTime: yup.string().default(''),
     injectionEndTime: yup.string().default(''),
+    minInterval: yup.number().min(10, 'Minimum interval must be at least 10 seconds').max(1800, 'Maximum interval cannot exceed 30 minutes').default(30),
+    maxInterval: yup.number().min(30, 'Maximum interval must be at least 30 seconds').max(3600, 'Maximum interval cannot exceed 1 hour').default(300).test('min-max', 'Maximum interval must be greater than minimum interval', function(value) {
+      const { minInterval } = this.parent;
+      return !minInterval || !value || value > minInterval;
+    }),
     // Device configuration fields
     deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
     bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac']).default('android'),
@@ -336,6 +341,8 @@ const OrdersPage = () => {
         injectionMode: data.injectionMode,
         injectionStartTime: data.injectionStartTime,
         injectionEndTime: data.injectionEndTime,
+        minInterval: data.minInterval,
+        maxInterval: data.maxInterval,
         injectFiller: data.filler > 0, // Auto-inject if filler leads requested
         injectCold: data.cold > 0,     // Auto-inject if cold leads requested
         injectLive: data.live > 0,     // Auto-inject if live leads requested
@@ -1234,6 +1241,42 @@ const OrdersPage = () => {
                               size="small"
                               error={!!errors.injectionEndTime}
                               helperText={errors.injectionEndTime?.message}
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={3}>
+                        <Controller
+                          name="minInterval"
+                          control={control}
+                          render={({ field: intervalField }) => (
+                            <TextField
+                              {...intervalField}
+                              fullWidth
+                              label="Min Interval (seconds)"
+                              type="number"
+                              inputProps={{ min: 10, max: 1800, step: 5 }}
+                              size="small"
+                              error={!!errors.minInterval}
+                              helperText={errors.minInterval?.message || "Minimum time between injections"}
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={3}>
+                        <Controller
+                          name="maxInterval"
+                          control={control}
+                          render={({ field: intervalField }) => (
+                            <TextField
+                              {...intervalField}
+                              fullWidth
+                              label="Max Interval (seconds)"
+                              type="number"
+                              inputProps={{ min: 30, max: 3600, step: 5 }}
+                              size="small"
+                              error={!!errors.maxInterval}
+                              helperText={errors.maxInterval?.message || "Maximum time between injections"}
                             />
                           )}
                         />

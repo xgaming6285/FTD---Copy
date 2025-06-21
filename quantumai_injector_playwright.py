@@ -732,6 +732,12 @@ class QuantumAIInjector:
         try:
             self.target_url = target_url
 
+            # Early validation: Ensure proxy configuration is available
+            if not self.proxy_config:
+                print("FATAL: No proxy configuration available for QuantumAI injection")
+                print("FATAL: QuantumAI injection cannot proceed without proxy - STOPPING IMMEDIATELY")
+                return False
+
             with sync_playwright() as p:
                 print("INFO: Launching browser for QuantumAI injection...")
                 browser = p.chromium.launch(**self._setup_browser_config())
@@ -856,7 +862,9 @@ def main():
             print(f"  - Port: {proxy_config.get('port', 'Not set')}")
             print(f"  - Country: {proxy_config.get('country', 'Not set')}")
         else:
-            print("DEBUG: No proxy configuration received - QuantumAI will use real IP")
+            print("FATAL: No proxy configuration provided to QuantumAI injector")
+            print("FATAL: QuantumAI injection cannot proceed without proxy - STOPPING IMMEDIATELY")
+            sys.exit(1)
 
         # Extract target URL from lead data or use default
         target_url = lead_data.get('targetUrl', 'https://k8ro.info/bKkkBWkK')

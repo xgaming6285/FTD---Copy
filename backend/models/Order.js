@@ -80,6 +80,8 @@ const orderSchema = new mongoose.Schema(
       scheduledTime: {
         startTime: { type: String }, // e.g., "10:00"
         endTime: { type: String }, // e.g., "12:00"
+        minInterval: { type: Number, default: 30000 }, // Minimum interval between injections in ms (default: 30 seconds)
+        maxInterval: { type: Number, default: 300000 }, // Maximum interval between injections in ms (default: 5 minutes)
       },
       // Injection status tracking
       status: {
