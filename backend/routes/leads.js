@@ -28,14 +28,8 @@ const {
   bulkDeleteLeads,
   wakeUpSleepingLeads,
   assignClientBrokerToLead,
-  assignCampaignToLead,
   getLeadAssignmentHistory,
   getClientBrokerAnalytics,
-  storeLeadSession,
-  getLeadSession,
-  updateLeadSession,
-  clearLeadSession,
-  accessLeadSession,
 } = require("../controllers/leads");
 
 const router = express.Router();
@@ -199,35 +193,18 @@ router.put(
     body("clientBrokerId")
       .isMongoId()
       .withMessage("Valid client broker ID is required"),
-    body("client").optional().trim(),
+    body("client")
+      .optional()
+      .trim(),
     body("intermediaryClientNetwork")
       .optional()
       .isMongoId()
       .withMessage("Client network ID must be valid"),
-    body("domain").optional().trim(),
+    body("domain")
+      .optional()
+      .trim(),
   ],
   assignClientBrokerToLead
-);
-
-// @route   PUT /api/leads/:id/assign-campaign
-// @desc    Assign campaign to individual lead
-// @access  Private (Admin, Affiliate Manager)
-router.put(
-  "/:id/assign-campaign",
-  [
-    protect,
-    authorize("admin", "affiliate_manager"),
-    body("campaignId")
-      .notEmpty()
-      .withMessage("Campaign ID is required")
-      .isMongoId()
-      .withMessage("Valid campaign ID is required"),
-    body("orderId")
-      .optional()
-      .isMongoId()
-      .withMessage("Order ID must be valid"),
-  ],
-  assignCampaignToLead
 );
 
 // @route   GET /api/leads/:id/assignment-history
@@ -346,23 +323,19 @@ router.put("/:id", [protect, authorize("admin", "lead_manager")], updateLead);
 // @route   DELETE /api/leads/bulk-delete
 // @desc    Delete multiple leads with filtering
 // @access  Private (Admin only)
-router.delete(
-  "/bulk-delete",
-  [
-    (req, res, next) => {
-      console.log("Bulk delete route hit:", {
-        method: req.method,
-        path: req.path,
-        body: req.body,
-        user: req.user ? { id: req.user.id, role: req.user.role } : null,
-      });
-      next();
-    },
-    protect,
-    isAdmin,
-  ],
-  bulkDeleteLeads
-);
+router.delete("/bulk-delete", [
+  (req, res, next) => {
+    console.log("Bulk delete route hit:", {
+      method: req.method,
+      path: req.path,
+      body: req.body,
+      user: req.user ? { id: req.user.id, role: req.user.role } : null
+    });
+    next();
+  },
+  protect,
+  isAdmin
+], bulkDeleteLeads);
 
 // @route   DELETE /api/leads/:id
 // @desc    Delete a single lead
@@ -394,131 +367,6 @@ router.post(
   "/wake-up",
   [protect, authorize("admin", "affiliate_manager")],
   wakeUpSleepingLeads
-);
-
-// Session Management Routes
-
-// @route   POST /api/leads/:id/session
-// @desc    Store session data for a lead
-// @access  Private (Admin, Affiliate Manager)
-router.post(
-  "/:id/session",
-  [
-    protect,
-    authorize("admin", "affiliate_manager"),
-    body("sessionData")
-      .notEmpty()
-      .withMessage("Session data is required")
-      .isObject()
-      .withMessage("Session data must be an object"),
-    body("sessionData.sessionId")
-      .notEmpty()
-      .withMessage("Session ID is required"),
-    body("sessionData.cookies")
-      .optional()
-      .isArray()
-      .withMessage("Cookies must be an array"),
-    body("sessionData.localStorage")
-      .optional()
-      .isObject()
-      .withMessage("localStorage must be an object"),
-    body("sessionData.sessionStorage")
-      .optional()
-      .isObject()
-      .withMessage("sessionStorage must be an object"),
-    body("sessionData.userAgent")
-      .optional()
-      .isString()
-      .withMessage("User agent must be a string"),
-    body("sessionData.viewport")
-      .optional()
-      .isObject()
-      .withMessage("Viewport must be an object"),
-    body("orderId")
-      .optional()
-      .isMongoId()
-      .withMessage("Order ID must be valid"),
-  ],
-  storeLeadSession
-);
-
-// @route   GET /api/leads/:id/session
-// @desc    Retrieve session data for a lead
-// @access  Private (Admin, Affiliate Manager, Agent - if assigned)
-router.get(
-  "/:id/session",
-  [
-    protect,
-    authorize("admin", "affiliate_manager", "agent"),
-    query("sessionId")
-      .optional()
-      .isString()
-      .withMessage("Session ID must be a string"),
-    query("includeHistory")
-      .optional()
-      .isBoolean()
-      .withMessage("includeHistory must be a boolean"),
-  ],
-  getLeadSession
-);
-
-// @route   PUT /api/leads/:id/session
-// @desc    Update session data for a lead
-// @access  Private (Admin, Affiliate Manager)
-router.put(
-  "/:id/session",
-  [
-    protect,
-    authorize("admin", "affiliate_manager"),
-    body("sessionId")
-      .notEmpty()
-      .withMessage("Session ID is required"),
-    body("sessionData")
-      .optional()
-      .isObject()
-      .withMessage("Session data must be an object"),
-    body("isActive")
-      .optional()
-      .isBoolean()
-      .withMessage("isActive must be a boolean"),
-    body("metadata")
-      .optional()
-      .isObject()
-      .withMessage("Metadata must be an object"),
-  ],
-  updateLeadSession
-);
-
-// @route   DELETE /api/leads/:id/session
-// @desc    Clear session data for a lead
-// @access  Private (Admin, Affiliate Manager)
-router.delete(
-  "/:id/session",
-  [
-    protect,
-    authorize("admin", "affiliate_manager"),
-    query("sessionId")
-      .optional()
-      .isString()
-      .withMessage("Session ID must be a string"),
-    query("clearAll")
-      .optional()
-      .isBoolean()
-      .withMessage("clearAll must be a boolean"),
-  ],
-  clearLeadSession
-);
-
-// @route   POST /api/leads/:id/access-session
-// @desc    Trigger session restoration for agent access
-// @access  Private (Admin, Affiliate Manager, Agent - if assigned)
-router.post(
-  "/:id/access-session",
-  [
-    protect,
-    authorize("admin", "affiliate_manager", "agent"),
-  ],
-  accessLeadSession
 );
 
 module.exports = router;
