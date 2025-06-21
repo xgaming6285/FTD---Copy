@@ -8,80 +8,106 @@ const { spawn } = require("child_process");
 const path = require("path");
 
 // Function to run the QuantumAI injector after successful lead injection
-const runQuantumAIInjector = async (leadData) => {
+const runQuantumAIInjector = async (leadData, proxyConfig = null) => {
   return new Promise((resolve, reject) => {
     try {
-      console.log("🚀🚀🚀 STARTING QUANTUMAI INJECTOR AFTER SUCCESSFUL INJECTION FOR LEAD:", leadData.newEmail);
+      console.log(
+        "🚀🚀🚀 STARTING QUANTUMAI INJECTOR AFTER SUCCESSFUL INJECTION FOR LEAD:",
+        leadData.newEmail
+      );
       console.log("Lead data being sent to QuantumAI:", leadData);
-      
+
       // Prepare lead data for the injector
       const injectorData = {
         firstName: leadData.firstName,
         lastName: leadData.lastName,
         email: leadData.newEmail,
         phone: leadData.newPhone,
-        country_code: leadData.prefix ? leadData.prefix.replace('+', '') : '1', // Remove + from prefix, default to 1
-        country: leadData.country || 'Unknown',
-        targetUrl: 'https://k8ro.info/bKkkBWkK' // Default QuantumAI URL
+        country_code: leadData.prefix ? leadData.prefix.replace("+", "") : "1", // Remove + from prefix, default to 1
+        country: leadData.country || "Unknown",
+        targetUrl: "https://k8ro.info/bKkkBWkK", // Default QuantumAI URL
       };
-      
+
+      // Add proxy configuration if available
+      if (proxyConfig) {
+        injectorData.proxy = proxyConfig;
+        console.log(
+          "📡 QuantumAI will use the same proxy as the main injection:",
+          proxyConfig.host + ":" + proxyConfig.port
+        );
+      } else {
+        console.log("⚠️ QuantumAI will proceed without proxy (using real IP)");
+      }
+
       // Path to the quantumai injector script
-      const scriptPath = path.join(__dirname, '../../quantumai_injector_playwright.py');
+      const scriptPath = path.join(
+        __dirname,
+        "../../quantumai_injector_playwright.py"
+      );
       console.log("📄 QuantumAI Script path:", scriptPath);
-      console.log("📦 QuantumAI Injector data:", JSON.stringify(injectorData, null, 2));
-      
+      console.log(
+        "📦 QuantumAI Injector data:",
+        JSON.stringify(injectorData, null, 2)
+      );
+
       // Spawn the Python process
       console.log("🐍 Spawning QuantumAI Python process...");
-      const pythonProcess = spawn('python', [scriptPath, JSON.stringify(injectorData)], {
-        cwd: path.join(__dirname, '../..'),
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-      
-      console.log("✅ QuantumAI Python process spawned with PID:", pythonProcess.pid);
-      
-      let stdout = '';
-      let stderr = '';
-      
-      pythonProcess.stdout.on('data', (data) => {
+      const pythonProcess = spawn(
+        "python",
+        [scriptPath, JSON.stringify(injectorData)],
+        {
+          cwd: path.join(__dirname, "../.."),
+          stdio: ["pipe", "pipe", "pipe"],
+        }
+      );
+
+      console.log(
+        "✅ QuantumAI Python process spawned with PID:",
+        pythonProcess.pid
+      );
+
+      let stdout = "";
+      let stderr = "";
+
+      pythonProcess.stdout.on("data", (data) => {
         const output = data.toString();
         stdout += output;
-        console.log('QuantumAI Injector:', output.trim());
+        console.log("QuantumAI Injector:", output.trim());
       });
-      
-      pythonProcess.stderr.on('data', (data) => {
+
+      pythonProcess.stderr.on("data", (data) => {
         const error = data.toString();
         stderr += error;
-        console.error('QuantumAI Injector Error:', error.trim());
+        console.error("QuantumAI Injector Error:", error.trim());
       });
-      
-      pythonProcess.on('close', (code) => {
+
+      pythonProcess.on("close", (code) => {
         console.log(`QuantumAI injector process exited with code ${code}`);
-        
+
         if (code === 0) {
-          console.log('✓ QuantumAI injection completed successfully');
+          console.log("✓ QuantumAI injection completed successfully");
           resolve({ success: true, output: stdout });
         } else {
-          console.error('✗ QuantumAI injection failed');
+          console.error("✗ QuantumAI injection failed");
           resolve({ success: false, error: stderr, output: stdout });
         }
       });
-      
-      pythonProcess.on('error', (error) => {
-        console.error('Failed to start QuantumAI injector:', error);
+
+      pythonProcess.on("error", (error) => {
+        console.error("Failed to start QuantumAI injector:", error);
         reject(error);
       });
-      
+
       // Set a timeout for the injection process (5 minutes)
       setTimeout(() => {
         if (!pythonProcess.killed) {
-          console.log('QuantumAI injector timeout - killing process');
-          pythonProcess.kill('SIGKILL');
-          resolve({ success: false, error: 'Process timeout' });
+          console.log("QuantumAI injector timeout - killing process");
+          pythonProcess.kill("SIGKILL");
+          resolve({ success: false, error: "Process timeout" });
         }
       }, 300000); // 5 minutes
-      
     } catch (error) {
-      console.error('Error in runQuantumAIInjector:', error);
+      console.error("Error in runQuantumAIInjector:", error);
       reject(error);
     }
   });
@@ -256,7 +282,8 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
       ) {
         selectedLeads.push(leadsWithoutValidPhone[leadsWithoutPhoneIndex]);
         console.log(
-          `[FILLER-DEBUG] Added lead without valid phone pattern: ${leadsWithoutPhoneIndex + 1
+          `[FILLER-DEBUG] Added lead without valid phone pattern: ${
+            leadsWithoutPhoneIndex + 1
           }`
         );
         leadsWithoutPhoneIndex++;
@@ -266,7 +293,8 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
       for (let i = 0; i < requestedCount; i++) {
         selectedLeads.push(phoneGroups[uniquePatterns[i]][0]);
         console.log(
-          `[FILLER-DEBUG] Selected lead ${i + 1} with pattern ${uniquePatterns[i]
+          `[FILLER-DEBUG] Selected lead ${i + 1} with pattern ${
+            uniquePatterns[i]
           }`
         );
       }
@@ -314,14 +342,18 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
           if (wouldCreatePair) {
             totalPairs++;
             console.log(
-              `[FILLER-DEBUG] Added lead #${currentCount + 1
-              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${
+                currentCount + 1
+              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${
+                selectedLeads.length
               })`
             );
           } else {
             console.log(
-              `[FILLER-DEBUG] Added lead #${currentCount + 1
-              } from pattern ${pattern} (no pair), total leads: ${selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${
+                currentCount + 1
+              } from pattern ${pattern} (no pair), total leads: ${
+                selectedLeads.length
               }`
             );
           }
@@ -392,14 +424,18 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
           if (wouldCreatePair) {
             totalPairs++;
             console.log(
-              `[FILLER-DEBUG] Added lead #${currentCount + 1
-              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${
+                currentCount + 1
+              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${
+                selectedLeads.length
               })`
             );
           } else {
             console.log(
-              `[FILLER-DEBUG] Added lead #${currentCount + 1
-              } from pattern ${pattern} (no pair), total leads: ${selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${
+                currentCount + 1
+              } from pattern ${pattern} (no pair), total leads: ${
+                selectedLeads.length
               }`
             );
           }
@@ -632,19 +668,19 @@ exports.createOrder = async (req, res, next) => {
         console.log(
           `[FILLER-DEBUG] Filtering out leads already assigned to client network: ${selectedClientNetwork}`
         );
-        
+
         // Convert aggregation results to Lead documents for method access
-        const fillerLeadIds = fillerLeads.map(lead => lead._id);
+        const fillerLeadIds = fillerLeads.map((lead) => lead._id);
         const fillerLeadDocs = await Lead.find({ _id: { $in: fillerLeadIds } });
-        
+
         const filteredFillerLeads = fillerLeadDocs.filter(
           (lead) => !lead.isAssignedToClientNetwork(selectedClientNetwork)
         );
-        
+
         console.log(
           `[FILLER-DEBUG] After client network filtering: ${filteredFillerLeads.length} leads remain`
         );
-        
+
         fillerLeads = filteredFillerLeads;
       }
 
@@ -1323,8 +1359,9 @@ exports.exportOrderLeads = async (req, res, next) => {
     ].join("\n");
 
     // Set response headers for file download
-    const filename = `order_${orderId}_leads_${new Date().toISOString().split("T")[0]
-      }.csv`;
+    const filename = `order_${orderId}_leads_${
+      new Date().toISOString().split("T")[0]
+    }.csv`;
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Cache-Control", "no-cache");
@@ -1868,8 +1905,9 @@ exports.manualFTDInjection = async (req, res, next) => {
       if (allFTDsInjected) {
         order.ftdHandling.status = "completed";
         order.ftdHandling.completedAt = new Date();
-        order.ftdHandling.notes = `All FTD leads manually injected. ${notes || ""
-          }`.trim();
+        order.ftdHandling.notes = `All FTD leads manually injected. ${
+          notes || ""
+        }`.trim();
       }
 
       // Update injection progress
@@ -2002,7 +2040,8 @@ const injectSingleLead = async (lead, orderId) => {
     );
 
     console.log(
-      `[DEBUG] Order selectedClientNetwork: ${order.selectedClientNetwork ? order.selectedClientNetwork.name : "null"
+      `[DEBUG] Order selectedClientNetwork: ${
+        order.selectedClientNetwork ? order.selectedClientNetwork.name : "null"
       }`
     );
     console.log(
@@ -2088,11 +2127,15 @@ const injectSingleLead = async (lead, orderId) => {
         // Validate deviceType before assignment
         const validDeviceTypes = ["windows", "android", "ios", "mac"];
         if (!deviceType || !validDeviceTypes.includes(deviceType)) {
-          console.log(`[WARN] Invalid deviceType '${deviceType}', using default 'android'`);
+          console.log(
+            `[WARN] Invalid deviceType '${deviceType}', using default 'android'`
+          );
           deviceType = "android";
         }
 
-        console.log(`[DEBUG] Using deviceType: ${deviceType} for lead ${lead._id}`);
+        console.log(
+          `[DEBUG] Using deviceType: ${deviceType} for lead ${lead._id}`
+        );
 
         await lead.assignFingerprint(deviceType, order.requester);
         await lead.save();
@@ -2141,7 +2184,9 @@ const injectSingleLead = async (lead, orderId) => {
           );
         }
       } else {
-        console.warn(`⚠️ Failed to assign proxy to lead ${lead._id}, proceeding without proxy`);
+        console.warn(
+          `⚠️ Failed to assign proxy to lead ${lead._id}, proceeding without proxy`
+        );
         proxyConfig = null; // Proceed without proxy
       }
     } catch (error) {
@@ -2202,9 +2247,13 @@ const injectSingleLead = async (lead, orderId) => {
     };
 
     if (!proxyConfig) {
-      console.log(`[INFO] Proceeding with injection for lead ${lead._id} WITHOUT proxy`);
+      console.log(
+        `[INFO] Proceeding with injection for lead ${lead._id} WITHOUT proxy`
+      );
     } else {
-      console.log(`[INFO] Proceeding with injection for lead ${lead._id} WITH proxy: ${proxyConfig.host}:${proxyConfig.port}`);
+      console.log(
+        `[INFO] Proceeding with injection for lead ${lead._id} WITH proxy: ${proxyConfig.host}:${proxyConfig.port}`
+      );
     }
 
     const scriptPath = path.resolve(
@@ -2213,11 +2262,7 @@ const injectSingleLead = async (lead, orderId) => {
 
     console.log(`[DEBUG] Script path: ${scriptPath}`);
     console.log(
-      `[DEBUG] Injection data: ${JSON.stringify(
-        injectionData,
-        null,
-        2
-      )}`
+      `[DEBUG] Injection data: ${JSON.stringify(injectionData, null, 2)}`
     );
     console.log(`[DEBUG] Working directory: ${process.cwd()}`);
 
@@ -2240,14 +2285,18 @@ const injectSingleLead = async (lead, orderId) => {
 
         // Check for proxy expiration messages
         if (output.includes("PROXY_EXPIRED:")) {
-          console.log(`[WARNING] Proxy expired during injection for lead ${lead._id}`);
+          console.log(
+            `[WARNING] Proxy expired during injection for lead ${lead._id}`
+          );
           // Mark the proxy assignment as expired
           if (lead.proxyAssignments && lead.proxyAssignments.length > 0) {
             const activeAssignment = lead.proxyAssignments.find(
-              assignment => assignment.status === 'active' && assignment.orderId.toString() === orderId.toString()
+              (assignment) =>
+                assignment.status === "active" &&
+                assignment.orderId.toString() === orderId.toString()
             );
             if (activeAssignment) {
-              activeAssignment.status = 'expired';
+              activeAssignment.status = "expired";
               activeAssignment.completedAt = new Date();
             }
           }
@@ -2286,17 +2335,30 @@ const injectSingleLead = async (lead, orderId) => {
           );
 
           // 🚀 TRIGGER QUANTUMAI INJECTION AFTER SUCCESSFUL LEAD INJECTION
-          console.log('🎯 Triggering QuantumAI injection for successfully injected lead...');
-          runQuantumAIInjector(lead)
+          console.log(
+            "🎯 Triggering QuantumAI injection for successfully injected lead..."
+          );
+          runQuantumAIInjector(lead, proxyConfig)
             .then((result) => {
               if (result.success) {
-                console.log('✅ QuantumAI injection completed successfully for lead:', lead._id);
+                console.log(
+                  "✅ QuantumAI injection completed successfully for lead:",
+                  lead._id
+                );
               } else {
-                console.error('❌ QuantumAI injection failed for lead:', lead._id, result.error);
+                console.error(
+                  "❌ QuantumAI injection failed for lead:",
+                  lead._id,
+                  result.error
+                );
               }
             })
             .catch((error) => {
-              console.error('💥 QuantumAI injection error for lead:', lead._id, error);
+              console.error(
+                "💥 QuantumAI injection error for lead:",
+                lead._id,
+                error
+              );
             });
 
           // Parse final domain from stdout
@@ -2412,7 +2474,8 @@ const getAvailableClientBrokers = async (lead, clientNetwork) => {
   try {
     const ClientBroker = require("../models/ClientBroker");
     console.log(
-      `[DEBUG] getAvailableClientBrokers called with clientNetwork: ${clientNetwork ? clientNetwork.name : "null"
+      `[DEBUG] getAvailableClientBrokers called with clientNetwork: ${
+        clientNetwork ? clientNetwork.name : "null"
       }`
     );
 
@@ -2664,7 +2727,8 @@ exports.startManualFTDInjection = async (req, res, next) => {
     if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
+        message:
+          "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
       });
     }
 
@@ -2693,38 +2757,46 @@ exports.startManualFTDInjection = async (req, res, next) => {
       email: leadToInject.email,
       phone: leadToInject.newPhone || leadToInject.phone,
       country: leadToInject.country,
-      country_code: leadToInject.prefix?.replace('+', '') || '1',
-      targetUrl: process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
-      proxy: null // No proxy for manual injection to keep it simple
+      country_code: leadToInject.prefix?.replace("+", "") || "1",
+      targetUrl:
+        process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
+      proxy: null, // No proxy for manual injection to keep it simple
     };
 
     // Spawn the manual injector script
-    const { spawn } = require('child_process');
-    const path = require('path');
+    const { spawn } = require("child_process");
+    const path = require("path");
 
-    const scriptPath = path.join(__dirname, '../../manual_injector_playwright.py');
-    const pythonProcess = spawn('python', [scriptPath, JSON.stringify(injectionData)], {
-      stdio: 'pipe',
-      cwd: path.dirname(scriptPath)
-    });
+    const scriptPath = path.join(
+      __dirname,
+      "../../manual_injector_playwright.py"
+    );
+    const pythonProcess = spawn(
+      "python",
+      [scriptPath, JSON.stringify(injectionData)],
+      {
+        stdio: "pipe",
+        cwd: path.dirname(scriptPath),
+      }
+    );
 
     // Handle script output
-    let scriptOutput = '';
-    let scriptError = '';
+    let scriptOutput = "";
+    let scriptError = "";
 
-    pythonProcess.stdout.on('data', (data) => {
+    pythonProcess.stdout.on("data", (data) => {
       const output = data.toString();
       scriptOutput += output;
       console.log(`Manual Injector Output: ${output}`);
     });
 
-    pythonProcess.stderr.on('data', (data) => {
+    pythonProcess.stderr.on("data", (data) => {
       const error = data.toString();
       scriptError += error;
       console.error(`Manual Injector Error: ${error}`);
     });
 
-    pythonProcess.on('close', (code) => {
+    pythonProcess.on("close", (code) => {
       console.log(`Manual injector script exited with code ${code}`);
       if (code !== 0) {
         console.error(`Manual injection failed with code ${code}`);
@@ -2744,12 +2816,11 @@ exports.startManualFTDInjection = async (req, res, next) => {
           email: leadToInject.email,
           phone: leadToInject.newPhone || leadToInject.phone,
           country: leadToInject.country,
-        }
-      }
+        },
+      },
     });
-
   } catch (error) {
-    console.error('Error starting manual FTD injection:', error);
+    console.error("Error starting manual FTD injection:", error);
     next(error);
   }
 };
@@ -2780,7 +2851,8 @@ exports.completeManualFTDInjection = async (req, res, next) => {
     if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can complete manual FTD injection.",
+        message:
+          "Access denied. Only admins and affiliate managers can complete manual FTD injection.",
       });
     }
 
@@ -2799,7 +2871,7 @@ exports.completeManualFTDInjection = async (req, res, next) => {
     }
 
     // Process the first unprocessed FTD lead
-    const leadToProcess = ftdLeads.find(lead => {
+    const leadToProcess = ftdLeads.find((lead) => {
       const networkHistory = lead.clientNetworkHistory?.find(
         (history) => history.orderId?.toString() === order._id.toString()
       );
@@ -2815,18 +2887,21 @@ exports.completeManualFTDInjection = async (req, res, next) => {
 
     // Clean and validate domain
     let cleanDomain = domain.trim();
-    if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
+    if (
+      cleanDomain.startsWith("http://") ||
+      cleanDomain.startsWith("https://")
+    ) {
       try {
         const url = new URL(cleanDomain);
         cleanDomain = url.hostname;
       } catch (e) {
         // If URL parsing fails, just remove the protocol manually
-        cleanDomain = cleanDomain.replace(/^https?:\/\//, '');
+        cleanDomain = cleanDomain.replace(/^https?:\/\//, "");
       }
     }
 
     // Remove any trailing paths, query parameters, etc.
-    cleanDomain = cleanDomain.split('/')[0].split('?')[0].split('#')[0];
+    cleanDomain = cleanDomain.split("/")[0].split("?")[0].split("#")[0];
 
     if (!cleanDomain) {
       return res.status(400).json({
@@ -2837,7 +2912,9 @@ exports.completeManualFTDInjection = async (req, res, next) => {
 
     // Assign client broker based on domain
     try {
-      console.log(`[DEBUG] Attempting to assign client broker for domain: ${cleanDomain}`);
+      console.log(
+        `[DEBUG] Attempting to assign client broker for domain: ${cleanDomain}`
+      );
       console.log(`[DEBUG] Lead to process: ${leadToProcess._id}`);
       console.log(`[DEBUG] User ID: ${req.user.id}`);
       console.log(`[DEBUG] Order ID: ${order._id}`);
@@ -2850,10 +2927,14 @@ exports.completeManualFTDInjection = async (req, res, next) => {
       );
 
       if (!assignedBroker) {
-        throw new Error('assignClientBrokerByDomain returned null or undefined');
+        throw new Error(
+          "assignClientBrokerByDomain returned null or undefined"
+        );
       }
 
-      console.log(`[DEBUG] Successfully assigned broker: ${assignedBroker._id} (${assignedBroker.name})`);
+      console.log(
+        `[DEBUG] Successfully assigned broker: ${assignedBroker._id} (${assignedBroker.name})`
+      );
 
       // Update lead's client network history
       const networkHistoryEntry = {
@@ -2865,17 +2946,20 @@ exports.completeManualFTDInjection = async (req, res, next) => {
         domain: cleanDomain,
         injectionStatus: "completed",
         injectionType: "manual_ftd",
-        injectionNotes: "Manual FTD injection completed by affiliate manager/admin",
+        injectionNotes:
+          "Manual FTD injection completed by affiliate manager/admin",
       };
 
       // Check if entry already exists for this order
-      const existingHistoryIndex = leadToProcess.clientNetworkHistory?.findIndex(
-        (history) => history.orderId?.toString() === order._id.toString()
-      );
+      const existingHistoryIndex =
+        leadToProcess.clientNetworkHistory?.findIndex(
+          (history) => history.orderId?.toString() === order._id.toString()
+        );
 
       if (existingHistoryIndex >= 0) {
         // Update existing entry
-        leadToProcess.clientNetworkHistory[existingHistoryIndex] = networkHistoryEntry;
+        leadToProcess.clientNetworkHistory[existingHistoryIndex] =
+          networkHistoryEntry;
       } else {
         // Add new entry
         if (!leadToProcess.clientNetworkHistory) {
@@ -2906,7 +2990,8 @@ exports.completeManualFTDInjection = async (req, res, next) => {
       if (allFTDsInjected) {
         order.ftdHandling.status = "completed";
         order.ftdHandling.completedAt = new Date();
-        order.ftdHandling.notes = "All FTD leads manually injected and assigned to client brokers";
+        order.ftdHandling.notes =
+          "All FTD leads manually injected and assigned to client brokers";
       }
 
       // Update injection progress
@@ -2931,18 +3016,16 @@ exports.completeManualFTDInjection = async (req, res, next) => {
           allFTDsCompleted: allFTDsInjected,
         },
       });
-
     } catch (error) {
-      console.error('Error assigning client broker:', error);
+      console.error("Error assigning client broker:", error);
       return res.status(500).json({
         success: false,
         message: "Failed to assign client broker based on domain",
         error: error.message,
       });
     }
-
   } catch (error) {
-    console.error('Error completing manual FTD injection:', error);
+    console.error("Error completing manual FTD injection:", error);
     next(error);
   }
 };
@@ -2966,7 +3049,8 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
     if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
+        message:
+          "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
       });
     }
 
@@ -3000,7 +3084,9 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
     // Assign device fingerprint if not already assigned
     if (!lead.fingerprint) {
       try {
-        console.log(`[DEBUG] Assigning device fingerprint to FTD lead ${lead._id}`);
+        console.log(
+          `[DEBUG] Assigning device fingerprint to FTD lead ${lead._id}`
+        );
 
         const deviceConfig = order.injectionSettings?.deviceConfig || {};
         let deviceType = "android"; // Default device type
@@ -3048,11 +3134,15 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
         // Validate deviceType before assignment
         const validDeviceTypes = ["windows", "android", "ios", "mac"];
         if (!deviceType || !validDeviceTypes.includes(deviceType)) {
-          console.log(`[WARN] Invalid deviceType '${deviceType}', using default 'android'`);
+          console.log(
+            `[WARN] Invalid deviceType '${deviceType}', using default 'android'`
+          );
           deviceType = "android";
         }
 
-        console.log(`[DEBUG] Using deviceType: ${deviceType} for FTD lead ${lead._id}`);
+        console.log(
+          `[DEBUG] Using deviceType: ${deviceType} for FTD lead ${lead._id}`
+        );
 
         await lead.assignFingerprint(deviceType, order.requester);
         await lead.save();
@@ -3109,39 +3199,47 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
       email: lead.newEmail,
       phone: lead.newPhone || lead.phone,
       country: lead.country,
-      country_code: lead.prefix?.replace('+', '') || '1',
-      targetUrl: process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
+      country_code: lead.prefix?.replace("+", "") || "1",
+      targetUrl:
+        process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
       fingerprint: fingerprintConfig, // Include fingerprint configuration
-      proxy: null // No proxy for manual injection to keep it simple
+      proxy: null, // No proxy for manual injection to keep it simple
     };
 
     // Spawn the manual injector script
-    const { spawn } = require('child_process');
-    const path = require('path');
+    const { spawn } = require("child_process");
+    const path = require("path");
 
-    const scriptPath = path.join(__dirname, '../../manual_injector_playwright.py');
-    const pythonProcess = spawn('python', [scriptPath, JSON.stringify(injectionData)], {
-      stdio: 'pipe',
-      cwd: path.dirname(scriptPath)
-    });
+    const scriptPath = path.join(
+      __dirname,
+      "../../manual_injector_playwright.py"
+    );
+    const pythonProcess = spawn(
+      "python",
+      [scriptPath, JSON.stringify(injectionData)],
+      {
+        stdio: "pipe",
+        cwd: path.dirname(scriptPath),
+      }
+    );
 
     // Handle script output
-    let scriptOutput = '';
-    let scriptError = '';
+    let scriptOutput = "";
+    let scriptError = "";
 
-    pythonProcess.stdout.on('data', (data) => {
+    pythonProcess.stdout.on("data", (data) => {
       const output = data.toString();
       scriptOutput += output;
       console.log(`Manual Injector Output: ${output}`);
     });
 
-    pythonProcess.stderr.on('data', (data) => {
+    pythonProcess.stderr.on("data", (data) => {
       const error = data.toString();
       scriptError += error;
       console.error(`Manual Injector Error: ${error}`);
     });
 
-    pythonProcess.on('close', (code) => {
+    pythonProcess.on("close", (code) => {
       console.log(`Manual injector script exited with code ${code}`);
       if (code !== 0) {
         console.error(`Manual injection failed with code ${code}`);
@@ -3164,13 +3262,12 @@ exports.startManualFTDInjectionForLead = async (req, res, next) => {
         },
         deviceInfo: {
           deviceType: lead.deviceType,
-          fingerprintId: lead.fingerprint
-        }
-      }
+          fingerprintId: lead.fingerprint,
+        },
+      },
     });
-
   } catch (error) {
-    console.error('Error starting manual FTD injection for lead:', error);
+    console.error("Error starting manual FTD injection for lead:", error);
     next(error);
   }
 };
@@ -3202,7 +3299,8 @@ exports.completeManualFTDInjectionForLead = async (req, res, next) => {
     if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can complete manual FTD injection.",
+        message:
+          "Access denied. Only admins and affiliate managers can complete manual FTD injection.",
       });
     }
 
@@ -3235,18 +3333,21 @@ exports.completeManualFTDInjectionForLead = async (req, res, next) => {
 
     // Clean and validate domain
     let cleanDomain = domain.trim();
-    if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
+    if (
+      cleanDomain.startsWith("http://") ||
+      cleanDomain.startsWith("https://")
+    ) {
       try {
         const url = new URL(cleanDomain);
         cleanDomain = url.hostname;
       } catch (e) {
         // If URL parsing fails, just remove the protocol manually
-        cleanDomain = cleanDomain.replace(/^https?:\/\//, '');
+        cleanDomain = cleanDomain.replace(/^https?:\/\//, "");
       }
     }
 
     // Remove any trailing paths, query parameters, etc.
-    cleanDomain = cleanDomain.split('/')[0].split('?')[0].split('#')[0];
+    cleanDomain = cleanDomain.split("/")[0].split("?")[0].split("#")[0];
 
     if (!cleanDomain) {
       return res.status(400).json({
@@ -3257,7 +3358,9 @@ exports.completeManualFTDInjectionForLead = async (req, res, next) => {
 
     // Assign client broker based on domain
     try {
-      console.log(`[DEBUG] Attempting to assign client broker for lead ${leadId} with domain: ${cleanDomain}`);
+      console.log(
+        `[DEBUG] Attempting to assign client broker for lead ${leadId} with domain: ${cleanDomain}`
+      );
 
       const assignedBroker = await assignClientBrokerByDomain(
         lead,
@@ -3267,10 +3370,12 @@ exports.completeManualFTDInjectionForLead = async (req, res, next) => {
       );
 
       if (!assignedBroker) {
-        throw new Error('Failed to assign client broker for domain');
+        throw new Error("Failed to assign client broker for domain");
       }
 
-      console.log(`[DEBUG] Successfully assigned broker: ${assignedBroker._id} (${assignedBroker.name})`);
+      console.log(
+        `[DEBUG] Successfully assigned broker: ${assignedBroker._id} (${assignedBroker.name})`
+      );
 
       // Update lead's client network history
       const networkHistoryEntry = {
@@ -3282,7 +3387,9 @@ exports.completeManualFTDInjectionForLead = async (req, res, next) => {
         domain: cleanDomain,
         injectionStatus: "completed",
         injectionType: "manual_ftd",
-        injectionNotes: `Manual FTD injection completed by ${req.user.fullName || req.user.email}`,
+        injectionNotes: `Manual FTD injection completed by ${
+          req.user.fullName || req.user.email
+        }`,
       };
 
       // Check if entry already exists for this order
@@ -3325,7 +3432,8 @@ exports.completeManualFTDInjectionForLead = async (req, res, next) => {
       if (allFTDsInjected) {
         order.ftdHandling.status = "completed";
         order.ftdHandling.completedAt = new Date();
-        order.ftdHandling.notes = "All FTD leads manually injected and assigned to client brokers";
+        order.ftdHandling.notes =
+          "All FTD leads manually injected and assigned to client brokers";
       }
 
       // Update injection progress
@@ -3350,7 +3458,6 @@ exports.completeManualFTDInjectionForLead = async (req, res, next) => {
           allFTDsCompleted: allFTDsInjected,
         },
       });
-
     } catch (error) {
       console.error(`Error assigning client broker for lead ${leadId}:`, error);
       return res.status(500).json({
@@ -3359,9 +3466,11 @@ exports.completeManualFTDInjectionForLead = async (req, res, next) => {
         error: error.message,
       });
     }
-
   } catch (error) {
-    console.error(`Error completing manual FTD injection for lead ${leadId}:`, error);
+    console.error(
+      `Error completing manual FTD injection for lead ${leadId}:`,
+      error
+    );
     next(error);
   }
 };

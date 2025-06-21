@@ -22,13 +22,166 @@ from urllib.parse import urlparse
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
+# Mappings for country names to phone codes (same as main injector)
+COUNTRY_TO_PHONE_CODE = {
+    # Major countries
+    "United States": "1",
+    "United Kingdom": "44",
+    "Canada": "1",
+    "Australia": "61",
+    "Germany": "49",
+    "France": "33",
+    "Italy": "39",
+    "Spain": "34",
+    "Netherlands": "31",
+    "Belgium": "32",
+    "Switzerland": "41",
+    "Austria": "43",
+    "Sweden": "46",
+    "Norway": "47",
+    "Denmark": "45",
+    "Finland": "358",
+    "Poland": "48",
+    "Czech Republic": "420",
+    "Hungary": "36",
+    "Romania": "40",
+    "Bulgaria": "359",
+    "Greece": "30",
+    "Portugal": "351",
+    "Ireland": "353",
+    "Luxembourg": "352",
+    "Malta": "356",
+    "Cyprus": "357",
+    "Estonia": "372",
+    "Latvia": "371",
+    "Lithuania": "370",
+    "Slovakia": "421",
+    "Slovenia": "386",
+    "Croatia": "385",
+    "Serbia": "381",
+    "Montenegro": "382",
+    "Bosnia and Herzegovina": "387",
+    "North Macedonia": "389",
+    "Albania": "355",
+    "Moldova": "373",
+    "Ukraine": "380",
+    "Belarus": "375",
+    "Russia": "7",
+
+    # Asia-Pacific
+    "China": "86",
+    "Japan": "81",
+    "South Korea": "82",
+    "Korea": "82",
+    "India": "91",
+    "Indonesia": "62",
+    "Thailand": "66",
+    "Vietnam": "84",
+    "Malaysia": "60",
+    "Singapore": "65",
+    "Philippines": "63",
+    "Taiwan": "886",
+    "Hong Kong": "852",
+    "Macau": "853",
+    "Mongolia": "976",
+    "Kazakhstan": "7",
+    "Uzbekistan": "998",
+    "Turkmenistan": "993",
+    "Kyrgyzstan": "996",
+    "Tajikistan": "992",
+    "Afghanistan": "93",
+    "Pakistan": "92",
+    "Bangladesh": "880",
+    "Sri Lanka": "94",
+    "Myanmar": "95",
+    "Cambodia": "855",
+    "Laos": "856",
+    "Brunei": "673",
+    "Nepal": "977",
+    "Bhutan": "975",
+    "Maldives": "960",
+    "New Zealand": "64",
+
+    # Middle East
+    "Turkey": "90",
+    "Israel": "972",
+    "Palestine": "970",
+    "Palestinian Territory": "970",
+    "Lebanon": "961",
+    "Syria": "963",
+    "Jordan": "962",
+    "Iraq": "964",
+    "Iran": "98",
+    "Saudi Arabia": "966",
+    "Kuwait": "965",
+    "Bahrain": "973",
+    "Qatar": "974",
+    "United Arab Emirates": "971",
+    "UAE": "971",
+    "Oman": "968",
+    "Yemen": "967",
+    "Georgia": "995",
+    "Armenia": "374",
+    "Azerbaijan": "994",
+
+    # Africa
+    "Egypt": "20",
+    "Libya": "218",
+    "Tunisia": "216",
+    "Algeria": "213",
+    "Morocco": "212",
+    "Sudan": "249",
+    "South Sudan": "211",
+    "Ethiopia": "251",
+    "Kenya": "254",
+    "Uganda": "256",
+    "Tanzania": "255",
+    "Rwanda": "250",
+    "Burundi": "257",
+    "Nigeria": "234",
+    "Ghana": "233",
+    "South Africa": "27",
+    "Namibia": "264",
+    "Botswana": "267",
+    "Zimbabwe": "263",
+    "Zambia": "260",
+    "Malawi": "265",
+    "Mozambique": "258",
+    "Madagascar": "261",
+    "Mauritius": "230",
+    "Seychelles": "248",
+
+    # Americas
+    "Mexico": "52",
+    "Guatemala": "502",
+    "Belize": "501",
+    "El Salvador": "503",
+    "Honduras": "504",
+    "Nicaragua": "505",
+    "Costa Rica": "506",
+    "Panama": "507",
+    "Colombia": "57",
+    "Venezuela": "58",
+    "Guyana": "592",
+    "Suriname": "597",
+    "French Guiana": "594",
+    "Brazil": "55",
+    "Ecuador": "593",
+    "Peru": "51",
+    "Bolivia": "591",
+    "Paraguay": "595",
+    "Uruguay": "598",
+    "Argentina": "54",
+    "Chile": "56",
+}
+
 # Constants
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 
 class QuantumAIInjector:
     """QuantumAI-specific lead injector with popup support."""
-    
+
     def __init__(self, proxy_config=None):
         self.proxy_config = proxy_config
         self.target_url = None
@@ -60,15 +213,24 @@ class QuantumAIInjector:
                 '--disable-features=VizDisplayCompositor'
             ]
         }
-        
+
+        # Add proxy configuration if provided
         if self.proxy_config:
+            server = self.proxy_config.get("server", "")
+            username = self.proxy_config.get("username", "")
+            password = self.proxy_config.get("password", "")
+
             config['proxy'] = {
-                'server': f"http://{self.proxy_config['host']}:{self.proxy_config['port']}",
-                'username': self.proxy_config.get('username'),
-                'password': self.proxy_config.get('password')
+                'server': server,
+                'username': username,
+                'password': password
             }
-            print(f"INFO: Using proxy: {self.proxy_config['host']}:{self.proxy_config['port']}")
-        
+            print(f"INFO: QuantumAI using proxy configuration: {server}")
+            print(f"DEBUG: QuantumAI proxy username: {username}")
+            print(f"DEBUG: QuantumAI proxy country: {self.proxy_config.get('country', 'Unknown')}")
+        else:
+            print("INFO: QuantumAI proceeding without proxy (will use real IP)")
+
         return config
 
     def _human_like_typing(self, element, text):
@@ -101,29 +263,29 @@ class QuantumAIInjector:
         """Try to trigger the popup by simulating exit-intent behavior."""
         try:
             print("INFO: Attempting to trigger popup with exit-intent simulation...")
-            
+
             # Method 1: Mouse movement to top of page (common exit-intent trigger)
             page.mouse.move(0, 0)
             time.sleep(1)
-            
+
             # Method 2: Scroll behavior
             page.evaluate("window.scrollTo(0, 0)")
             time.sleep(1)
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             time.sleep(1)
-            
+
             # Method 3: Try to simulate leaving the page
             page.evaluate("window.dispatchEvent(new Event('beforeunload'))")
             time.sleep(1)
-            
+
             # Method 4: Mouse movement patterns
             page.mouse.move(100, 100)
             time.sleep(0.5)
             page.mouse.move(0, 0)
             time.sleep(0.5)
-            
+
             return self._check_popup_visibility(page)
-            
+
         except Exception as e:
             print(f"WARNING: Error triggering popup: {str(e)}")
             return False
@@ -132,7 +294,7 @@ class QuantumAIInjector:
         """Close the popup if it's visible."""
         try:
             print("INFO: Attempting to close popup...")
-            
+
             # Common close button selectors for popups
             close_selectors = [
                 '#popup_custom .close',
@@ -143,7 +305,7 @@ class QuantumAIInjector:
                 '#popup_custom [data-dismiss="modal"]',
                 '#popup_custom .modal-close'
             ]
-            
+
             close_button = None
             for selector in close_selectors:
                 try:
@@ -153,12 +315,12 @@ class QuantumAIInjector:
                         break
                 except Exception as e:
                     continue
-            
+
             if close_button:
                 close_button.click()
                 print("✓ Popup close button clicked")
                 time.sleep(0.5)
-                
+
                 # Verify popup is closed
                 if not self._check_popup_visibility(page):
                     print("✓ Popup successfully closed")
@@ -167,10 +329,10 @@ class QuantumAIInjector:
                     print("WARNING: Popup still visible after close attempt")
             else:
                 print("WARNING: No close button found for popup")
-                
+
                 # Try alternative methods to close popup
                 print("INFO: Trying alternative popup close methods...")
-                
+
                 # Method 1: Press Escape key
                 try:
                     page.keyboard.press('Escape')
@@ -180,7 +342,7 @@ class QuantumAIInjector:
                         return True
                 except:
                     pass
-                
+
                 # Method 2: Click outside popup (on backdrop)
                 try:
                     page.click('body', position={'x': 10, 'y': 10})
@@ -190,7 +352,7 @@ class QuantumAIInjector:
                         return True
                 except:
                     pass
-                
+
                 # Method 3: Try to hide popup via JavaScript
                 try:
                     page.evaluate("""
@@ -206,10 +368,10 @@ class QuantumAIInjector:
                         return True
                 except:
                     pass
-            
+
             print("WARNING: Could not close popup with any method")
             return False
-            
+
         except Exception as e:
             print(f"WARNING: Error closing popup: {str(e)}")
             return False
@@ -218,7 +380,7 @@ class QuantumAIInjector:
         """Fill QuantumAI form fields for a specific form."""
         try:
             print(f"INFO: Filling QuantumAI form {form_id}...")
-            
+
             # Determine phone field IDs based on form
             if form_id == "myform1":
                 phone_id = "kabelname-1"
@@ -235,35 +397,112 @@ class QuantumAIInjector:
 
             form_selector = f'#{form_id}'
             page.wait_for_selector(form_selector, timeout=10000)
-            
+
             # Fill First Name
             first_name_field = page.wait_for_selector(f'{form_selector} input[name="name"]', timeout=5000)
             self._human_like_typing(first_name_field, lead_data.get('firstName', ''))
             print(f"✓ First Name filled: {lead_data.get('firstName', '')}")
-            
+
             # Fill Last Name
             last_name_field = page.wait_for_selector(f'{form_selector} input[name="lastname"]', timeout=5000)
             self._human_like_typing(last_name_field, lead_data.get('lastName', ''))
             print(f"✓ Last Name filled: {lead_data.get('lastName', '')}")
-            
+
             # Fill Email
             email_field = page.wait_for_selector(f'{form_selector} input[name="email"]', timeout=5000)
             self._human_like_typing(email_field, lead_data.get('email', ''))
             print(f"✓ Email filled: {lead_data.get('email', '')}")
-            
-            # Fill Phone Number
+
+            # Fill Phone Number and set country code
             phone_field = page.wait_for_selector(f'#{phone_id}', timeout=5000)
+
+            # Determine phone prefix to use (same logic as main injector)
+            phone_code_from_lead = lead_data.get('country_code')
+            country_name_from_lead = lead_data.get('country')
+            phone_code_to_use = None
+
+            # Prioritize country name to get phone code
+            if country_name_from_lead and country_name_from_lead in COUNTRY_TO_PHONE_CODE:
+                phone_code_to_use = COUNTRY_TO_PHONE_CODE[country_name_from_lead]
+                print(f"INFO: Using phone code {phone_code_to_use} for country {country_name_from_lead}")
+            elif phone_code_from_lead:
+                # Fallback to the one from lead data
+                phone_code_to_use = phone_code_from_lead
+                print(f"WARNING: Country '{country_name_from_lead}' not in phone code mapping. Using provided country_code: {phone_code_to_use}")
+            else:
+                # Default fallback
+                phone_code_to_use = "1"
+                print(f"WARNING: No country or country_code provided. Using default: {phone_code_to_use}")
+
+            # Map phone code to country ISO code for intlTelInput
+            phone_to_iso = {
+                "1": "us",    # United States/Canada
+                "44": "gb",   # United Kingdom
+                "61": "au",   # Australia
+                "49": "de",   # Germany
+                "33": "fr",   # France
+                "39": "it",   # Italy
+                "34": "es",   # Spain
+                "31": "nl",   # Netherlands
+                "32": "be",   # Belgium
+                "41": "ch",   # Switzerland
+                "43": "at",   # Austria
+                "46": "se",   # Sweden
+                "47": "no",   # Norway
+                "45": "dk",   # Denmark
+                "358": "fi",  # Finland
+                "48": "pl",   # Poland
+                "420": "cz",  # Czech Republic
+                "36": "hu",   # Hungary
+                "40": "ro",   # Romania
+                "359": "bg",  # Bulgaria
+                "30": "gr",   # Greece
+                "351": "pt",  # Portugal
+                "353": "ie",  # Ireland
+                "352": "lu",  # Luxembourg
+                "356": "mt",  # Malta
+                "357": "cy",  # Cyprus
+                "64": "nz",   # New Zealand
+                # Add more mappings as needed
+            }
+
+            country_iso = phone_to_iso.get(phone_code_to_use, "us")
+
+            # Set the country in intlTelInput widget using JavaScript
+            try:
+                page.evaluate(f"""
+                    (function() {{
+                        const phoneInput = document.getElementById('{phone_id}');
+                        if (phoneInput && window.intlTelInputGlobals) {{
+                            const iti = window.intlTelInputGlobals.getInstance(phoneInput);
+                            if (iti) {{
+                                iti.setCountry('{country_iso}');
+                                console.log('Set country to {country_iso} for phone code {phone_code_to_use}');
+                            }}
+                        }}
+                    }})();
+                """)
+                print(f"✓ Country set in phone widget: {country_iso} (phone code +{phone_code_to_use})")
+            except Exception as e:
+                print(f"WARNING: Could not set country in phone widget: {str(e)}")
+                # Try alternative method - set data-code attribute
+                try:
+                    page.evaluate(f"document.getElementById('{phone_id}').setAttribute('data-code', '+{phone_code_to_use}')")
+                    print(f"✓ Set data-code attribute: +{phone_code_to_use}")
+                except Exception as e2:
+                    print(f"WARNING: Could not set data-code attribute: {str(e2)}")
+
+            # Fill the phone number
             self._human_like_typing(phone_field, lead_data.get('phone', ''))
             print(f"✓ Phone filled: {lead_data.get('phone', '')}")
-            
-            # Set country code in hidden field if provided
-            country_code = lead_data.get('country_code', '1')
+
+            # Set country code in hidden field (as backup)
             try:
-                page.evaluate(f'document.getElementById("{hidden_phone_id}").value = "{country_code}"')
-                print(f"✓ Country code set: +{country_code}")
+                page.evaluate(f'document.getElementById("{hidden_phone_id}").value = "{phone_code_to_use}"')
+                print(f"✓ Country code set in hidden field: +{phone_code_to_use}")
             except Exception as e:
-                print(f"WARNING: Could not set country code: {str(e)}")
-            
+                print(f"WARNING: Could not set country code in hidden field: {str(e)}")
+
             # Check the terms checkbox - CRITICAL for form submission
             try:
                 # For myform1 and myform3 (popup), both use the same checkbox structure
@@ -276,7 +515,7 @@ class QuantumAIInjector:
                         'label[for="cbx-3"]',  # Global selector as fallback
                         '.checked-svg'  # Global selector as fallback
                     ]
-                    
+
                     checkbox_checked = False
                     for selector in checkbox_selectors:
                         try:
@@ -285,7 +524,7 @@ class QuantumAIInjector:
                                 print(f"INFO: Found checkbox using selector: {selector}")
                                 checkbox_element.click()
                                 time.sleep(0.5)  # Wait for checkbox state to update
-                                
+
                                 # Verify checkbox is checked
                                 actual_checkbox = page.query_selector('#cbx-3')
                                 if actual_checkbox:
@@ -300,7 +539,7 @@ class QuantumAIInjector:
                                     break
                         except Exception as e:
                             continue
-                    
+
                     if checkbox_checked:
                         print("✓ Terms checkbox checked successfully")
                     else:
@@ -316,7 +555,7 @@ class QuantumAIInjector:
                     checkbox_label = page.wait_for_selector(f'{form_selector} .checked-svg', timeout=5000)
                     checkbox_label.click()
                     print("✓ Terms checkbox checked")
-                    
+
             except Exception as e:
                 print(f"WARNING: Could not check terms checkbox: {str(e)}")
                 # Try to find and check any checkbox in the form
@@ -330,9 +569,9 @@ class QuantumAIInjector:
                                 break
                 except:
                     pass
-            
+
             return True
-            
+
         except Exception as e:
             print(f"ERROR: Failed to fill form {form_id}: {str(e)}")
             traceback.print_exc()
@@ -342,7 +581,7 @@ class QuantumAIInjector:
         """Submit the specified QuantumAI form."""
         try:
             print(f"INFO: Submitting QuantumAI form {form_id}...")
-            
+
             # CRITICAL: Verify checkbox is checked before submitting
             if form_id in ["myform1", "myform3"]:
                 try:
@@ -359,7 +598,7 @@ class QuantumAIInjector:
                                 time.sleep(0.5)
                                 is_checked = checkbox.is_checked()
                                 print(f"INFO: After re-click - Checkbox checked: {is_checked}")
-                            
+
                             # If still not checked, force it via JavaScript
                             if not is_checked:
                                 page.evaluate('document.getElementById("cbx-3").checked = true')
@@ -368,10 +607,10 @@ class QuantumAIInjector:
                         print(f"WARNING: Could not find checkbox #cbx-3 for {form_id}")
                 except Exception as e:
                     print(f"WARNING: Error verifying checkbox for {form_id}: {str(e)}")
-            
+
             # Take a screenshot before clicking submit
             self._take_screenshot(page, f"before_submit_{form_id}")
-            
+
             # Try multiple selectors for the submit button based on form type
             if form_id == "myform1":
                 # Root form specific selectors
@@ -399,7 +638,7 @@ class QuantumAIInjector:
                     f'#{form_id} button:has-text("Register")',
                     f'#{form_id} button.btn'
                 ]
-            
+
             submit_button = None
             for selector in submit_selectors:
                 try:
@@ -409,7 +648,7 @@ class QuantumAIInjector:
                         break
                 except:
                     continue
-            
+
             if not submit_button:
                 print(f"ERROR: Could not find submit button for form {form_id}")
                 # Try to find any button in the form and nearby
@@ -421,7 +660,7 @@ class QuantumAIInjector:
                     btn_type = btn.get_attribute('type')
                     btn_class = btn.get_attribute('class')
                     print(f"  Button {i}: text='{btn_text}', name='{btn_name}', type='{btn_type}', class='{btn_class}'")
-                
+
                 # For root form, try to find buttons outside the form but nearby
                 if form_id == "myform1":
                     print("INFO: Searching for register buttons outside the form for myform1...")
@@ -433,29 +672,29 @@ class QuantumAIInjector:
                         btn_type = btn.get_attribute('type')
                         btn_class = btn.get_attribute('class')
                         print(f"  Nearby Button {i}: text='{btn_text}', name='{btn_name}', type='{btn_type}', class='{btn_class}'")
-                        
+
                         # Try to use the first visible register button
                         if btn.is_visible() and ('register' in btn_text.lower() or btn_name == 'submitBtn' or 'btn_send' in (btn_class or '')):
                             print(f"INFO: Using nearby register button: {btn_text}")
                             submit_button = btn
                             break
-                
+
                 if not submit_button:
                     return False
-            
+
             # Scroll the submit button into view
             submit_button.scroll_into_view_if_needed()
             time.sleep(0.5)
-            
+
             # Click the submit button
             print(f"INFO: Clicking submit button for form {form_id}...")
             submit_button.click()
             print(f"✓ Submit button clicked for form {form_id}")
-            
+
             # Wait a moment and take another screenshot
             time.sleep(2)
             self._take_screenshot(page, f"after_submit_{form_id}")
-            
+
             # Check if form submission was successful by looking for changes
             try:
                 # Look for common success indicators
@@ -466,7 +705,7 @@ class QuantumAIInjector:
                     '.success',
                     '.thank-you'
                 ]
-                
+
                 for indicator in success_indicators:
                     try:
                         if page.wait_for_selector(indicator, timeout=1000):
@@ -474,13 +713,13 @@ class QuantumAIInjector:
                             break
                     except:
                         continue
-                        
+
             except Exception as e:
                 print(f"INFO: No explicit success indicator found: {str(e)}")
-            
+
             print(f"✓ Form {form_id} submission completed")
             return True
-            
+
         except Exception as e:
             print(f"ERROR: Failed to submit form {form_id}: {str(e)}")
             traceback.print_exc()
@@ -492,76 +731,76 @@ class QuantumAIInjector:
         browser = None
         try:
             self.target_url = target_url
-            
+
             with sync_playwright() as p:
                 print("INFO: Launching browser for QuantumAI injection...")
                 browser = p.chromium.launch(**self._setup_browser_config())
-                
+
                 # Create context with desktop settings for QuantumAI
                 context = browser.new_context(
                     viewport={'width': 1366, 'height': 768},
                     user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 )
-                
+
                 page = context.new_page()
-                
+
                 # Navigate to target URL
                 print(f"INFO: Navigating to QuantumAI page: {target_url}")
                 page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
-                
+
                 # Take initial screenshot
                 self._take_screenshot(page, "initial_load")
-                
+
                 # Wait for page to fully load
                 time.sleep(3)
-                
+
                 # Check if popup is visible initially
                 popup_visible = self._check_popup_visibility(page)
-                
+
                 if not popup_visible:
                     print("INFO: Popup not immediately visible, attempting to trigger it...")
                     popup_visible = self._trigger_popup(page)
-                
+
                 success = False
-                
+
                 # NEW LOGIC: Prioritize popup when visible, then fallback to root forms
                 if popup_visible:
                     print("INFO: Popup is visible - filling popup form (PRIORITY)")
                     self._take_screenshot(page, "popup_detected")
-                    
+
                     success = self._fill_quantumai_form(page, lead_data, "myform3")
                     if success:
                         success = self._submit_quantumai_form(page, "myform3")
                         if success:
                             self._take_screenshot(page, "popup_form_submitted")
                             print("SUCCESS: Popup form submitted successfully!")
-                
+
                 # Fallback to root form if popup failed or wasn't visible
                 if not success:
                     print("INFO: Filling main QuantumAI form (myform1) - ROOT FORM FALLBACK")
                     page.evaluate("document.getElementById('signin').scrollIntoView({behavior: 'smooth'})")
                     time.sleep(2)
-                    
+
                     success = self._fill_quantumai_form(page, lead_data, "myform1")
                     if success:
                         success = self._submit_quantumai_form(page, "myform1")
                         if success:
                             self._take_screenshot(page, "main_form_submitted")
                             print("SUCCESS: Main form (root page) submitted successfully!")
-                
+
                 # Final fallback to footer form
                 if not success:
                     print("INFO: Trying footer form as final fallback (myform2)")
                     page.evaluate("document.getElementById('contacts').scrollIntoView({behavior: 'smooth'})")
                     time.sleep(2)
-                    
+
                     success = self._fill_quantumai_form(page, lead_data, "myform2")
                     if success:
                         success = self._submit_quantumai_form(page, "myform2")
                         if success:
                             self._take_screenshot(page, "footer_form_submitted")
                             print("SUCCESS: Footer form submitted successfully!")
-                
+
                 if success:
                     # Wait for redirects
                     print("INFO: Waiting for redirects...")
@@ -574,7 +813,7 @@ class QuantumAIInjector:
                     print("ERROR: All QuantumAI form submission attempts failed")
                     self._take_screenshot(page, "all_forms_failed")
                     return False
-                
+
         except Exception as e:
             print(f"ERROR: QuantumAI injection failed: {str(e)}")
             traceback.print_exc()
@@ -598,7 +837,7 @@ def main():
     if len(sys.argv) != 2:
         print("Usage: python quantumai_injector_playwright.py '<lead_data_json>'")
         sys.exit(1)
-    
+
     try:
         lead_data = json.loads(sys.argv[1])
         print(f"INFO: Starting QuantumAI injection with lead data:")
@@ -606,23 +845,35 @@ def main():
         print(f"  - Email: {lead_data.get('email', '')}")
         print(f"  - Phone: {lead_data.get('phone', '')}")
         print(f"  - Country: {lead_data.get('country', '')}")
-        
+
+        # Extract proxy configuration if provided
+        proxy_config = lead_data.get('proxy')
+        if proxy_config:
+            print(f"DEBUG: QuantumAI Proxy configuration received:")
+            print(f"  - Server: {proxy_config.get('server', 'Not set')}")
+            print(f"  - Username: {proxy_config.get('username', 'Not set')}")
+            print(f"  - Host: {proxy_config.get('host', 'Not set')}")
+            print(f"  - Port: {proxy_config.get('port', 'Not set')}")
+            print(f"  - Country: {proxy_config.get('country', 'Not set')}")
+        else:
+            print("DEBUG: No proxy configuration received - QuantumAI will use real IP")
+
         # Extract target URL from lead data or use default
         target_url = lead_data.get('targetUrl', 'https://k8ro.info/bKkkBWkK')
-        
-        # Initialize injector
-        injector = QuantumAIInjector()
-        
+
+        # Initialize injector with proxy configuration
+        injector = QuantumAIInjector(proxy_config)
+
         # Perform injection
         success = injector.inject_lead(lead_data, target_url)
-        
+
         if success:
             print("SUCCESS: QuantumAI lead injection completed successfully!")
             sys.exit(0)
         else:
             print("ERROR: QuantumAI lead injection failed!")
             sys.exit(1)
-            
+
     except json.JSONDecodeError as e:
         print(f"ERROR: Invalid JSON data: {str(e)}")
         sys.exit(1)
@@ -632,4 +883,4 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main() 
+    main()
