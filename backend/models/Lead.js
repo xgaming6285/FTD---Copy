@@ -116,6 +116,11 @@ const leadSchema = new mongoose.Schema(
           ref: "ClientNetwork",
           required: true,
         },
+        // Client broker assignment info (for completed injections)
+        clientBroker: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "ClientBroker",
+        },
         assignedAt: {
           type: Date,
           default: Date.now,
@@ -128,6 +133,24 @@ const leadSchema = new mongoose.Schema(
         orderId: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "Order",
+        },
+        // Injection tracking fields
+        injectionStatus: {
+          type: String,
+          enum: ["pending", "completed", "failed"],
+          default: "pending"
+        },
+        injectionType: {
+          type: String,
+          enum: ["auto", "manual_ftd"],
+        },
+        domain: {
+          type: String,
+          trim: true,
+        },
+        injectionNotes: {
+          type: String,
+          trim: true,
         },
       },
     ],
@@ -229,6 +252,48 @@ const leadSchema = new mongoose.Schema(
       reason: { type: String },
       lastCheckedAt: { type: Date }
     },
+
+    // Device fingerprint association (one-to-one)
+    fingerprint: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Fingerprint",
+      sparse: true,
+      index: true
+    },
+
+    // Device type for this lead (cached from fingerprint for quick access)
+    deviceType: {
+      type: String,
+      enum: ["windows", "android", "ios", "mac"],
+      sparse: true,
+      index: true
+    },
+
+    // Proxy tracking for this lead
+    proxyAssignments: [{
+      proxy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Proxy",
+        required: true
+      },
+      orderId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Order",
+        required: true
+      },
+      assignedAt: {
+        type: Date,
+        default: Date.now
+      },
+      status: {
+        type: String,
+        enum: ["active", "completed", "failed"],
+        default: "active"
+      },
+      completedAt: {
+        type: Date
+      }
+    }],
   },
   {
     timestamps: true,
@@ -481,6 +546,186 @@ leadSchema.methods.getClientNetworkHistory = function () {
 // Get all client networks this lead has been assigned to
 leadSchema.methods.getAssignedClientNetworks = function () {
   return [...new Set(this.clientNetworkHistory.map(history => history.clientNetwork.toString()))];
+};
+
+// Device and Fingerprint Management Methods
+
+// Assign a device fingerprint to this lead
+leadSchema.methods.assignFingerprint = async function (deviceType, createdBy) {
+  const Fingerprint = require('./Fingerprint');
+
+  // Validate parameters
+  if (!deviceType) {
+    throw new Error('deviceType is required for fingerprint assignment');
+  }
+  if (!createdBy) {
+    throw new Error('createdBy is required for fingerprint assignment');
+  }
+
+  // Check if lead already has a fingerprint
+  if (this.fingerprint) {
+    throw new Error('Lead already has a fingerprint assigned');
+  }
+
+  try {
+    console.log(`[DEBUG] Creating fingerprint for lead ${this._id} with deviceType: ${deviceType}`);
+
+    // Create new fingerprint for this lead
+    const fingerprint = await Fingerprint.createForLead(this._id, deviceType, createdBy);
+
+    // Update lead with fingerprint reference and device type
+    this.fingerprint = fingerprint._id;
+    this.deviceType = deviceType;
+
+    console.log(`[DEBUG] Successfully assigned fingerprint ${fingerprint.deviceId} to lead ${this._id}`);
+
+    return fingerprint;
+  } catch (error) {
+    console.error(`Error assigning fingerprint to lead ${this._id}:`, error);
+    throw error;
+  }
+};
+
+// Get the fingerprint associated with this lead
+leadSchema.methods.getFingerprint = async function () {
+  if (!this.fingerprint) {
+    return null;
+  }
+
+  const Fingerprint = require('./Fingerprint');
+  return await Fingerprint.findById(this.fingerprint);
+};
+
+// Update device type and create new fingerprint if needed
+leadSchema.methods.updateDeviceType = async function (newDeviceType, createdBy) {
+  const Fingerprint = require('./Fingerprint');
+
+  // If device type is the same, no need to update
+  if (this.deviceType === newDeviceType) {
+    return await this.getFingerprint();
+  }
+
+  // Remove existing fingerprint if it exists
+  if (this.fingerprint) {
+    await Fingerprint.findByIdAndDelete(this.fingerprint);
+  }
+
+  // Create new fingerprint with new device type
+  const fingerprint = await Fingerprint.createForLead(this._id, newDeviceType, createdBy);
+
+  // Update lead
+  this.fingerprint = fingerprint._id;
+  this.deviceType = newDeviceType;
+
+  return fingerprint;
+};
+
+// Proxy Management Methods
+
+// Assign a proxy to this lead for a specific order
+leadSchema.methods.assignProxy = function (proxyId, orderId) {
+  // Check if lead already has an active proxy for this order
+  const existingAssignment = this.proxyAssignments.find(
+    assignment => assignment.orderId.toString() === orderId.toString() &&
+      assignment.status === 'active'
+  );
+
+  if (existingAssignment) {
+    return false; // Already has active proxy for this order
+  }
+
+  // Add new proxy assignment
+  this.proxyAssignments.push({
+    proxy: proxyId,
+    orderId: orderId,
+    assignedAt: new Date(),
+    status: 'active'
+  });
+
+  return true;
+};
+
+// Get active proxy for a specific order
+leadSchema.methods.getActiveProxy = function (orderId) {
+  const assignment = this.proxyAssignments.find(
+    assignment => assignment.orderId.toString() === orderId.toString() &&
+      assignment.status === 'active'
+  );
+
+  return assignment ? assignment.proxy : null;
+};
+
+// Complete proxy assignment (mark as completed)
+leadSchema.methods.completeProxyAssignment = function (orderId, status = 'completed') {
+  const assignment = this.proxyAssignments.find(
+    assignment => assignment.orderId.toString() === orderId.toString() &&
+      assignment.status === 'active'
+  );
+
+  if (assignment) {
+    assignment.status = status;
+    assignment.completedAt = new Date();
+    return true;
+  }
+
+  return false;
+};
+
+// Get all proxy assignments for this lead
+leadSchema.methods.getProxyAssignments = function () {
+  return this.proxyAssignments;
+};
+
+// Check if lead has active proxy assignments
+leadSchema.methods.hasActiveProxyAssignments = function () {
+  return this.proxyAssignments.some(assignment => assignment.status === 'active');
+};
+
+// Static method to find leads by device type
+leadSchema.statics.findByDeviceType = function (deviceType, options = {}) {
+  const query = { deviceType };
+
+  // Add additional filters if provided
+  if (options.leadType) {
+    query.leadType = options.leadType;
+  }
+
+  if (options.isAssigned !== undefined) {
+    query.isAssigned = options.isAssigned;
+  }
+
+  if (options.status) {
+    query.status = options.status;
+  }
+
+  return this.find(query);
+};
+
+// Static method to get device type distribution
+leadSchema.statics.getDeviceTypeStats = function () {
+  return this.aggregate([
+    {
+      $group: {
+        _id: {
+          deviceType: "$deviceType",
+          leadType: "$leadType"
+        },
+        count: { $sum: 1 }
+      }
+    },
+    {
+      $group: {
+        _id: "$_id.deviceType",
+        totalCount: { $sum: "$count" },
+        byLeadType: {
+          $push: {
+            leadType: "$_id.leadType",
+            count: "$count"
+          }
+        }
+      }
+    }
+  ]);
 };
 
 module.exports = mongoose.model("Lead", leadSchema);

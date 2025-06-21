@@ -54,45 +54,62 @@ import api from '../services/api';
 import { selectUser } from '../store/slices/authSlice';
 import { getSortedCountries } from '../constants/countries';
 import LeadDetailCard from '../components/LeadDetailCard';
-import ManualFTDInjectionModal from '../components/ManualFTDInjectionModal';
 
 // --- Best Practice: Define constants and schemas outside the component ---
 // This prevents them from being recreated on every render.
 
-// Validation schema for order creation
-const orderSchema = yup.object({
-  ftd: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  filler: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  cold: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  live: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
-  priority: yup.string().oneOf(['low', 'medium', 'high'], 'Invalid priority').default('medium'),
-  notes: yup.string(),
-  country: yup.string().nullable(),
-  gender: yup.string().oneOf(['', 'male', 'female', 'not_defined'], 'Invalid gender').nullable().default(''),
-  // New injection fields
-  enableInjection: yup.boolean().default(false),
-  injectionMode: yup.string().oneOf(['manual', 'bulk', 'scheduled'], 'Invalid injection mode').default('manual'),
-  injectionStartTime: yup.string().when('injectionMode', {
-    is: 'scheduled',
-    then: schema => schema.required('Start time is required for scheduled injection'),
-    otherwise: schema => schema
-  }),
-  injectionEndTime: yup.string().when('injectionMode', {
-    is: 'scheduled',
-    then: schema => schema.required('End time is required for scheduled injection'),
-    otherwise: schema => schema
-  }),
-  injectFiller: yup.boolean().default(true),
-  injectCold: yup.boolean().default(true),
-  injectLive: yup.boolean().default(true),
-}).test('at-least-one', 'At least one lead type must be requested', (value) => {
-  return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
-}).test('injection-types', 'At least one lead type must be selected for injection when injection is enabled', (value) => {
-  if (value.enableInjection) {
-    return value.injectFiller || value.injectCold || value.injectLive;
-  }
-  return true;
-});
+// Function to create validation schema based on user role
+const createOrderSchema = (userRole) => {
+  return yup.object({
+    ftd: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    filler: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    cold: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    live: yup.number().min(0, 'Must be 0 or greater').integer('Must be a whole number').default(0),
+    priority: yup.string().oneOf(['low', 'medium', 'high']).default('medium'),
+    countryFilter: yup.string().required('Country filter is required').min(2, 'Country must be at least 2 characters'),
+    genderFilter: yup.string().oneOf(['', 'male', 'female']).default(''),
+    notes: yup.string().default(''),
+    selectedClientNetwork: userRole === 'affiliate_manager' 
+      ? yup.string().required('Client network selection is required')
+      : yup.string().default(''),
+    // Injection settings
+    injectionMode: yup.string().oneOf(['bulk', 'scheduled']).default('bulk'),
+    injectionStartTime: yup.string().default(''),
+    injectionEndTime: yup.string().default(''),
+    // Device configuration fields
+    deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
+    bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac']).default('android'),
+    deviceRatio: yup.object({
+      windows: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      android: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      ios: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+      mac: yup.number().min(0, 'Must be 0 or greater').max(10, 'Must be 10 or less').integer('Must be a whole number').default(0),
+    }),
+    availableDeviceTypes: yup.object({
+      windows: yup.boolean().default(true),
+      android: yup.boolean().default(true),
+      ios: yup.boolean().default(true),
+      mac: yup.boolean().default(true),
+    }),
+  }).test('at-least-one', 'At least one lead type must be requested', (value) => {
+    return (value.ftd || 0) + (value.filler || 0) + (value.cold || 0) + (value.live || 0) > 0;
+  }).test('device-ratio', 'At least one device ratio must be greater than 0 for ratio mode', (value) => {
+    if (value.deviceSelectionMode === 'ratio') {
+      return Object.values(value.deviceRatio || {}).some(ratio => ratio > 0);
+    }
+    return true;
+  }).test('available-devices', 'At least one device type must be selected for random mode', (value) => {
+    if (value.deviceSelectionMode === 'random') {
+      return Object.values(value.availableDeviceTypes || {}).some(enabled => enabled);
+    }
+    return true;
+  }).test('bulk-device', 'Device type is required for bulk mode', (value) => {
+    if (value.deviceSelectionMode === 'bulk') {
+      return value.bulkDeviceType && value.bulkDeviceType.trim() !== '';
+    }
+    return true;
+  });
+};
 
 // Helper functions for status/priority colors
 const getStatusColor = (status) => {
@@ -188,24 +205,19 @@ const OrdersPage = () => {
     reset,
     formState: { errors, isSubmitting },
   } = useForm({
-    resolver: yupResolver(orderSchema),
-    defaultValues: orderSchema.getDefault(),
+    resolver: yupResolver(createOrderSchema(user?.role)),
+    defaultValues: createOrderSchema(user?.role).getDefault(),
   });
 
-  // Broker assignment states
-  const [brokerAssignmentDialog, setBrokerAssignmentDialog] = useState({
+  // Manual FTD injection state
+  const [manualFTDDialog, setManualFTDDialog] = useState({
     open: false,
-    orderId: null,
-    leadsWithBrokers: []
+    order: null,
+    lead: null,
+    step: 'confirm'
   });
-  const [brokerAssignments, setBrokerAssignments] = useState({});
-  const [assigningBrokers, setAssigningBrokers] = useState(false);
-
-  // Manual FTD injection states
-  const [ftdInjectionModal, setFtdInjectionModal] = useState({
-    open: false,
-    order: null
-  });
+  const [manualFTDDomain, setManualFTDDomain] = useState('');
+  const [processingLeads, setProcessingLeads] = useState({});
 
   // --- Optimization: `useCallback` to memoize functions ---
   const fetchOrders = useCallback(async () => {
@@ -273,7 +285,11 @@ const OrdersPage = () => {
 
   const onSubmitOrder = useCallback(async (data) => {
     try {
-      // Security Best Practice: The backend MUST validate the user's role before processing the creation.
+      // Transform availableDeviceTypes from object to array
+      const availableDeviceTypesArray = Object.entries(data.availableDeviceTypes || {})
+        .filter(([_, enabled]) => enabled)
+        .map(([deviceType, _]) => deviceType);
+
       const orderData = {
         requests: {
           ftd: data.ftd || 0,
@@ -282,25 +298,25 @@ const OrdersPage = () => {
           live: data.live || 0,
         },
         priority: data.priority,
+        country: data.countryFilter,
+        gender: data.genderFilter,
         notes: data.notes,
-        country: data.country || null,
-        gender: data.gender || null,
-        selectedClientNetwork: data.selectedClientNetwork || undefined,
-        // Include injection settings
-        injectionSettings: data.enableInjection ? {
-          enabled: true,
-          mode: data.injectionMode,
-          scheduledTime: data.injectionMode === 'scheduled' ? {
-            startTime: data.injectionStartTime,
-            endTime: data.injectionEndTime
-          } : undefined,
-          includeTypes: {
-            filler: data.injectFiller,
-            cold: data.injectCold,
-            live: data.injectLive
+        selectedClientNetwork: data.selectedClientNetwork,
+        // Injection settings - automatically inject all non-FTD lead types
+        injectionMode: data.injectionMode,
+        injectionStartTime: data.injectionStartTime,
+        injectionEndTime: data.injectionEndTime,
+        injectFiller: data.filler > 0, // Auto-inject if filler leads requested
+        injectCold: data.cold > 0,     // Auto-inject if cold leads requested
+        injectLive: data.live > 0,     // Auto-inject if live leads requested
+        injectionSettings: {
+          // Device configuration
+          deviceConfig: {
+            selectionMode: data.deviceSelectionMode,
+            bulkDeviceType: data.bulkDeviceType,
+            deviceRatio: data.deviceRatio,
+            availableDeviceTypes: availableDeviceTypesArray,
           }
-        } : {
-          enabled: false
         }
       };
 
@@ -485,129 +501,117 @@ const OrdersPage = () => {
     }
   }, [fetchOrders]);
 
-  const handleSkipFTDs = useCallback(async (orderId) => {
-    try {
-      await api.post(`/orders/${orderId}/skip-ftds`);
-      setNotification({ message: 'FTDs marked for manual filling later!', severity: 'info' });
-      fetchOrders();
-    } catch (err) {
-      setNotification({ message: err.response?.data?.message || 'Failed to skip FTDs', severity: 'error' });
-    }
-  }, [fetchOrders]);
+  // Manual FTD injection handlers
+  const handleOpenManualFTDInjection = useCallback((order, lead) => {
+    // Check if this lead has already been processed
+    const networkHistory = lead.clientNetworkHistory?.find(
+      (history) => history.orderId?.toString() === order._id.toString()
+    );
 
-  // Broker assignment handlers
-  const handleOpenBrokerAssignment = useCallback(async (orderId) => {
-    try {
-      const response = await api.get(`/orders/${orderId}/pending-broker-assignment`);
-      setBrokerAssignmentDialog({
-        open: true,
-        orderId: orderId,
-        leadsWithBrokers: response.data.data.leadsWithBrokers
-      });
-
-      // Initialize broker assignments
-      const initialAssignments = {};
-      response.data.data.leadsWithBrokers.forEach(item => {
-        if (item.availableBrokers.length > 0) {
-          initialAssignments[item.lead._id] = {
-            clientBroker: '',
-            domain: ''
-          };
-        }
-      });
-      setBrokerAssignments(initialAssignments);
-    } catch (err) {
+    if (networkHistory && networkHistory.injectionStatus === "completed") {
       setNotification({
-        message: err.response?.data?.message || 'Failed to load broker assignment data',
+        message: 'This FTD lead has already been processed',
+        severity: 'warning'
+      });
+      return;
+    }
+
+    setManualFTDDialog({
+      open: true,
+      order: order,
+      lead: lead,
+      step: 'confirm'
+    });
+    setManualFTDDomain('');
+  }, []);
+
+  const handleCloseManualFTDDialog = useCallback(() => {
+    // Prevent closing if we're in domain_input step and domain is required
+    if (manualFTDDialog.step === 'domain_input' && !manualFTDDomain.trim()) {
+      setNotification({
+        message: 'Please enter the broker domain before closing. This field is mandatory.',
+        severity: 'warning'
+      });
+      return;
+    }
+
+    setManualFTDDialog({
+      open: false,
+      order: null,
+      lead: null,
+      step: 'confirm'
+    });
+    setManualFTDDomain('');
+  }, [manualFTDDialog.step, manualFTDDomain]);
+
+  const handleStartManualFTDInjection = useCallback(async () => {
+    const { order, lead } = manualFTDDialog;
+    if (!order || !lead) return;
+
+    setManualFTDDialog(prev => ({ ...prev, step: 'processing' }));
+    setProcessingLeads(prev => ({ ...prev, [lead._id]: true }));
+    setNotification({
+      message: `Starting manual FTD injection for ${lead.firstName} ${lead.lastName}...`,
+      severity: 'info'
+    });
+
+    try {
+      // Call the backend to start manual FTD injection for specific lead
+      const response = await api.post(`/orders/${order._id}/leads/${lead._id}/manual-ftd-injection-start`);
+
+      if (response.data.success) {
+        setManualFTDDialog(prev => ({ ...prev, step: 'domain_input' }));
+        setNotification({
+          message: 'Browser opened for manual form filling. Please fill the form manually and close the browser when done.',
+          severity: 'info'
+        });
+      } else {
+        throw new Error(response.data.message || 'Failed to start manual injection');
+      }
+    } catch (error) {
+      console.error('Manual FTD injection start failed:', error);
+      setNotification({
+        message: error.response?.data?.message || 'Failed to start manual FTD injection',
         severity: 'error'
       });
+      setManualFTDDialog(prev => ({ ...prev, step: 'confirm' }));
+    } finally {
+      setProcessingLeads(prev => ({ ...prev, [lead._id]: false }));
     }
-  }, []);
+  }, [manualFTDDialog.order, manualFTDDialog.lead]);
 
-  const handleBrokerAssignmentChange = useCallback((leadId, field, value) => {
-    setBrokerAssignments(prev => ({
-      ...prev,
-      [leadId]: {
-        ...prev[leadId],
-        [field]: value
-      }
-    }));
-  }, []);
+  const handleSubmitManualFTDDomain = useCallback(async () => {
+    const { order, lead } = manualFTDDialog;
+    if (!order || !lead || !manualFTDDomain.trim()) return;
 
-  const handleSubmitBrokerAssignments = useCallback(async () => {
     try {
-      setAssigningBrokers(true);
-
-      const assignments = Object.entries(brokerAssignments)
-        .filter(([leadId, assignment]) => assignment.clientBroker && assignment.domain)
-        .map(([leadId, assignment]) => ({
-          leadId,
-          clientBroker: assignment.clientBroker,
-          domain: assignment.domain
-        }));
-
-      if (assignments.length === 0) {
-        setNotification({ message: 'Please assign at least one broker', severity: 'warning' });
-        return;
-      }
-
-      await api.post(`/orders/${brokerAssignmentDialog.orderId}/assign-brokers`, {
-        brokerAssignments: assignments
+      // Submit the manually entered domain to complete the FTD injection for specific lead
+      await api.post(`/orders/${order._id}/leads/${lead._id}/manual-ftd-injection-complete`, {
+        domain: manualFTDDomain.trim()
       });
 
       setNotification({
-        message: `Successfully assigned brokers to ${assignments.length} leads!`,
+        message: `Manual FTD injection completed successfully for ${lead.firstName} ${lead.lastName}!`,
         severity: 'success'
       });
 
-      setBrokerAssignmentDialog({ open: false, orderId: null, leadsWithBrokers: [] });
-      setBrokerAssignments({});
-      fetchOrders();
-    } catch (err) {
-      setNotification({
-        message: err.response?.data?.message || 'Failed to assign brokers',
-        severity: 'error'
-      });
-    } finally {
-      setAssigningBrokers(false);
-    }
-  }, [brokerAssignmentDialog.orderId, brokerAssignments, fetchOrders]);
+      handleCloseManualFTDDialog();
+      fetchOrders(); // Refresh orders to show updated status
+    } catch (error) {
+      console.error('Manual FTD injection completion failed:', error);
 
-  const handleSkipBrokerAssignment = useCallback(async (orderId) => {
-    try {
-      await api.post(`/orders/${orderId}/skip-broker-assignment`);
-      setNotification({ message: 'Broker assignment skipped', severity: 'info' });
-      fetchOrders();
-    } catch (err) {
+      let errorMessage = 'Failed to complete manual FTD injection';
+
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+
       setNotification({
-        message: err.response?.data?.message || 'Failed to skip broker assignment',
+        message: errorMessage,
         severity: 'error'
       });
     }
-  }, [fetchOrders]);
-
-  // Manual FTD injection handlers
-  const handleOpenFTDInjection = useCallback((order) => {
-    setFtdInjectionModal({
-      open: true,
-      order: order
-    });
-  }, []);
-
-  const handleCloseFTDInjection = useCallback(() => {
-    setFtdInjectionModal({
-      open: false,
-      order: null
-    });
-  }, []);
-
-  const handleFTDInjectionSuccess = useCallback(() => {
-    setNotification({ 
-      message: 'FTD leads injected successfully!', 
-      severity: 'success' 
-    });
-    fetchOrders(); // Refresh orders to show updated status
-  }, [fetchOrders]);
+  }, [manualFTDDialog.order, manualFTDDialog.lead, manualFTDDomain, handleCloseManualFTDDialog, fetchOrders]);
 
 
 
@@ -759,19 +763,15 @@ const OrdersPage = () => {
                         <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{`${order.fulfilled?.ftd || 0}/${order.fulfilled?.filler || 0}/${order.fulfilled?.cold || 0}/${order.fulfilled?.live || 0}`}</TableCell>
                         <TableCell><Chip label={order.status} color={getStatusColor(order.status)} size="small" /></TableCell>
                         <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
-                          {order.injectionSettings?.enabled ? (
-                            <Chip
-                              label={order.injectionSettings.status || 'pending'}
-                              color={
-                                order.injectionSettings.status === 'completed' ? 'success' :
-                                  order.injectionSettings.status === 'in_progress' ? 'warning' :
-                                    order.injectionSettings.status === 'failed' ? 'error' : 'default'
-                              }
-                              size="small"
-                            />
-                          ) : (
-                            <Chip label="disabled" color="default" size="small" />
-                          )}
+                          <Chip
+                            label={order.injectionSettings?.status || 'pending'}
+                            color={
+                              order.injectionSettings?.status === 'completed' ? 'success' :
+                                order.injectionSettings?.status === 'in_progress' ? 'warning' :
+                                  order.injectionSettings?.status === 'failed' ? 'error' : 'default'
+                            }
+                            size="small"
+                          />
                         </TableCell>
                         <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}><Chip label={order.priority} color={getPriorityColor(order.priority)} size="small" /></TableCell>
                         <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{new Date(order.createdAt).toLocaleDateString()}</TableCell>
@@ -780,7 +780,7 @@ const OrdersPage = () => {
                           <IconButton size="small" onClick={() => handleExportLeads(order._id)} title="Export Leads as CSV"><DownloadIcon fontSize="small" /></IconButton>
 
                           {/* Injection Controls - only for admin/affiliate managers */}
-                          {(user?.role === 'admin' || user?.role === 'affiliate_manager') && order.injectionSettings?.enabled && (
+                          {(user?.role === 'admin' || user?.role === 'affiliate_manager') && (
                             <>
                               {order.injectionSettings.status === 'pending' && (
                                 <IconButton
@@ -805,38 +805,7 @@ const OrdersPage = () => {
                                 </>
                               )}
 
-                              {order.injectionSettings.status === 'completed' && order.ftdHandling?.status === 'manual_fill_required' && (
-                                <>
-                                  <IconButton size="small" onClick={() => handleOpenFTDInjection(order)} title="Manual FTD Injection" color="primary">
-                                    <SendIcon fontSize="small" />
-                                  </IconButton>
-                                  <IconButton size="small" onClick={() => handleSkipFTDs(order._id)} title="Skip FTDs" color="info">
-                                    <SkipNextIcon fontSize="small" />
-                                  </IconButton>
-                                </>
-                              )}
-                            </>
-                          )}
-
-                          {/* Broker Assignment Controls - only for admin/affiliate managers */}
-                          {(user?.role === 'admin' || user?.role === 'affiliate_manager') && order.injectionProgress?.brokerAssignmentPending && (
-                            <>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleOpenBrokerAssignment(order._id)}
-                                title="Assign Client Brokers"
-                                color="secondary"
-                              >
-                                <AssignmentIcon fontSize="small" />
-                              </IconButton>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleSkipBrokerAssignment(order._id)}
-                                title="Skip Broker Assignment"
-                                color="default"
-                              >
-                                <SkipNextIcon fontSize="small" />
-                              </IconButton>
+                              {/* Individual FTD injection buttons are now shown per lead in the expanded view */}
                             </>
                           )}
 
@@ -923,6 +892,41 @@ const OrdersPage = () => {
                                                     >
                                                       {expandedLeads[lead._id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                                                     </IconButton>
+
+                                                    {/* Individual Manual FTD Injection Button */}
+                                                    {lead.leadType === 'ftd' && (user?.role === 'admin' || user?.role === 'affiliate_manager') && (() => {
+                                                      // Check if this lead has been processed
+                                                      const networkHistory = lead.clientNetworkHistory?.find(
+                                                        (history) => history.orderId?.toString() === order._id.toString()
+                                                      );
+                                                      const isCompleted = networkHistory && networkHistory.injectionStatus === "completed";
+                                                      const isProcessing = processingLeads[lead._id];
+
+                                                      // Only show button if not completed
+                                                      if (!isCompleted) {
+                                                        return (
+                                                          <IconButton
+                                                            size="small"
+                                                            onClick={() => handleOpenManualFTDInjection(order, lead)}
+                                                            title={`Manual FTD Injection for ${lead.firstName} ${lead.lastName}`}
+                                                            color="primary"
+                                                            disabled={isProcessing}
+                                                          >
+                                                            {isProcessing ? <CircularProgress size={16} /> : <SendIcon fontSize="small" />}
+                                                          </IconButton>
+                                                        );
+                                                      }
+
+                                                      // Show completed status
+                                                      return (
+                                                        <Chip
+                                                          label="Injected"
+                                                          size="small"
+                                                          color="success"
+                                                          variant="outlined"
+                                                        />
+                                                      );
+                                                    })()}
                                                   </TableCell>
                                                 </TableRow>
                                                 {expandedLeads[lead._id] && (
@@ -998,29 +1002,23 @@ const OrdersPage = () => {
                 )} />
               </Grid>
               <Grid item xs={12}>
-                <Controller name="country" control={control} render={({ field }) => (
-                  <FormControl fullWidth size="small" error={!!errors.country}>
-                    <InputLabel>Country Filter (Optional)</InputLabel>
+                <Controller name="countryFilter" control={control} render={({ field }) => (
+                  <FormControl fullWidth size="small" error={!!errors.countryFilter}>
+                    <InputLabel>Country Filter *</InputLabel>
                     <Select
                       {...field}
-                      label="Country Filter (Optional)"
+                      label="Country Filter *"
                       value={field.value || ''}
                     >
-                      <MenuItem value="">All Countries</MenuItem>
                       {getSortedCountries().map((country) => (
                         <MenuItem key={country.code} value={country.name}>
                           {country.name}
                         </MenuItem>
                       ))}
                     </Select>
-                    {errors.country?.message && (
+                    {errors.countryFilter?.message && (
                       <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                        {errors.country.message}
-                      </Typography>
-                    )}
-                    {!errors.country?.message && (
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
-                        Leave empty for all countries
+                        {errors.countryFilter.message}
                       </Typography>
                     )}
                   </FormControl>
@@ -1035,14 +1033,13 @@ const OrdersPage = () => {
                     control={control}
                     render={({ field }) => (
                       <FormControl fullWidth size="small" error={!!errors.selectedClientNetwork}>
-                        <InputLabel>Client Network (Optional)</InputLabel>
+                        <InputLabel>Client Network *</InputLabel>
                         <Select
                           {...field}
-                          label="Client Network (Optional)"
+                          label="Client Network *"
                           value={field.value || ''}
                           disabled={loadingClientNetworks}
                         >
-                          <MenuItem value="">All Client Networks</MenuItem>
                           {clientNetworks.map((network) => (
                             <MenuItem key={network._id} value={network._id}>
                               {network.name}
@@ -1082,139 +1079,271 @@ const OrdersPage = () => {
                   Lead Injection Settings
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Configure automatic injection for non-FTD leads. FTD leads are always manually filled by affiliate managers/admins.
+                  All non-FTD leads (Filler, Cold, Live) will be automatically injected. FTD leads require manual injection.
                 </Typography>
               </Grid>
 
-              <Grid item xs={12}>
+              {/* Injection mode selection */}
+              <Grid item xs={12} sm={6}>
                 <Controller
-                  name="enableInjection"
+                  name="injectionMode"
                   control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Checkbox {...field} checked={field.value} />}
-                      label="Enable Lead Injection"
-                    />
+                  render={({ field: modeField }) => (
+                    <FormControl fullWidth size="small" error={!!errors.injectionMode}>
+                      <InputLabel>Injection Mode</InputLabel>
+                      <Select {...modeField} label="Injection Mode">
+                        <MenuItem value="bulk">Auto Inject (Bulk)</MenuItem>
+                        <MenuItem value="scheduled">Auto Inject (Scheduled)</MenuItem>
+                      </Select>
+                      {errors.injectionMode && (
+                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+                          {errors.injectionMode.message}
+                        </Typography>
+                      )}
+                    </FormControl>
                   )}
                 />
               </Grid>
 
-              {/* Injection mode selection - only show if injection is enabled */}
+              {/* Scheduled time inputs - only show for scheduled mode */}
               <Controller
-                name="enableInjection"
+                name="injectionMode"
+                control={control}
+                render={({ field: modeField }) => (
+                  modeField.value === 'scheduled' && (
+                    <>
+                      <Grid item xs={12} sm={3}>
+                        <Controller
+                          name="injectionStartTime"
+                          control={control}
+                          render={({ field: timeField }) => (
+                            <TextField
+                              {...timeField}
+                              fullWidth
+                              label="Start Time"
+                              type="time"
+                              InputLabelProps={{ shrink: true }}
+                              size="small"
+                              error={!!errors.injectionStartTime}
+                              helperText={errors.injectionStartTime?.message}
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={3}>
+                        <Controller
+                          name="injectionEndTime"
+                          control={control}
+                          render={({ field: timeField }) => (
+                            <TextField
+                              {...timeField}
+                              fullWidth
+                              label="End Time"
+                              type="time"
+                              InputLabelProps={{ shrink: true }}
+                              size="small"
+                              error={!!errors.injectionEndTime}
+                              helperText={errors.injectionEndTime?.message}
+                            />
+                          )}
+                        />
+                      </Grid>
+                    </>
+                  )
+                )}
+              />
+
+              {/* Device Configuration Section */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                  Device Configuration
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Configure device types for lead injection. Each lead gets a unique fingerprint for the assigned device type.
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="deviceSelectionMode"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Device Selection Mode</InputLabel>
+                      <Select {...field} label="Device Selection Mode">
+                        <MenuItem value="random">Random Assignment</MenuItem>
+                        <MenuItem value="bulk">Bulk Assignment (Same Device)</MenuItem>
+                        <MenuItem value="ratio">Ratio-based Distribution</MenuItem>
+                        <MenuItem value="individual">Individual Assignment</MenuItem>
+                      </Select>
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+
+              {/* Bulk Device Type Selection */}
+              <Controller
+                name="deviceSelectionMode"
                 control={control}
                 render={({ field }) => (
-                  field.value && (
+                  field.value === 'bulk' && (
+                    <Grid item xs={12} sm={6}>
+                      <Controller
+                        name="bulkDeviceType"
+                        control={control}
+                        render={({ field: deviceField }) => (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Device Type</InputLabel>
+                            <Select {...deviceField} label="Device Type">
+                              <MenuItem value="windows">Windows Desktop</MenuItem>
+                              <MenuItem value="android">Android Mobile</MenuItem>
+                              <MenuItem value="ios">iPhone/iPad</MenuItem>
+                              <MenuItem value="mac">Mac Desktop</MenuItem>
+                            </Select>
+                          </FormControl>
+                        )}
+                      />
+                    </Grid>
+                  )
+                )}
+              />
+
+              {/* Ratio-based Device Distribution */}
+              <Controller
+                name="deviceSelectionMode"
+                control={control}
+                render={({ field }) => (
+                  field.value === 'ratio' && (
                     <>
-                      <Grid item xs={12} sm={6}>
+                      <Grid item xs={12}>
+                        <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
+                          Device Distribution Ratios (0-10 scale):
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={2.4}>
                         <Controller
-                          name="injectionMode"
+                          name="deviceRatio.windows"
                           control={control}
-                          render={({ field: modeField }) => (
-                            <FormControl fullWidth size="small" error={!!errors.injectionMode}>
-                              <InputLabel>Injection Mode</InputLabel>
-                              <Select {...modeField} label="Injection Mode">
-                                <MenuItem value="manual">Manual Injection</MenuItem>
-                                <MenuItem value="bulk">Auto Inject (Bulk)</MenuItem>
-                                <MenuItem value="scheduled">Auto Inject (Scheduled)</MenuItem>
-                              </Select>
-                              {errors.injectionMode && (
-                                <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
-                                  {errors.injectionMode.message}
-                                </Typography>
-                              )}
-                            </FormControl>
+                          render={({ field: ratioField }) => (
+                            <TextField
+                              {...ratioField}
+                              fullWidth
+                              label="Windows"
+                              type="number"
+                              inputProps={{ min: 0, max: 10, step: 1 }}
+                              size="small"
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={2.4}>
+                        <Controller
+                          name="deviceRatio.android"
+                          control={control}
+                          render={({ field: ratioField }) => (
+                            <TextField
+                              {...ratioField}
+                              fullWidth
+                              label="Android"
+                              type="number"
+                              inputProps={{ min: 0, max: 10, step: 1 }}
+                              size="small"
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={2.4}>
+                        <Controller
+                          name="deviceRatio.ios"
+                          control={control}
+                          render={({ field: ratioField }) => (
+                            <TextField
+                              {...ratioField}
+                              fullWidth
+                              label="iOS"
+                              type="number"
+                              inputProps={{ min: 0, max: 10, step: 1 }}
+                              size="small"
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={2.4}>
+                        <Controller
+                          name="deviceRatio.mac"
+                          control={control}
+                          render={({ field: ratioField }) => (
+                            <TextField
+                              {...ratioField}
+                              fullWidth
+                              label="Mac"
+                              type="number"
+                              inputProps={{ min: 0, max: 10, step: 1 }}
+                              size="small"
+                            />
                           )}
                         />
                       </Grid>
 
-                      {/* Scheduled time inputs - only show for scheduled mode */}
-                      <Controller
-                        name="injectionMode"
-                        control={control}
-                        render={({ field: modeField }) => (
-                          modeField.value === 'scheduled' && (
-                            <>
-                              <Grid item xs={12} sm={3}>
-                                <Controller
-                                  name="injectionStartTime"
-                                  control={control}
-                                  render={({ field: timeField }) => (
-                                    <TextField
-                                      {...timeField}
-                                      fullWidth
-                                      label="Start Time"
-                                      type="time"
-                                      InputLabelProps={{ shrink: true }}
-                                      size="small"
-                                      error={!!errors.injectionStartTime}
-                                      helperText={errors.injectionStartTime?.message}
-                                    />
-                                  )}
-                                />
-                              </Grid>
-                              <Grid item xs={12} sm={3}>
-                                <Controller
-                                  name="injectionEndTime"
-                                  control={control}
-                                  render={({ field: timeField }) => (
-                                    <TextField
-                                      {...timeField}
-                                      fullWidth
-                                      label="End Time"
-                                      type="time"
-                                      InputLabelProps={{ shrink: true }}
-                                      size="small"
-                                      error={!!errors.injectionEndTime}
-                                      helperText={errors.injectionEndTime?.message}
-                                    />
-                                  )}
-                                />
-                              </Grid>
-                            </>
-                          )
-                        )}
-                      />
-
-                      {/* Lead types to inject */}
-                      <Grid item xs={12}>
-                        <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-                          Lead Types to Inject (FTDs are always manual):
-                        </Typography>
-                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                          <Controller
-                            name="injectFiller"
-                            control={control}
-                            render={({ field }) => (
-                              <FormControlLabel
-                                control={<Checkbox {...field} checked={field.value} />}
-                                label="Filler Leads"
-                              />
-                            )}
-                          />
-                          <Controller
-                            name="injectCold"
-                            control={control}
-                            render={({ field }) => (
-                              <FormControlLabel
-                                control={<Checkbox {...field} checked={field.value} />}
-                                label="Cold Leads"
-                              />
-                            )}
-                          />
-                          <Controller
-                            name="injectLive"
-                            control={control}
-                            render={({ field }) => (
-                              <FormControlLabel
-                                control={<Checkbox {...field} checked={field.value} />}
-                                label="Live Leads"
-                              />
-                            )}
-                          />
-                        </Box>
-                      </Grid>
                     </>
+                  )
+                )}
+              />
+
+              {/* Random Device Types Selection */}
+              <Controller
+                name="deviceSelectionMode"
+                control={control}
+                render={({ field }) => (
+                  field.value === 'random' && (
+                    <Grid item xs={12}>
+                      <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
+                        Available Device Types for Random Selection:
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                        <Controller
+                          name="availableDeviceTypes.windows"
+                          control={control}
+                          render={({ field: deviceField }) => (
+                            <FormControlLabel
+                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
+                              label="Windows"
+                            />
+                          )}
+                        />
+                        <Controller
+                          name="availableDeviceTypes.android"
+                          control={control}
+                          render={({ field: deviceField }) => (
+                            <FormControlLabel
+                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
+                              label="Android"
+                            />
+                          )}
+                        />
+                        <Controller
+                          name="availableDeviceTypes.ios"
+                          control={control}
+                          render={({ field: deviceField }) => (
+                            <FormControlLabel
+                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
+                              label="iOS"
+                            />
+                          )}
+                        />
+                        <Controller
+                          name="availableDeviceTypes.mac"
+                          control={control}
+                          render={({ field: deviceField }) => (
+                            <FormControlLabel
+                              control={<Checkbox {...deviceField} checked={deviceField.value} />}
+                              label="Mac"
+                            />
+                          )}
+                        />
+
+                      </Box>
+                    </Grid>
                   )
                 )}
               />
@@ -1298,6 +1427,41 @@ const OrdersPage = () => {
                               >
                                 {expandedLeads[lead._id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                               </IconButton>
+
+                              {/* Individual Manual FTD Injection Button */}
+                              {lead.leadType === 'ftd' && (user?.role === 'admin' || user?.role === 'affiliate_manager') && (() => {
+                                // Check if this lead has been processed
+                                const networkHistory = lead.clientNetworkHistory?.find(
+                                  (history) => history.orderId?.toString() === selectedOrder._id.toString()
+                                );
+                                const isCompleted = networkHistory && networkHistory.injectionStatus === "completed";
+                                const isProcessing = processingLeads[lead._id];
+
+                                // Only show button if not completed
+                                if (!isCompleted) {
+                                  return (
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleOpenManualFTDInjection(selectedOrder, lead)}
+                                      title={`Manual FTD Injection for ${lead.firstName} ${lead.lastName}`}
+                                      color="primary"
+                                      disabled={isProcessing}
+                                    >
+                                      {isProcessing ? <CircularProgress size={16} /> : <SendIcon fontSize="small" />}
+                                    </IconButton>
+                                  );
+                                }
+
+                                // Show completed status
+                                return (
+                                  <Chip
+                                    label="Injected"
+                                    size="small"
+                                    color="success"
+                                    variant="outlined"
+                                  />
+                                );
+                              })()}
                             </TableCell>
                           </TableRow>
                           {expandedLeads[lead._id] && (
@@ -1333,93 +1497,121 @@ const OrdersPage = () => {
         </DialogActions>
       </Dialog>
 
-
-
-      {/* Broker Assignment Dialog */}
+      {/* Manual FTD Injection Dialog */}
       <Dialog
-        open={brokerAssignmentDialog.open}
-        onClose={() => setBrokerAssignmentDialog({ open: false, orderId: null, leadsWithBrokers: [] })}
-        maxWidth="md"
+        open={manualFTDDialog.open}
+        onClose={handleCloseManualFTDDialog}
+        maxWidth="sm"
         fullWidth
+        disableEscapeKeyDown={manualFTDDialog.step === 'processing' || manualFTDDialog.step === 'domain_input'}
+        // Disable backdrop click when domain input is required
+        onBackdropClick={manualFTDDialog.step === 'domain_input' ? undefined : handleCloseManualFTDDialog}
       >
-        <DialogTitle>Assign Client Brokers</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Assign client brokers to leads based on the final domain after injection.
+        <DialogTitle>
+          <Box display="flex" alignItems="center" gap={1}>
+            <SendIcon color="primary" />
+            <Typography variant="h6">Manual FTD Injection</Typography>
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Order #{manualFTDDialog.order?._id?.slice(-8)}
+            {manualFTDDialog.lead && (
+              <> - {manualFTDDialog.lead.firstName} {manualFTDDialog.lead.lastName}</>
+            )}
           </Typography>
+        </DialogTitle>
 
-          {brokerAssignmentDialog.leadsWithBrokers.length === 0 ? (
-            <Typography variant="body1" color="text.secondary">
-              No leads require broker assignment.
-            </Typography>
-          ) : (
-            <Box sx={{ maxHeight: 400, overflowY: 'auto' }}>
-              {brokerAssignmentDialog.leadsWithBrokers.map((item) => (
-                <Card key={item.lead._id} sx={{ mb: 2, p: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    {item.lead.firstName} {item.lead.lastName} ({item.lead.newEmail})
-                  </Typography>
+        <DialogContent>
+          {manualFTDDialog.step === 'confirm' && manualFTDDialog.lead && (
+            <>
+              <Typography variant="body1" sx={{ mb: 2 }}>
+                This will open a browser window with the landing form for <strong>{manualFTDDialog.lead.firstName} {manualFTDDialog.lead.lastName}</strong>. The form will be automatically filled with the FTD lead information. You will need to:
+              </Typography>
+              <Box component="ol" sx={{ pl: 2, mb: 2 }}>
+                <li>Review the auto-filled form with the following FTD lead information:</li>
+                <Box component="ul" sx={{ pl: 2, mb: 1 }}>
+                  <li>Name: {manualFTDDialog.lead.firstName} {manualFTDDialog.lead.lastName}</li>
+                  <li>Email: {manualFTDDialog.lead.newEmail}</li>
+                  <li>Phone: {manualFTDDialog.lead.newPhone}</li>
+                  <li>Country: {manualFTDDialog.lead.country}</li>
+                </Box>
+                <li>Make any necessary corrections to the auto-filled data</li>
+                <li>Click the submit button to submit the form</li>
+                <li>Wait for any redirects to complete</li>
+                <li>Copy the final domain/URL from the browser address bar</li>
+                <li>Close the browser window</li>
+                <li>Enter the copied domain in the next step</li>
+              </Box>
+              <Alert severity="info" sx={{ mt: 2 }}>
+                The form will be automatically filled with the FTD lead data. Review the information, submit the form, and make sure to copy the final domain before closing the browser!
+              </Alert>
+            </>
+          )}
 
-                  {item.availableBrokers.length === 0 ? (
-                    <Typography variant="body2" color="error">
-                      No available brokers for this lead (already assigned to all available brokers)
-                    </Typography>
-                  ) : (
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6}>
-                        <FormControl fullWidth size="small">
-                          <InputLabel>Client Broker</InputLabel>
-                          <Select
-                            value={brokerAssignments[item.lead._id]?.clientBroker || ''}
-                            onChange={(e) => handleBrokerAssignmentChange(item.lead._id, 'clientBroker', e.target.value)}
-                            label="Client Broker"
-                          >
-                            {item.availableBrokers.map((broker) => (
-                              <MenuItem key={broker} value={broker}>
-                                {broker}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          label="Domain"
-                          value={brokerAssignments[item.lead._id]?.domain || ''}
-                          onChange={(e) => handleBrokerAssignmentChange(item.lead._id, 'domain', e.target.value)}
-                          placeholder="e.g., example.com"
-                        />
-                      </Grid>
-                    </Grid>
-                  )}
-                </Card>
-              ))}
+          {manualFTDDialog.step === 'processing' && (
+            <Box display="flex" flexDirection="column" alignItems="center" py={3}>
+              <CircularProgress size={40} sx={{ mb: 2 }} />
+              <Typography variant="body1" align="center">
+                Browser is opening... The form will be auto-filled with FTD data. Please review, submit, and close the browser when done.
+              </Typography>
             </Box>
           )}
+
+          {manualFTDDialog.step === 'domain_input' && (
+            <>
+              <Typography variant="body1" sx={{ mb: 2 }}>
+                Please enter the final domain/URL that you copied from the browser:
+              </Typography>
+              <TextField
+                fullWidth
+                label="Final Domain/URL *"
+                placeholder="e.g., https://example.com or example.com"
+                value={manualFTDDomain}
+                onChange={(e) => setManualFTDDomain(e.target.value)}
+                sx={{ mb: 2 }}
+                autoFocus
+                required
+                error={!manualFTDDomain.trim()}
+                helperText={!manualFTDDomain.trim() ? "This field is mandatory" : "Enter the final domain where the form redirected to (not the original form URL)"}
+              />
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                Make sure this is the final domain after all redirects, not the original form URL.
+              </Alert>
+              <Alert severity="error">
+                <strong>Important:</strong> This dialog cannot be closed until you enter the broker domain. This field is mandatory for completing the FTD injection.
+              </Alert>
+            </>
+          )}
         </DialogContent>
+
         <DialogActions>
-          <Button onClick={() => setBrokerAssignmentDialog({ open: false, orderId: null, leadsWithBrokers: [] })}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSubmitBrokerAssignments}
-            disabled={assigningBrokers || brokerAssignmentDialog.leadsWithBrokers.length === 0}
-          >
-            {assigningBrokers ? 'Assigning...' : 'Assign Brokers'}
-          </Button>
+          {manualFTDDialog.step === 'confirm' && (
+            <>
+              <Button onClick={handleCloseManualFTDDialog}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleStartManualFTDInjection}
+                variant="contained"
+                startIcon={<SendIcon />}
+              >
+                Start Manual Injection
+              </Button>
+            </>
+          )}
+
+          {manualFTDDialog.step === 'domain_input' && (
+            <Button
+              onClick={handleSubmitManualFTDDomain}
+              variant="contained"
+              disabled={!manualFTDDomain.trim()}
+              startIcon={<SendIcon />}
+              fullWidth
+            >
+              Complete Injection
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
-
-      {/* Manual FTD Injection Modal */}
-      <ManualFTDInjectionModal
-        open={ftdInjectionModal.open}
-        onClose={handleCloseFTDInjection}
-        order={ftdInjectionModal.order}
-        onSuccess={handleFTDInjectionSuccess}
-      />
     </Box>
   );
 };

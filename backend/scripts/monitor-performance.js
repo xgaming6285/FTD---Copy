@@ -9,25 +9,12 @@
 
 require('dotenv').config();
 const mongoose = require('mongoose');
+const ProxyManagementService = require('../services/proxyManagementService');
 
 // Connect to MongoDB
-async function connect() {
-  try {
-    console.log('Connecting to MongoDB...');
-    const uri = process.env.MONGODB_URI;
-    console.log('MongoDB URI:', uri ? 'URI found' : 'URI not found');
-    
-    await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log('Connected successfully to MongoDB');
-    return mongoose.connection;
-  } catch (err) {
-    console.error('Connection error:', err);
-    process.exit(1);
-  }
-}
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ftd-copy')
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Get database statistics
 async function getDatabaseStats(db) {
@@ -184,23 +171,45 @@ function provideRecommendations() {
   console.log('10. Consider implementing caching for frequently accessed, rarely changing data');
 }
 
-// Main function
-async function main() {
-  const db = await connect();
+async function monitorProxyHealth() {
+  console.log('Starting proxy health monitoring...');
   
   try {
-    await getDatabaseStats(db);
-    await getCollectionStats(db);
-    await getIndexInfo(db);
-    await profileQueries(db);
-    provideRecommendations();
-  } catch (err) {
-    console.error('Error during monitoring:', err);
-  } finally {
-    console.log('\nDisconnecting from MongoDB...');
-    await mongoose.disconnect();
-    console.log('Disconnected');
+    const results = await ProxyManagementService.monitorProxyHealth();
+    console.log('Proxy health monitoring results:', results);
+    
+    // Get proxy statistics
+    const stats = await ProxyManagementService.getProxyStats();
+    console.log('Current proxy statistics:', stats);
+    
+  } catch (error) {
+    console.error('Error during proxy health monitoring:', error);
   }
 }
 
-main(); 
+async function runMonitoring() {
+  console.log('=== FTD System Performance & Proxy Health Monitor ===');
+  console.log(`Monitoring started at: ${new Date().toISOString()}`);
+  
+  // Run proxy health monitoring
+  await monitorProxyHealth();
+  
+  // Schedule next run in 5 minutes
+  setTimeout(runMonitoring, 5 * 60 * 1000);
+}
+
+// Handle graceful shutdown
+process.on('SIGINT', () => {
+  console.log('\nShutting down monitoring...');
+  mongoose.connection.close();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\nShutting down monitoring...');
+  mongoose.connection.close();
+  process.exit(0);
+});
+
+// Start monitoring
+runMonitoring(); 

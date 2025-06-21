@@ -9,6 +9,7 @@ The Lead Injection System is fully integrated with the order management system, 
 ### Components
 
 1. **Backend Integration**
+
    - `backend/controllers/orders.js` - Order management with injection logic
    - `backend/routes/orders.js` - API endpoints for injection control
    - `backend/models/Order.js` - Order schema with injection settings
@@ -24,7 +25,7 @@ The Lead Injection System is fully integrated with the order management system, 
 
 ### 1. Order Creation with Injection Settings
 
-When creating an order, users can configure injection settings:
+When creating an order, injection is automatically enabled for all non-FTD leads:
 
 ```javascript
 {
@@ -35,16 +36,16 @@ When creating an order, users can configure injection settings:
     "live": 1
   },
   "injectionSettings": {
-    "enabled": true,
-    "mode": "bulk", // or "scheduled" or "manual"
+    "enabled": true, // Always enabled
+    "mode": "bulk", // or "scheduled"
     "scheduledTime": {
       "startTime": "10:00", // for scheduled mode
       "endTime": "12:00"
     },
     "includeTypes": {
-      "filler": true,
-      "cold": true,
-      "live": true
+      "filler": true, // Always true
+      "cold": true,   // Always true
+      "live": true    // Always true
       // FTDs are always manual - never included
     }
   }
@@ -53,17 +54,14 @@ When creating an order, users can configure injection settings:
 
 ### 2. Injection Modes
 
-#### Manual Injection
-- Default mode
-- Injection is triggered manually by admin/affiliate manager
-- Full control over when injection happens
-
 #### Bulk Injection
+
 - All leads are injected immediately when started
 - Processes leads sequentially with 2-second delays
 - Automatic progress tracking
 
 #### Scheduled Injection
+
 - Leads are injected at random intervals within specified time window
 - Supports both HH:MM format (e.g., "10:00") and ISO8601 format
 - Distributes injections evenly across the time period
@@ -71,16 +69,19 @@ When creating an order, users can configure injection settings:
 ### 3. Lead Processing Flow
 
 1. **Order Creation**
+
    - System pulls leads based on requests (ftd, filler, cold, live)
    - Applies country/gender filters
    - Stores leads in order.leads array
 
 2. **Injection Start**
+
    - Calculate total injectable leads (excludes FTDs)
    - Update injection status to "in_progress"
    - Process leads based on selected mode
 
 3. **Individual Lead Injection**
+
    - Calls Python script with lead data
    - Script handles proxy configuration and form filling
    - Captures final redirect domain
@@ -121,10 +122,9 @@ The system automatically handles client broker assignment:
 ### Order Creation Form
 
 - **Injection Settings Section**
-  - Enable/disable injection checkbox
-  - Mode selection (manual/bulk/scheduled)
+  - Mode selection (bulk/scheduled only)
   - Time range picker for scheduled mode
-  - Lead type selection (excludes FTDs)
+  - All non-FTD leads automatically included (FTDs remain manual)
 
 ### Orders Table
 
@@ -160,7 +160,7 @@ The Order model includes comprehensive injection tracking:
       live: Boolean
     }
   },
-  
+
   // Progress tracking
   injectionProgress: {
     totalToInject: Number,
@@ -172,13 +172,13 @@ The Order model includes comprehensive injection tracking:
     brokersAssigned: Number,
     brokerAssignmentPending: Boolean
   },
-  
+
   // FTD handling
   ftdHandling: {
     status: String, // "pending", "skipped", "manual_fill_required", "completed"
     notes: String
   },
-  
+
   // Client broker assignment
   clientBrokerAssignment: {
     status: String, // "pending", "in_progress", "completed", "skipped"
@@ -192,6 +192,7 @@ The Order model includes comprehensive injection tracking:
 ## Security & Permissions
 
 ### Access Control
+
 - Only **admins** and **affiliate managers** can:
   - Start/pause/stop injections
   - Skip FTDs
@@ -199,6 +200,7 @@ The Order model includes comprehensive injection tracking:
   - Create orders with injection enabled
 
 ### Data Protection
+
 - Lead data is processed securely through the Python script
 - Proxy configurations protect user identity
 - Client broker assignments are tracked with audit trail
@@ -206,11 +208,13 @@ The Order model includes comprehensive injection tracking:
 ## Error Handling
 
 ### Injection Failures
+
 - Individual lead failures don't stop the entire process
 - Failed injections are tracked and reported
 - Orders can be retried or completed manually
 
 ### System Resilience
+
 - Timeout handling for long-running injections
 - Graceful degradation when Python script fails
 - Automatic recovery and status updates
@@ -218,11 +222,13 @@ The Order model includes comprehensive injection tracking:
 ## Monitoring & Analytics
 
 ### Progress Tracking
+
 - Real-time injection progress updates
 - Success/failure rate monitoring
 - Time-based injection distribution
 
 ### Performance Metrics
+
 - Injection completion times
 - Success rates by lead type
 - Broker assignment efficiency
@@ -236,6 +242,7 @@ python test_order_injection.py
 ```
 
 This script tests:
+
 - Python injection script functionality
 - Order creation payload structure
 - API endpoint availability
@@ -245,11 +252,13 @@ This script tests:
 ### Common Issues
 
 1. **Python Script Failures**
+
    - Check Python dependencies are installed
    - Verify proxy configurations
    - Ensure target website is accessible
 
 2. **Injection Stuck in Progress**
+
    - Use pause/stop controls to reset status
    - Check backend logs for errors
    - Verify lead data integrity
@@ -262,6 +271,7 @@ This script tests:
 ### Debug Information
 
 The system provides comprehensive logging:
+
 - Python script output is captured and logged
 - Injection progress is tracked in database
 - Frontend shows real-time status updates
@@ -269,16 +279,19 @@ The system provides comprehensive logging:
 ## Best Practices
 
 ### Order Planning
+
 - Test injection settings with small orders first
 - Use scheduled injection during off-peak hours
 - Monitor success rates and adjust accordingly
 
 ### Lead Management
+
 - Ensure lead data quality before injection
 - Use appropriate country/gender filters
 - Export leads before injection for backup
 
 ### System Maintenance
+
 - Regularly clean up completed orders
 - Monitor proxy performance and rotation
 - Update client broker assignments as needed

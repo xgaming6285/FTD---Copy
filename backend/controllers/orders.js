@@ -4,6 +4,114 @@ const Order = require("../models/Order");
 const Lead = require("../models/Lead");
 const ClientNetwork = require("../models/ClientNetwork");
 const ClientBroker = require("../models/ClientBroker");
+const { spawn } = require("child_process");
+const path = require("path");
+
+// Function to run the QuantumAI injector after successful lead injection
+const runQuantumAIInjector = async (leadData, proxyConfig = null) => {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log(
+        "🚀🚀🚀 STARTING QUANTUMAI INJECTOR AFTER SUCCESSFUL INJECTION FOR LEAD:",
+        leadData.newEmail
+      );
+      console.log("Lead data being sent to QuantumAI:", leadData);
+
+      // Prepare lead data for the injector
+      const injectorData = {
+        firstName: leadData.firstName,
+        lastName: leadData.lastName,
+        email: leadData.newEmail,
+        phone: leadData.newPhone,
+        country_code: leadData.prefix ? leadData.prefix.replace("+", "") : "1", // Remove + from prefix, default to 1
+        country: leadData.country || "Unknown",
+        targetUrl: "https://k8ro.info/bKkkBWkK", // Default QuantumAI URL
+      };
+
+      // Add proxy configuration if available
+      if (proxyConfig) {
+        injectorData.proxy = proxyConfig;
+        console.log(
+          "📡 QuantumAI will use the same proxy as the main injection:",
+          proxyConfig.host + ":" + proxyConfig.port
+        );
+      } else {
+        console.log("⚠️ QuantumAI will proceed without proxy (using real IP)");
+      }
+
+      // Path to the quantumai injector script
+      const scriptPath = path.join(
+        __dirname,
+        "../../quantumai_injector_playwright.py"
+      );
+      console.log("📄 QuantumAI Script path:", scriptPath);
+      console.log(
+        "📦 QuantumAI Injector data:",
+        JSON.stringify(injectorData, null, 2)
+      );
+
+      // Spawn the Python process
+      console.log("🐍 Spawning QuantumAI Python process...");
+      const pythonProcess = spawn(
+        "python",
+        [scriptPath, JSON.stringify(injectorData)],
+        {
+          cwd: path.join(__dirname, "../.."),
+          stdio: ["pipe", "pipe", "pipe"],
+        }
+      );
+
+      console.log(
+        "✅ QuantumAI Python process spawned with PID:",
+        pythonProcess.pid
+      );
+
+      let stdout = "";
+      let stderr = "";
+
+      pythonProcess.stdout.on("data", (data) => {
+        const output = data.toString();
+        stdout += output;
+        console.log("QuantumAI Injector:", output.trim());
+      });
+
+      pythonProcess.stderr.on("data", (data) => {
+        const error = data.toString();
+        stderr += error;
+        console.error("QuantumAI Injector Error:", error.trim());
+      });
+
+      pythonProcess.on("close", (code) => {
+        console.log(`QuantumAI injector process exited with code ${code}`);
+
+        if (code === 0) {
+          console.log("✓ QuantumAI injection completed successfully");
+          resolve({ success: true, output: stdout });
+        } else {
+          console.error("✗ QuantumAI injection failed");
+          resolve({ success: false, error: stderr, output: stdout });
+        }
+      });
+
+      pythonProcess.on("error", (error) => {
+        console.error("Failed to start QuantumAI injector:", error);
+        reject(error);
+      });
+
+      // Set a timeout for the injection process (5 minutes)
+      setTimeout(() => {
+        if (!pythonProcess.killed) {
+          console.log("QuantumAI injector timeout - killing process");
+          pythonProcess.kill("SIGKILL");
+          resolve({ success: false, error: "Process timeout" });
+        }
+      }, 300000); // 5 minutes
+    } catch (error) {
+      console.error("Error in runQuantumAIInjector:", error);
+      reject(error);
+    }
+  });
+};
 
 /**
  * FILLER LEADS PHONE NUMBER REPETITION RULES
@@ -174,7 +282,8 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
       ) {
         selectedLeads.push(leadsWithoutValidPhone[leadsWithoutPhoneIndex]);
         console.log(
-          `[FILLER-DEBUG] Added lead without valid phone pattern: ${leadsWithoutPhoneIndex + 1
+          `[FILLER-DEBUG] Added lead without valid phone pattern: ${
+            leadsWithoutPhoneIndex + 1
           }`
         );
         leadsWithoutPhoneIndex++;
@@ -184,7 +293,8 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
       for (let i = 0; i < requestedCount; i++) {
         selectedLeads.push(phoneGroups[uniquePatterns[i]][0]);
         console.log(
-          `[FILLER-DEBUG] Selected lead ${i + 1} with pattern ${uniquePatterns[i]
+          `[FILLER-DEBUG] Selected lead ${i + 1} with pattern ${
+            uniquePatterns[i]
           }`
         );
       }
@@ -232,14 +342,18 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
           if (wouldCreatePair) {
             totalPairs++;
             console.log(
-              `[FILLER-DEBUG] Added lead #${currentCount + 1
-              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${
+                currentCount + 1
+              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${
+                selectedLeads.length
               })`
             );
           } else {
             console.log(
-              `[FILLER-DEBUG] Added lead #${currentCount + 1
-              } from pattern ${pattern} (no pair), total leads: ${selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${
+                currentCount + 1
+              } from pattern ${pattern} (no pair), total leads: ${
+                selectedLeads.length
               }`
             );
           }
@@ -310,14 +424,18 @@ const applyFillerPhoneRepetitionRules = (fillerLeads, requestedCount) => {
           if (wouldCreatePair) {
             totalPairs++;
             console.log(
-              `[FILLER-DEBUG] Added lead #${currentCount + 1
-              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${
+                currentCount + 1
+              } from pattern ${pattern} (creates pair #${totalPairs}), total pairs: ${totalPairs}/${maxPairs} (total leads: ${
+                selectedLeads.length
               })`
             );
           } else {
             console.log(
-              `[FILLER-DEBUG] Added lead #${currentCount + 1
-              } from pattern ${pattern} (no pair), total leads: ${selectedLeads.length
+              `[FILLER-DEBUG] Added lead #${
+                currentCount + 1
+              } from pattern ${pattern} (no pair), total leads: ${
+                selectedLeads.length
               }`
             );
           }
@@ -395,11 +513,14 @@ const getMaxRepetitionsForFillerCount = (count) => {
 // @access  Private (Admin, Manager with canCreateOrders permission)
 exports.createOrder = async (req, res, next) => {
   try {
-    console.log('[CREATE-ORDER-DEBUG] Received request body:', JSON.stringify(req.body, null, 2));
+    console.log(
+      "[CREATE-ORDER-DEBUG] Received request body:",
+      JSON.stringify(req.body, null, 2)
+    );
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      console.log('[CREATE-ORDER-DEBUG] Validation errors:', errors.array());
+      console.log("[CREATE-ORDER-DEBUG] Validation errors:", errors.array());
       return res.status(400).json({
         success: false,
         message: "Validation error",
@@ -413,8 +534,12 @@ exports.createOrder = async (req, res, next) => {
       notes,
       country,
       gender,
-      injectionSettings = { enabled: false },
-      selectedClientNetwork
+      injectionSettings = {
+        enabled: true,
+        mode: "bulk",
+        includeTypes: { filler: true, cold: true, live: true },
+      },
+      selectedClientNetwork,
     } = req.body;
 
     const { ftd = 0, filler = 0, cold = 0, live = 0 } = requests || {};
@@ -437,7 +562,8 @@ exports.createOrder = async (req, res, next) => {
       if (!clientNetwork) {
         return res.status(403).json({
           success: false,
-          message: "Access denied - client network not assigned to you or inactive",
+          message:
+            "Access denied - client network not assigned to you or inactive",
         });
       }
     }
@@ -450,7 +576,10 @@ exports.createOrder = async (req, res, next) => {
     const genderFilter = gender ? { gender } : {};
 
     // Helper function to get available leads with client network checking
-    const getAvailableLeadsWithNetworkCheck = async (leadType, requestedCount) => {
+    const getAvailableLeadsWithNetworkCheck = async (
+      leadType,
+      requestedCount
+    ) => {
       let query = {
         leadType,
         isAssigned: false,
@@ -468,8 +597,8 @@ exports.createOrder = async (req, res, next) => {
 
       // If client network is specified, filter out leads already assigned to this network
       if (selectedClientNetwork) {
-        availableLeads = availableLeads.filter(lead =>
-          !lead.isAssignedToClientNetwork(selectedClientNetwork)
+        availableLeads = availableLeads.filter(
+          (lead) => !lead.isAssignedToClientNetwork(selectedClientNetwork)
         );
       }
 
@@ -510,15 +639,20 @@ exports.createOrder = async (req, res, next) => {
         `[FILLER-DEBUG] Fetch multiplier: ${fetchMultiplier}, fetching up to ${fetchLimit} leads`
       );
 
+      // Build base query for filler leads
+      let fillerQuery = {
+        leadType: "filler",
+        isAssigned: false,
+        brokerAvailabilityStatus: { $ne: "sleep" }, // Exclude sleeping leads
+        ...countryFilter,
+        ...genderFilter,
+      };
+
       // Use aggregation with $sample to get random leads for better pattern diversity
       // This helps ensure we don't just get leads with similar phone patterns
-      const fillerLeads = await Lead.aggregate([
+      let fillerLeads = await Lead.aggregate([
         {
-          $match: {
-            leadType: "filler",
-            ...countryFilter,
-            ...genderFilter,
-          },
+          $match: fillerQuery,
         },
         {
           $sample: { size: fetchLimit },
@@ -528,6 +662,27 @@ exports.createOrder = async (req, res, next) => {
       console.log(
         `[FILLER-DEBUG] Found ${fillerLeads.length} filler leads in database`
       );
+
+      // If client network is specified, filter out leads already assigned to this network
+      if (selectedClientNetwork && fillerLeads.length > 0) {
+        console.log(
+          `[FILLER-DEBUG] Filtering out leads already assigned to client network: ${selectedClientNetwork}`
+        );
+
+        // Convert aggregation results to Lead documents for method access
+        const fillerLeadIds = fillerLeads.map((lead) => lead._id);
+        const fillerLeadDocs = await Lead.find({ _id: { $in: fillerLeadIds } });
+
+        const filteredFillerLeads = fillerLeadDocs.filter(
+          (lead) => !lead.isAssignedToClientNetwork(selectedClientNetwork)
+        );
+
+        console.log(
+          `[FILLER-DEBUG] After client network filtering: ${filteredFillerLeads.length} leads remain`
+        );
+
+        fillerLeads = filteredFillerLeads;
+      }
 
       if (fillerLeads.length > 0) {
         const appliedFillerLeads = applyFillerPhoneRepetitionRules(
@@ -590,20 +745,23 @@ exports.createOrder = async (req, res, next) => {
       totalInjected: 0,
       successfulInjections: 0,
       failedInjections: 0,
-      ftdsPendingManualFill: fulfilled.ftd // FTDs always require manual filling
+      ftdsPendingManualFill: fulfilled.ftd, // FTDs always require manual filling
     };
 
     if (injectionSettings.enabled) {
       // Calculate total leads to inject (excluding FTDs)
       const leadTypesToInject = injectionSettings.includeTypes || {};
-      if (leadTypesToInject.filler) injectionProgress.totalToInject += fulfilled.filler;
-      if (leadTypesToInject.cold) injectionProgress.totalToInject += fulfilled.cold;
-      if (leadTypesToInject.live) injectionProgress.totalToInject += fulfilled.live;
+      if (leadTypesToInject.filler)
+        injectionProgress.totalToInject += fulfilled.filler;
+      if (leadTypesToInject.cold)
+        injectionProgress.totalToInject += fulfilled.cold;
+      if (leadTypesToInject.live)
+        injectionProgress.totalToInject += fulfilled.live;
     }
 
     // Initialize FTD handling status
     let ftdHandling = {
-      status: fulfilled.ftd > 0 ? "manual_fill_required" : "completed"
+      status: fulfilled.ftd > 0 ? "manual_fill_required" : "completed",
     };
 
     // Create the order first
@@ -619,17 +777,18 @@ exports.createOrder = async (req, res, next) => {
       genderFilter: gender || null,
       selectedClientNetwork: selectedClientNetwork || null,
 
-      // Add injection settings
+      // Add injection settings - always enabled
       injectionSettings: {
-        enabled: injectionSettings.enabled,
-        mode: injectionSettings.mode || "manual",
+        enabled: true,
+        mode: injectionSettings.mode || "bulk",
         scheduledTime: injectionSettings.scheduledTime,
-        status: injectionSettings.enabled ? "pending" : "completed",
-        includeTypes: injectionSettings.includeTypes || {
+        status: "pending",
+        includeTypes: {
           filler: true,
           cold: true,
-          live: true
-        }
+          live: true,
+        },
+        deviceConfig: injectionSettings.deviceConfig || {},
       },
 
       // Add FTD handling and injection progress
@@ -663,7 +822,9 @@ exports.createOrder = async (req, res, next) => {
             order._id
           );
         } catch (error) {
-          console.warn(`Could not assign client network to lead ${lead._id}: ${error.message}`);
+          console.warn(
+            `Could not assign client network to lead ${lead._id}: ${error.message}`
+          );
         }
       }
 
@@ -1198,8 +1359,9 @@ exports.exportOrderLeads = async (req, res, next) => {
     ].join("\n");
 
     // Set response headers for file download
-    const filename = `order_${orderId}_leads_${new Date().toISOString().split("T")[0]
-      }.csv`;
+    const filename = `order_${orderId}_leads_${
+      new Date().toISOString().split("T")[0]
+    }.csv`;
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Cache-Control", "no-cache");
@@ -1215,14 +1377,16 @@ exports.exportOrderLeads = async (req, res, next) => {
 // @desc    Assign client, broker, and network info to all leads in order
 // @route   PUT /api/orders/:id/assign-client-info
 // @access  DISABLED - This functionality has been removed
-// 
+//
 // This endpoint has been disabled to prevent mass assignment of client info to all leads in an order.
 // Use individual lead assignment endpoints instead: PUT /api/leads/:id/assign-client-network
 exports.assignClientInfoToOrderLeads = async (req, res, next) => {
   return res.status(410).json({
     success: false,
-    message: "This functionality has been disabled. Please use individual lead assignment instead.",
-    details: "Use PUT /api/leads/:id/assign-client-network to assign client networks to individual leads."
+    message:
+      "This functionality has been disabled. Please use individual lead assignment instead.",
+    details:
+      "Use PUT /api/leads/:id/assign-client-network to assign client networks to individual leads.",
   });
 };
 
@@ -1231,7 +1395,7 @@ exports.assignClientInfoToOrderLeads = async (req, res, next) => {
 // @access  Private (Admin, Affiliate Manager)
 exports.startOrderInjection = async (req, res, next) => {
   try {
-    const order = await Order.findById(req.params.id).populate('leads');
+    const order = await Order.findById(req.params.id).populate("leads");
 
     if (!order) {
       return res.status(404).json({
@@ -1244,7 +1408,8 @@ exports.startOrderInjection = async (req, res, next) => {
     if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can start injection.",
+        message:
+          "Access denied. Only admins and affiliate managers can start injection.",
       });
     }
 
@@ -1257,7 +1422,10 @@ exports.startOrderInjection = async (req, res, next) => {
     }
 
     // Check if injection is in a valid state to start
-    if (order.injectionSettings.status !== "pending" && order.injectionSettings.status !== "paused") {
+    if (
+      order.injectionSettings.status !== "pending" &&
+      order.injectionSettings.status !== "paused"
+    ) {
       return res.status(400).json({
         success: false,
         message: `Cannot start injection. Current status: ${order.injectionSettings.status}`,
@@ -1269,7 +1437,9 @@ exports.startOrderInjection = async (req, res, next) => {
       const Lead = require("../models/Lead");
       const leadsToInject = await Lead.find({
         _id: { $in: order.leads },
-        leadType: { $in: getInjectableLeadTypes(order.injectionSettings.includeTypes) }
+        leadType: {
+          $in: getInjectableLeadTypes(order.injectionSettings.includeTypes),
+        },
       });
       order.injectionProgress.totalToInject = leadsToInject.length;
     }
@@ -1316,7 +1486,8 @@ exports.pauseOrderInjection = async (req, res, next) => {
     if (order.injectionSettings.status !== "in_progress") {
       return res.status(400).json({
         success: false,
-        message: "Cannot pause injection. Injection is not currently in progress.",
+        message:
+          "Cannot pause injection. Injection is not currently in progress.",
       });
     }
 
@@ -1391,7 +1562,8 @@ exports.skipOrderFTDs = async (req, res, next) => {
 
     order.ftdHandling.status = "skipped";
     order.ftdHandling.skippedAt = new Date();
-    order.ftdHandling.notes = "FTDs skipped for manual filling later by affiliate manager/admin";
+    order.ftdHandling.notes =
+      "FTDs skipped for manual filling later by affiliate manager/admin";
 
     await order.save();
 
@@ -1419,7 +1591,7 @@ exports.assignClientBrokers = async (req, res, next) => {
       });
     }
 
-    const order = await Order.findById(req.params.id).populate('leads');
+    const order = await Order.findById(req.params.id).populate("leads");
 
     if (!order) {
       return res.status(404).json({
@@ -1432,7 +1604,8 @@ exports.assignClientBrokers = async (req, res, next) => {
     if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can assign brokers.",
+        message:
+          "Access denied. Only admins and affiliate managers can assign brokers.",
       });
     }
 
@@ -1477,12 +1650,12 @@ exports.assignClientBrokers = async (req, res, next) => {
 exports.getLeadsPendingBrokerAssignment = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id).populate({
-      path: 'leads',
+      path: "leads",
       match: {
-        leadType: { $ne: 'ftd' }, // Exclude FTDs as they are manual
-        'clientNetworkHistory.orderId': req.params.id,
-        'clientNetworkHistory.injectionStatus': 'pending'
-      }
+        leadType: { $ne: "ftd" }, // Exclude FTDs as they are manual
+        "clientNetworkHistory.orderId": req.params.id,
+        "clientNetworkHistory.injectionStatus": "pending",
+      },
     });
 
     if (!order) {
@@ -1496,10 +1669,13 @@ exports.getLeadsPendingBrokerAssignment = async (req, res, next) => {
     const leadsWithBrokers = [];
 
     for (const lead of order.leads) {
-      const availableBrokers = await getAvailableClientBrokers(lead, order.selectedClientNetwork);
+      const availableBrokers = await getAvailableClientBrokers(
+        lead,
+        order.selectedClientNetwork
+      );
       leadsWithBrokers.push({
         lead: lead,
-        availableBrokers: availableBrokers
+        availableBrokers: availableBrokers,
       });
     }
 
@@ -1507,8 +1683,8 @@ exports.getLeadsPendingBrokerAssignment = async (req, res, next) => {
       success: true,
       data: {
         order: order,
-        leadsWithBrokers: leadsWithBrokers
-      }
+        leadsWithBrokers: leadsWithBrokers,
+      },
     });
   } catch (error) {
     next(error);
@@ -1552,7 +1728,7 @@ exports.skipBrokerAssignment = async (req, res, next) => {
 // @access  Private (Admin, Affiliate Manager)
 exports.getFTDLeadsForOrder = async (req, res, next) => {
   try {
-    const order = await Order.findById(req.params.id).populate('leads');
+    const order = await Order.findById(req.params.id).populate("leads");
 
     if (!order) {
       return res.status(404).json({
@@ -1565,29 +1741,32 @@ exports.getFTDLeadsForOrder = async (req, res, next) => {
     if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can access FTD leads.",
+        message:
+          "Access denied. Only admins and affiliate managers can access FTD leads.",
       });
     }
 
     // Filter for FTD leads first, then check injection status
     const ftdLeads = (order.leads || [])
-      .filter(lead => lead && lead.leadType === 'ftd')
-      .filter(lead => {
+      .filter((lead) => lead && lead.leadType === "ftd")
+      .filter((lead) => {
         // Check if lead has been injected for this order
         const networkHistory = lead.clientNetworkHistory?.find(
-          history => history.orderId?.toString() === order._id.toString()
+          (history) => history.orderId?.toString() === order._id.toString()
         );
         // Include leads that:
         // 1. Have no network history for this order (never injected)
         // 2. Have network history but injection status is 'pending'
         // Exclude leads that have been successfully injected (status: 'completed')
-        return !networkHistory || networkHistory.injectionStatus !== 'completed';
+        return (
+          !networkHistory || networkHistory.injectionStatus !== "completed"
+        );
       });
 
     res.status(200).json({
       success: true,
       data: ftdLeads,
-      message: `Found ${ftdLeads.length} FTD lead(s) requiring manual injection`
+      message: `Found ${ftdLeads.length} FTD lead(s) requiring manual injection`,
     });
   } catch (error) {
     next(error);
@@ -1627,7 +1806,8 @@ exports.manualFTDInjection = async (req, res, next) => {
     if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
+        message:
+          "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
       });
     }
 
@@ -1649,14 +1829,20 @@ exports.manualFTDInjection = async (req, res, next) => {
     for (const leadId of leadIds) {
       try {
         const lead = await Lead.findById(leadId);
-        if (!lead || lead.leadType !== 'ftd') {
-          failedLeads.push({ leadId, reason: 'Lead not found or not FTD type' });
+        if (!lead || lead.leadType !== "ftd") {
+          failedLeads.push({
+            leadId,
+            reason: "Lead not found or not FTD type",
+          });
           continue;
         }
 
         // Check if lead belongs to this order
         if (!order.leads.includes(leadId)) {
-          failedLeads.push({ leadId, reason: 'Lead does not belong to this order' });
+          failedLeads.push({
+            leadId,
+            reason: "Lead does not belong to this order",
+          });
           continue;
         }
 
@@ -1667,14 +1853,15 @@ exports.manualFTDInjection = async (req, res, next) => {
           orderId: order._id,
           assignedAt: new Date(),
           domain: domain,
-          injectionStatus: 'completed',
-          injectionType: 'manual_ftd',
-          injectionNotes: notes || 'Manual FTD injection by affiliate manager/admin'
+          injectionStatus: "completed",
+          injectionType: "manual_ftd",
+          injectionNotes:
+            notes || "Manual FTD injection by affiliate manager/admin",
         };
 
         // Check if entry already exists for this order
         const existingHistoryIndex = lead.clientNetworkHistory?.findIndex(
-          history => history.orderId?.toString() === order._id.toString()
+          (history) => history.orderId?.toString() === order._id.toString()
         );
 
         if (existingHistoryIndex >= 0) {
@@ -1694,7 +1881,6 @@ exports.manualFTDInjection = async (req, res, next) => {
 
         await lead.save();
         processedLeads.push(lead);
-
       } catch (error) {
         console.error(`Error processing lead ${leadId}:`, error);
         failedLeads.push({ leadId, reason: error.message });
@@ -1706,24 +1892,27 @@ exports.manualFTDInjection = async (req, res, next) => {
       // Check if all FTD leads in this order have been injected
       const allFTDLeads = await Lead.find({
         _id: { $in: order.leads },
-        leadType: 'ftd'
+        leadType: "ftd",
       });
 
-      const allFTDsInjected = allFTDLeads.every(lead => {
+      const allFTDsInjected = allFTDLeads.every((lead) => {
         const networkHistory = lead.clientNetworkHistory?.find(
-          history => history.orderId?.toString() === order._id.toString()
+          (history) => history.orderId?.toString() === order._id.toString()
         );
-        return networkHistory && networkHistory.injectionStatus === 'completed';
+        return networkHistory && networkHistory.injectionStatus === "completed";
       });
 
       if (allFTDsInjected) {
-        order.ftdHandling.status = 'completed';
+        order.ftdHandling.status = "completed";
         order.ftdHandling.completedAt = new Date();
-        order.ftdHandling.notes = `All FTD leads manually injected. ${notes || ''}`.trim();
+        order.ftdHandling.notes = `All FTD leads manually injected. ${
+          notes || ""
+        }`.trim();
       }
 
       // Update injection progress
-      order.injectionProgress.ftdsPendingManualFill = Math.max(0, 
+      order.injectionProgress.ftdsPendingManualFill = Math.max(
+        0,
         order.injectionProgress.ftdsPendingManualFill - processedLeads.length
       );
 
@@ -1737,8 +1926,8 @@ exports.manualFTDInjection = async (req, res, next) => {
         processedLeads: processedLeads.length,
         failedLeads: failedLeads.length,
         failures: failedLeads,
-        order: order
-      }
+        order: order,
+      },
     };
 
     if (failedLeads.length > 0) {
@@ -1760,30 +1949,43 @@ const startBulkInjection = async (order) => {
     const Lead = require("../models/Lead");
     const leadsToInject = await Lead.find({
       _id: { $in: order.leads },
-      leadType: { $in: getInjectableLeadTypes(order.injectionSettings.includeTypes) }
+      leadType: {
+        $in: getInjectableLeadTypes(order.injectionSettings.includeTypes),
+      },
     });
 
-    console.log(`Found ${leadsToInject.length} leads to inject for order ${order._id}`);
-    console.log(`[DEBUG] Injectable lead types: ${JSON.stringify(getInjectableLeadTypes(order.injectionSettings.includeTypes))}`);
+    console.log(
+      `Found ${leadsToInject.length} leads to inject for order ${order._id}`
+    );
+    console.log(
+      `[DEBUG] Injectable lead types: ${JSON.stringify(
+        getInjectableLeadTypes(order.injectionSettings.includeTypes)
+      )}`
+    );
     console.log(`[DEBUG] Order leads: ${JSON.stringify(order.leads)}`);
-    console.log(`[DEBUG] Leads to inject IDs: ${leadsToInject.map(l => l._id).join(', ')}`);
+    console.log(
+      `[DEBUG] Leads to inject IDs: ${leadsToInject
+        .map((l) => l._id)
+        .join(", ")}`
+    );
 
     // Process leads one by one with delays
     for (const lead of leadsToInject) {
-      console.log(`[DEBUG] Processing lead ${lead._id} (${lead.firstName} ${lead.lastName})`);
+      console.log(
+        `[DEBUG] Processing lead ${lead._id} (${lead.firstName} ${lead.lastName})`
+      );
       await injectSingleLead(lead, order._id);
       // Add delay between injections to avoid overwhelming the system
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
-    // The order status is automatically updated by updateOrderInjectionProgress() 
+    // The order status is automatically updated by updateOrderInjectionProgress()
     // called within each injectSingleLead() call, so no need to update it here
-
   } catch (error) {
     console.error(`Error in bulk injection for order ${order._id}:`, error);
     // Update order status to failed
     await Order.findByIdAndUpdate(order._id, {
-      'injectionSettings.status': 'failed'
+      "injectionSettings.status": "failed",
     });
   }
 };
@@ -1796,25 +1998,29 @@ const startScheduledInjection = async (order) => {
     const Lead = require("../models/Lead");
     const leadsToInject = await Lead.find({
       _id: { $in: order.leads },
-      leadType: { $in: getInjectableLeadTypes(order.injectionSettings.includeTypes) }
+      leadType: {
+        $in: getInjectableLeadTypes(order.injectionSettings.includeTypes),
+      },
     });
 
     // Schedule injections at random intervals within the specified time window
     scheduleRandomInjections(leadsToInject, order);
-
   } catch (error) {
-    console.error(`Error in scheduled injection for order ${order._id}:`, error);
+    console.error(
+      `Error in scheduled injection for order ${order._id}:`,
+      error
+    );
     await Order.findByIdAndUpdate(order._id, {
-      'injectionSettings.status': 'failed'
+      "injectionSettings.status": "failed",
     });
   }
 };
 
 const getInjectableLeadTypes = (includeTypes) => {
   const types = [];
-  if (includeTypes.filler) types.push('filler');
-  if (includeTypes.cold) types.push('cold');
-  if (includeTypes.live) types.push('live');
+  if (includeTypes.filler) types.push("filler");
+  if (includeTypes.cold) types.push("cold");
+  if (includeTypes.live) types.push("live");
   // Never include 'ftd' as they are always manual
   return types;
 };
@@ -1822,67 +2028,279 @@ const getInjectableLeadTypes = (includeTypes) => {
 const injectSingleLead = async (lead, orderId) => {
   try {
     const { spawn } = require("child_process");
-    const path = require('path');
+    const path = require("path");
     const Order = require("../models/Order");
     const ClientNetwork = require("../models/ClientNetwork");
+    const DeviceAssignmentService = require("../services/deviceAssignmentService");
+    const ProxyManagementService = require("../services/proxyManagementService");
 
-    // Get order details to check client network
-    const order = await Order.findById(orderId).populate('selectedClientNetwork');
+    // Get order details with injection settings
+    const order = await Order.findById(orderId).populate(
+      "selectedClientNetwork"
+    );
 
-    console.log(`[DEBUG] Order selectedClientNetwork: ${order.selectedClientNetwork ? order.selectedClientNetwork.name : 'null'}`);
-    console.log(`[DEBUG] Lead clientNetworkHistory: ${JSON.stringify(lead.clientNetworkHistory)}`);
+    console.log(
+      `[DEBUG] Order selectedClientNetwork: ${
+        order.selectedClientNetwork ? order.selectedClientNetwork.name : "null"
+      }`
+    );
+    console.log(
+      `[DEBUG] Lead clientNetworkHistory: ${JSON.stringify(
+        lead.clientNetworkHistory
+      )}`
+    );
 
     // Check if lead has already been successfully injected for this order
     const existingAssignment = lead.clientNetworkHistory.find(
-      history => history.orderId && history.orderId.toString() === orderId.toString() &&
-        history.injectionStatus === 'successful'
+      (history) =>
+        history.orderId &&
+        history.orderId.toString() === orderId.toString() &&
+        history.injectionStatus === "successful"
     );
 
     if (existingAssignment) {
-      console.log(`Lead ${lead._id} already successfully injected for order ${orderId}`);
+      console.log(
+        `Lead ${lead._id} already successfully injected for order ${orderId}`
+      );
       await updateOrderInjectionProgress(orderId, 0, 1); // Count as successful since it was already done
       return true;
     }
 
-    // Wake up the lead if it's sleeping (since we'll create brokers automatically now)
+    // Wake up the lead if it's sleeping
     if (lead.brokerAvailabilityStatus === "sleep") {
-      console.log(`[DEBUG] Waking up sleeping lead ${lead._id} for auto-broker assignment`);
+      console.log(
+        `[DEBUG] Waking up sleeping lead ${lead._id} for auto-broker assignment`
+      );
       lead.wakeUp();
-      await lead.save(); // Save the wake-up status
+      await lead.save();
     }
 
-    // Note: We no longer check for available brokers before injection
-    // Instead, we'll create client brokers automatically based on final redirect domain
+    // Assign device fingerprint if not already assigned
+    if (!lead.fingerprint) {
+      try {
+        console.log(`[DEBUG] Assigning device fingerprint to lead ${lead._id}`);
 
-    const leadData = {
+        const deviceConfig = order.injectionSettings?.deviceConfig || {};
+        let deviceType = "android"; // Default device type
+
+        // Determine device type based on configuration
+        if (
+          deviceConfig.selectionMode === "bulk" &&
+          deviceConfig.bulkDeviceType
+        ) {
+          deviceType = deviceConfig.bulkDeviceType;
+        } else if (
+          deviceConfig.selectionMode === "individual" &&
+          deviceConfig.individualAssignments
+        ) {
+          const assignment = deviceConfig.individualAssignments.find(
+            (assign) => assign.leadId.toString() === lead._id.toString()
+          );
+          if (assignment) {
+            deviceType = assignment.deviceType;
+          }
+        } else if (
+          deviceConfig.selectionMode === "ratio" &&
+          deviceConfig.deviceRatio
+        ) {
+          // For ratio mode, we'll let the service handle it in batch
+          // For now, use random selection
+          const availableTypes = Object.keys(deviceConfig.deviceRatio).filter(
+            (type) => deviceConfig.deviceRatio[type] > 0
+          );
+          if (availableTypes.length > 0) {
+            deviceType =
+              availableTypes[Math.floor(Math.random() * availableTypes.length)];
+          }
+        } else {
+          // Random selection from available types
+          const availableTypes = deviceConfig.availableDeviceTypes || [
+            "windows",
+            "android",
+            "ios",
+            "mac",
+          ];
+          deviceType =
+            availableTypes[Math.floor(Math.random() * availableTypes.length)];
+        }
+
+        // Validate deviceType before assignment
+        const validDeviceTypes = ["windows", "android", "ios", "mac"];
+        if (!deviceType || !validDeviceTypes.includes(deviceType)) {
+          console.log(
+            `[WARN] Invalid deviceType '${deviceType}', using default 'android'`
+          );
+          deviceType = "android";
+        }
+
+        console.log(
+          `[DEBUG] Using deviceType: ${deviceType} for lead ${lead._id}`
+        );
+
+        await lead.assignFingerprint(deviceType, order.requester);
+        await lead.save();
+
+        console.log(
+          `[DEBUG] Assigned ${deviceType} device to lead ${lead._id}`
+        );
+      } catch (error) {
+        console.error(
+          `[ERROR] Failed to assign device fingerprint to lead ${lead._id}:`,
+          error
+        );
+        // Continue with injection using default fingerprint
+      }
+    }
+
+    // Assign proxy for this lead
+    let proxyConfig = null;
+    try {
+      console.log(
+        `[DEBUG] Assigning proxy to lead ${lead._id} for country ${lead.country}`
+      );
+
+      const proxyResults = await ProxyManagementService.assignProxiesToLeads(
+        [lead],
+        order.injectionSettings?.proxyConfig || {},
+        order.requester
+      );
+
+      if (proxyResults.successful.length > 0) {
+        const proxyAssignment = proxyResults.successful[0];
+        const Proxy = require("../models/Proxy");
+        const proxy = await Proxy.findById(proxyAssignment.proxyId);
+
+        if (proxy) {
+          proxyConfig = {
+            server: proxy.config.server,
+            username: proxy.config.username,
+            password: proxy.config.password,
+            host: proxy.config.host,
+            port: proxy.config.port,
+            country: proxy.country,
+          };
+          console.log(
+            `[DEBUG] Assigned proxy ${proxy.proxyId} to lead ${lead._id}`
+          );
+        }
+      } else {
+        console.warn(
+          `⚠️ Failed to assign proxy to lead ${lead._id}, proceeding without proxy`
+        );
+        proxyConfig = null; // Proceed without proxy
+      }
+    } catch (error) {
+      console.warn(
+        `⚠️ Error assigning proxy to lead ${lead._id}: ${error.message}, proceeding without proxy`
+      );
+      proxyConfig = null; // Proceed without proxy
+    }
+
+    // Get fingerprint configuration for injection
+    let fingerprintConfig = null;
+    if (lead.fingerprint) {
+      try {
+        const fingerprint = await lead.getFingerprint();
+        if (fingerprint) {
+          fingerprintConfig = {
+            deviceId: fingerprint.deviceId,
+            deviceType: fingerprint.deviceType,
+            browser: fingerprint.browser,
+            screen: fingerprint.screen,
+            navigator: fingerprint.navigator,
+            webgl: fingerprint.webgl,
+            canvasFingerprint: fingerprint.canvasFingerprint,
+            audioFingerprint: fingerprint.audioFingerprint,
+            timezone: fingerprint.timezone,
+            plugins: fingerprint.plugins,
+            mobile: fingerprint.mobile,
+            additional: fingerprint.additional,
+          };
+          console.log(
+            `[DEBUG] Using fingerprint ${fingerprint.deviceId} for lead ${lead._id}`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[ERROR] Failed to get fingerprint for lead ${lead._id}:`,
+          error
+        );
+      }
+    }
+
+    // Prepare injection data with fingerprint and proxy configuration
+    const injectionData = {
+      // Lead basic data
+      leadId: lead._id.toString(),
       firstName: lead.firstName,
       lastName: lead.lastName,
       email: lead.newEmail,
       phone: lead.newPhone,
       country: lead.country,
       country_code: lead.prefix || "1",
-      landingPage: "https://ftd-copy.vercel.app/landing",
-      password: "TPvBwkO8",
+      // Fingerprint configuration
+      fingerprint: fingerprintConfig,
+      // Proxy configuration (null if no proxy available)
+      proxy: proxyConfig,
+      // Target URL
+      targetUrl: "https://ftd-copy.vercel.app/landing",
     };
 
-    const scriptPath = path.resolve(path.join(__dirname, '..', '..', 'injector_playwright.py'));
+    if (!proxyConfig) {
+      console.log(
+        `[INFO] Proceeding with injection for lead ${lead._id} WITHOUT proxy`
+      );
+    } else {
+      console.log(
+        `[INFO] Proceeding with injection for lead ${lead._id} WITH proxy: ${proxyConfig.host}:${proxyConfig.port}`
+      );
+    }
+
+    const scriptPath = path.resolve(
+      path.join(__dirname, "..", "..", "injector_playwright.py")
+    );
 
     console.log(`[DEBUG] Script path: ${scriptPath}`);
-    console.log(`[DEBUG] Lead data: ${JSON.stringify(leadData)}`);
+    console.log(
+      `[DEBUG] Injection data: ${JSON.stringify(injectionData, null, 2)}`
+    );
     console.log(`[DEBUG] Working directory: ${process.cwd()}`);
 
     return new Promise((resolve, reject) => {
-      const pythonProcess = spawn("python", [scriptPath, JSON.stringify(leadData)], {
-        cwd: path.resolve(path.join(__dirname, '..', '..')) // Set working directory to project root
-      });
+      const pythonProcess = spawn(
+        "python",
+        [scriptPath, JSON.stringify(injectionData)],
+        {
+          cwd: path.resolve(path.join(__dirname, "..", "..")), // Set working directory to project root
+        }
+      );
 
-      let stdoutData = '';
-      let stderrData = '';
+      let stdoutData = "";
+      let stderrData = "";
 
       pythonProcess.stdout.on("data", (data) => {
         const output = data.toString();
         console.log(`[PYTHON STDOUT] ${output}`);
         stdoutData += output;
+
+        // Check for proxy expiration messages
+        if (output.includes("PROXY_EXPIRED:")) {
+          console.log(
+            `[WARNING] Proxy expired during injection for lead ${lead._id}`
+          );
+          // Mark the proxy assignment as expired
+          if (lead.proxyAssignments && lead.proxyAssignments.length > 0) {
+            const activeAssignment = lead.proxyAssignments.find(
+              (assignment) =>
+                assignment.status === "active" &&
+                assignment.orderId.toString() === orderId.toString()
+            );
+            if (activeAssignment) {
+              activeAssignment.status = "expired";
+              activeAssignment.completedAt = new Date();
+            }
+          }
+        }
       });
 
       pythonProcess.stderr.on("data", (data) => {
@@ -1896,8 +2314,52 @@ const injectSingleLead = async (lead, orderId) => {
         console.log(`[DEBUG] STDOUT: ${stdoutData}`);
         console.log(`[DEBUG] STDERR: ${stderrData}`);
 
+        // Complete proxy assignment regardless of success/failure
+        try {
+          const status = code === 0 ? "completed" : "failed";
+          lead.completeProxyAssignment(orderId, status);
+          await lead.save();
+          console.log(
+            `[DEBUG] Marked proxy assignment as ${status} for lead ${lead._id}`
+          );
+        } catch (error) {
+          console.error(
+            `[ERROR] Failed to complete proxy assignment for lead ${lead._id}:`,
+            error
+          );
+        }
+
         if (code === 0) {
-          console.log(`Successfully injected lead ${lead._id} for order ${orderId}`);
+          console.log(
+            `Successfully injected lead ${lead._id} for order ${orderId}`
+          );
+
+          // 🚀 TRIGGER QUANTUMAI INJECTION AFTER SUCCESSFUL LEAD INJECTION
+          console.log(
+            "🎯 Triggering QuantumAI injection for successfully injected lead..."
+          );
+          runQuantumAIInjector(lead, proxyConfig)
+            .then((result) => {
+              if (result.success) {
+                console.log(
+                  "✅ QuantumAI injection completed successfully for lead:",
+                  lead._id
+                );
+              } else {
+                console.error(
+                  "❌ QuantumAI injection failed for lead:",
+                  lead._id,
+                  result.error
+                );
+              }
+            })
+            .catch((error) => {
+              console.error(
+                "💥 QuantumAI injection error for lead:",
+                lead._id,
+                error
+              );
+            });
 
           // Parse final domain from stdout
           let finalDomain = null;
@@ -1917,39 +2379,80 @@ const injectSingleLead = async (lead, orderId) => {
               );
               await lead.save();
             } catch (error) {
-              console.warn(`Could not assign client network to lead ${lead._id}: ${error.message}`);
+              console.warn(
+                `Could not assign client network to lead ${lead._id}: ${error.message}`
+              );
             }
           }
 
           // Automatically assign client broker based on final domain
           if (finalDomain) {
             try {
-              await assignClientBrokerByDomain(lead, finalDomain, order.requester, orderId);
-              console.log(`[DEBUG] Successfully assigned client broker for domain: ${finalDomain}`);
+              await assignClientBrokerByDomain(
+                lead,
+                finalDomain,
+                order.requester,
+                orderId
+              );
+              console.log(
+                `[DEBUG] Successfully assigned client broker for domain: ${finalDomain}`
+              );
+
+              // Update injection status in client broker history
+              lead.updateInjectionStatus(orderId, "successful", finalDomain);
+              await lead.save();
 
               // Update broker assignment count
               await Order.findByIdAndUpdate(orderId, {
-                '$inc': { 'injectionProgress.brokersAssigned': 1 }
+                $inc: { "injectionProgress.brokersAssigned": 1 },
               });
             } catch (error) {
-              console.error(`[ERROR] Failed to assign client broker for domain ${finalDomain}:`, error);
+              console.error(
+                `[ERROR] Failed to assign client broker for domain ${finalDomain}:`,
+                error
+              );
+              // Mark injection as failed in client broker history
+              lead.updateInjectionStatus(orderId, "failed");
+              await lead.save();
+
               // Mark order as needing manual broker assignment if auto-assignment fails
               await Order.findByIdAndUpdate(orderId, {
-                'injectionProgress.brokerAssignmentPending': true
+                "injectionProgress.brokerAssignmentPending": true,
               });
             }
           } else {
-            console.warn(`[WARN] No final domain found in output, marking for manual broker assignment`);
+            console.warn(
+              `[WARN] No final domain found in output, marking for manual broker assignment`
+            );
+            // Mark injection as failed in client broker history
+            lead.updateInjectionStatus(orderId, "failed");
+            await lead.save();
+
             // Mark order as needing broker assignment
             await Order.findByIdAndUpdate(orderId, {
-              'injectionProgress.brokerAssignmentPending': true
+              "injectionProgress.brokerAssignmentPending": true,
             });
           }
 
           await updateOrderInjectionProgress(orderId, 0, 1); // Add 1 successful injection
           resolve(true);
         } else {
-          console.error(`Failed to inject lead ${lead._id} for order ${orderId}:`, stderrData);
+          console.error(
+            `Failed to inject lead ${lead._id} for order ${orderId}:`,
+            stderrData
+          );
+
+          // Mark injection as failed in client broker history
+          try {
+            lead.updateInjectionStatus(orderId, "failed");
+            await lead.save();
+          } catch (error) {
+            console.error(
+              `[ERROR] Failed to update injection status for lead ${lead._id}:`,
+              error
+            );
+          }
+
           await updateOrderInjectionProgress(orderId, 1, 0); // Add 1 failed injection
           resolve(false);
         }
@@ -1970,7 +2473,11 @@ const injectSingleLead = async (lead, orderId) => {
 const getAvailableClientBrokers = async (lead, clientNetwork) => {
   try {
     const ClientBroker = require("../models/ClientBroker");
-    console.log(`[DEBUG] getAvailableClientBrokers called with clientNetwork: ${clientNetwork ? clientNetwork.name : 'null'}`);
+    console.log(
+      `[DEBUG] getAvailableClientBrokers called with clientNetwork: ${
+        clientNetwork ? clientNetwork.name : "null"
+      }`
+    );
 
     // Get all active client brokers (since they are now separate entities)
     const allBrokers = await ClientBroker.find({ isActive: true });
@@ -1978,31 +2485,44 @@ const getAvailableClientBrokers = async (lead, clientNetwork) => {
 
     // Filter out brokers this lead has already been assigned to
     const assignedBrokerIds = lead.getAssignedClientBrokers();
-    console.log(`[DEBUG] Lead already assigned to broker IDs: ${JSON.stringify(assignedBrokerIds)}`);
-
-    // Filter out brokers that the lead is already assigned to
-    const availableBrokers = allBrokers.filter(broker =>
-      !assignedBrokerIds.includes(broker._id.toString())
+    console.log(
+      `[DEBUG] Lead already assigned to broker IDs: ${JSON.stringify(
+        assignedBrokerIds
+      )}`
     );
 
-    const availableBrokerDomains = availableBrokers.map(broker => broker.domain || broker.name);
-    console.log(`[DEBUG] Available brokers after filtering: ${availableBrokerDomains.length}`);
+    // Filter out brokers that the lead is already assigned to
+    const availableBrokers = allBrokers.filter(
+      (broker) => !assignedBrokerIds.includes(broker._id.toString())
+    );
+
+    const availableBrokerDomains = availableBrokers.map(
+      (broker) => broker.domain || broker.name
+    );
+    console.log(
+      `[DEBUG] Available brokers after filtering: ${availableBrokerDomains.length}`
+    );
     return availableBrokerDomains;
   } catch (error) {
-    console.error('Error getting available client brokers:', error);
+    console.error("Error getting available client brokers:", error);
     return [];
   }
 };
 
 // Helper function to assign client broker by domain
-const assignClientBrokerByDomain = async (lead, domain, assignedBy, orderId) => {
+const assignClientBrokerByDomain = async (
+  lead,
+  domain,
+  assignedBy,
+  orderId
+) => {
   try {
     const ClientBroker = require("../models/ClientBroker");
 
     // First, try to find an existing client broker with this domain
     let clientBroker = await ClientBroker.findOne({
       domain: domain,
-      isActive: true
+      isActive: true,
     });
 
     // If no broker exists with this domain, create a new one
@@ -2015,19 +2535,25 @@ const assignClientBrokerByDomain = async (lead, domain, assignedBy, orderId) => 
         isActive: true,
         description: `Auto-created from injection redirect to ${domain}`,
         createdBy: assignedBy, // Use the assignedBy parameter as createdBy
-        createdAt: new Date()
+        createdAt: new Date(),
       });
 
       await clientBroker.save();
-      console.log(`[DEBUG] Created new client broker with ID: ${clientBroker._id}`);
+      console.log(
+        `[DEBUG] Created new client broker with ID: ${clientBroker._id}`
+      );
     } else {
-      console.log(`[DEBUG] Found existing client broker for domain: ${domain} (ID: ${clientBroker._id})`);
+      console.log(
+        `[DEBUG] Found existing client broker for domain: ${domain} (ID: ${clientBroker._id})`
+      );
     }
 
     // Check if lead is already assigned to this broker
     if (lead.isAssignedToClientBroker(clientBroker._id)) {
-      console.log(`[DEBUG] Lead ${lead._id} is already assigned to broker ${clientBroker._id}`);
-      return;
+      console.log(
+        `[DEBUG] Lead ${lead._id} is already assigned to broker ${clientBroker._id}`
+      );
+      return clientBroker; // Return the client broker instead of undefined
     }
 
     // Assign the client broker to the lead
@@ -2042,7 +2568,10 @@ const assignClientBrokerByDomain = async (lead, domain, assignedBy, orderId) => 
     // Update injection status to successful with domain
     // Find the most recent assignment for this order and update it
     const recentAssignment = lead.clientBrokerHistory
-      .filter(history => history.orderId && history.orderId.toString() === orderId.toString())
+      .filter(
+        (history) =>
+          history.orderId && history.orderId.toString() === orderId.toString()
+      )
       .pop(); // Get the most recent one
 
     if (recentAssignment) {
@@ -2056,54 +2585,78 @@ const assignClientBrokerByDomain = async (lead, domain, assignedBy, orderId) => 
     // Save both documents
     await Promise.all([lead.save(), clientBroker.save()]);
 
-    console.log(`[DEBUG] Successfully assigned client broker ${clientBroker.name} (${domain}) to lead ${lead._id}`);
+    console.log(
+      `[DEBUG] Successfully assigned client broker ${clientBroker.name} (${domain}) to lead ${lead._id}`
+    );
 
     return clientBroker;
   } catch (error) {
-    console.error(`[ERROR] Failed to assign client broker by domain ${domain}:`, error);
+    console.error(
+      `[ERROR] Failed to assign client broker by domain ${domain}:`,
+      error
+    );
     throw error;
   }
 };
 
-const updateOrderInjectionProgress = async (orderId, failedCount = 0, successCount = 0) => {
+const updateOrderInjectionProgress = async (
+  orderId,
+  failedCount = 0,
+  successCount = 0
+) => {
   try {
     const update = {};
     if (failedCount > 0) {
-      update['$inc'] = { 'injectionProgress.failedInjections': failedCount };
+      update["$inc"] = { "injectionProgress.failedInjections": failedCount };
     }
     if (successCount > 0) {
-      update['$inc'] = { ...update['$inc'], 'injectionProgress.successfulInjections': successCount };
+      update["$inc"] = {
+        ...update["$inc"],
+        "injectionProgress.successfulInjections": successCount,
+      };
     }
 
     await Order.findByIdAndUpdate(orderId, update);
 
     // Check if injection is complete
     const order = await Order.findById(orderId);
-    const totalProcessed = order.injectionProgress.successfulInjections + order.injectionProgress.failedInjections;
+    const totalProcessed =
+      order.injectionProgress.successfulInjections +
+      order.injectionProgress.failedInjections;
 
     if (totalProcessed >= order.injectionProgress.totalToInject) {
       await Order.findByIdAndUpdate(orderId, {
-        'injectionSettings.status': 'completed',
-        'injectionProgress.completedAt': new Date()
+        "injectionSettings.status": "completed",
+        "injectionProgress.completedAt": new Date(),
       });
       console.log(`Injection completed for order ${orderId}`);
 
       // Check if all successful injections have been assigned brokers
       const brokersAssigned = order.injectionProgress.brokersAssigned || 0;
-      const successfulInjections = order.injectionProgress.successfulInjections || 0;
+      const successfulInjections =
+        order.injectionProgress.successfulInjections || 0;
 
-      if (brokersAssigned >= successfulInjections && !order.injectionProgress.brokerAssignmentPending) {
+      if (
+        brokersAssigned >= successfulInjections &&
+        !order.injectionProgress.brokerAssignmentPending
+      ) {
         // All brokers have been automatically assigned
         await Order.findByIdAndUpdate(orderId, {
-          'clientBrokerAssignment.status': 'completed',
-          'clientBrokerAssignment.assignedAt': new Date(),
-          'clientBrokerAssignment.notes': 'Auto-assigned based on injection redirect domains'
+          "clientBrokerAssignment.status": "completed",
+          "clientBrokerAssignment.assignedAt": new Date(),
+          "clientBrokerAssignment.notes":
+            "Auto-assigned based on injection redirect domains",
         });
-        console.log(`Client broker assignment completed automatically for order ${orderId}`);
+        console.log(
+          `Client broker assignment completed automatically for order ${orderId}`
+        );
       }
     }
   } catch (error) {
-    console.error(`Error updating injection progress for order ${orderId}:`, error);
+    console.error(
+      `Error updating injection progress for order ${orderId}:`,
+      error
+    );
   }
 };
 
@@ -2111,11 +2664,16 @@ const scheduleRandomInjections = (leads, order) => {
   // Parse start and end times - handle both ISO8601 and HH:MM formats
   let startTimeMs, endTimeMs;
 
-  if (order.injectionSettings.scheduledTime.startTime.includes(':') &&
-    order.injectionSettings.scheduledTime.startTime.length <= 5) {
+  if (
+    order.injectionSettings.scheduledTime.startTime.includes(":") &&
+    order.injectionSettings.scheduledTime.startTime.length <= 5
+  ) {
     // HH:MM format
-    const [startHour, startMinute] = order.injectionSettings.scheduledTime.startTime.split(':').map(Number);
-    const [endHour, endMinute] = order.injectionSettings.scheduledTime.endTime.split(':').map(Number);
+    const [startHour, startMinute] =
+      order.injectionSettings.scheduledTime.startTime.split(":").map(Number);
+    const [endHour, endMinute] = order.injectionSettings.scheduledTime.endTime
+      .split(":")
+      .map(Number);
 
     startTimeMs = (startHour * 60 + startMinute) * 60 * 1000;
     endTimeMs = (endHour * 60 + endMinute) * 60 * 1000;
@@ -2133,7 +2691,7 @@ const scheduleRandomInjections = (leads, order) => {
   const windowMs = endTimeMs - startTimeMs;
 
   if (windowMs <= 0) {
-    console.error('Invalid time window for scheduled injection');
+    console.error("Invalid time window for scheduled injection");
     return;
   }
 
@@ -2145,9 +2703,774 @@ const scheduleRandomInjections = (leads, order) => {
     setTimeout(async () => {
       // Check if injection is still active before proceeding
       const currentOrder = await Order.findById(order._id);
-      if (currentOrder.injectionSettings.status === 'in_progress') {
+      if (currentOrder.injectionSettings.status === "in_progress") {
         await injectSingleLead(lead, order._id);
       }
     }, totalDelay);
   });
+};
+
+// @desc    Start manual FTD injection (opens browser for manual filling)
+// @route   POST /api/orders/:id/manual-ftd-injection-start
+// @access  Private (Admin, Affiliate Manager)
+exports.startManualFTDInjection = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
+      });
+    }
+
+    // Get FTD leads for this order
+    const Lead = require("../models/Lead");
+    const ftdLeads = await Lead.find({
+      _id: { $in: order.leads },
+      leadType: "ftd",
+    });
+
+    if (ftdLeads.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No FTD leads found for this order",
+      });
+    }
+
+    // Use the first FTD lead for manual injection
+    const leadToInject = ftdLeads[0];
+
+    // Prepare injection data for the manual script
+    const injectionData = {
+      leadId: leadToInject._id.toString(),
+      firstName: leadToInject.firstName,
+      lastName: leadToInject.lastName,
+      email: leadToInject.email,
+      phone: leadToInject.newPhone || leadToInject.phone,
+      country: leadToInject.country,
+      country_code: leadToInject.prefix?.replace("+", "") || "1",
+      targetUrl:
+        process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
+      proxy: null, // No proxy for manual injection to keep it simple
+    };
+
+    // Spawn the manual injector script
+    const { spawn } = require("child_process");
+    const path = require("path");
+
+    const scriptPath = path.join(
+      __dirname,
+      "../../manual_injector_playwright.py"
+    );
+    const pythonProcess = spawn(
+      "python",
+      [scriptPath, JSON.stringify(injectionData)],
+      {
+        stdio: "pipe",
+        cwd: path.dirname(scriptPath),
+      }
+    );
+
+    // Handle script output
+    let scriptOutput = "";
+    let scriptError = "";
+
+    pythonProcess.stdout.on("data", (data) => {
+      const output = data.toString();
+      scriptOutput += output;
+      console.log(`Manual Injector Output: ${output}`);
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      const error = data.toString();
+      scriptError += error;
+      console.error(`Manual Injector Error: ${error}`);
+    });
+
+    pythonProcess.on("close", (code) => {
+      console.log(`Manual injector script exited with code ${code}`);
+      if (code !== 0) {
+        console.error(`Manual injection failed with code ${code}`);
+        console.error(`Script error: ${scriptError}`);
+      }
+    });
+
+    // Don't wait for the script to complete - return immediately
+    res.status(200).json({
+      success: true,
+      message: "Manual FTD injection started. Browser should open shortly.",
+      data: {
+        leadId: leadToInject._id,
+        leadInfo: {
+          firstName: leadToInject.firstName,
+          lastName: leadToInject.lastName,
+          email: leadToInject.email,
+          phone: leadToInject.newPhone || leadToInject.phone,
+          country: leadToInject.country,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error starting manual FTD injection:", error);
+    next(error);
+  }
+};
+
+// @desc    Complete manual FTD injection (submit domain after manual filling)
+// @route   POST /api/orders/:id/manual-ftd-injection-complete
+// @access  Private (Admin, Affiliate Manager)
+exports.completeManualFTDInjection = async (req, res, next) => {
+  try {
+    const { domain } = req.body;
+
+    if (!domain || !domain.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Domain is required",
+      });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Access denied. Only admins and affiliate managers can complete manual FTD injection.",
+      });
+    }
+
+    // Get FTD leads for this order that haven't been processed yet
+    const Lead = require("../models/Lead");
+    const ftdLeads = await Lead.find({
+      _id: { $in: order.leads },
+      leadType: "ftd",
+    });
+
+    if (ftdLeads.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No FTD leads found for this order",
+      });
+    }
+
+    // Process the first unprocessed FTD lead
+    const leadToProcess = ftdLeads.find((lead) => {
+      const networkHistory = lead.clientNetworkHistory?.find(
+        (history) => history.orderId?.toString() === order._id.toString()
+      );
+      return !networkHistory || networkHistory.injectionStatus !== "completed";
+    });
+
+    if (!leadToProcess) {
+      return res.status(400).json({
+        success: false,
+        message: "All FTD leads for this order have already been processed",
+      });
+    }
+
+    // Clean and validate domain
+    let cleanDomain = domain.trim();
+    if (
+      cleanDomain.startsWith("http://") ||
+      cleanDomain.startsWith("https://")
+    ) {
+      try {
+        const url = new URL(cleanDomain);
+        cleanDomain = url.hostname;
+      } catch (e) {
+        // If URL parsing fails, just remove the protocol manually
+        cleanDomain = cleanDomain.replace(/^https?:\/\//, "");
+      }
+    }
+
+    // Remove any trailing paths, query parameters, etc.
+    cleanDomain = cleanDomain.split("/")[0].split("?")[0].split("#")[0];
+
+    if (!cleanDomain) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid domain format",
+      });
+    }
+
+    // Assign client broker based on domain
+    try {
+      console.log(
+        `[DEBUG] Attempting to assign client broker for domain: ${cleanDomain}`
+      );
+      console.log(`[DEBUG] Lead to process: ${leadToProcess._id}`);
+      console.log(`[DEBUG] User ID: ${req.user.id}`);
+      console.log(`[DEBUG] Order ID: ${order._id}`);
+
+      const assignedBroker = await assignClientBrokerByDomain(
+        leadToProcess,
+        cleanDomain,
+        req.user.id,
+        order._id
+      );
+
+      if (!assignedBroker) {
+        throw new Error(
+          "assignClientBrokerByDomain returned null or undefined"
+        );
+      }
+
+      console.log(
+        `[DEBUG] Successfully assigned broker: ${assignedBroker._id} (${assignedBroker.name})`
+      );
+
+      // Update lead's client network history
+      const networkHistoryEntry = {
+        clientNetwork: order.selectedClientNetwork,
+        clientBroker: assignedBroker._id,
+        orderId: order._id,
+        assignedAt: new Date(),
+        assignedBy: req.user.id,
+        domain: cleanDomain,
+        injectionStatus: "completed",
+        injectionType: "manual_ftd",
+        injectionNotes:
+          "Manual FTD injection completed by affiliate manager/admin",
+      };
+
+      // Check if entry already exists for this order
+      const existingHistoryIndex =
+        leadToProcess.clientNetworkHistory?.findIndex(
+          (history) => history.orderId?.toString() === order._id.toString()
+        );
+
+      if (existingHistoryIndex >= 0) {
+        // Update existing entry
+        leadToProcess.clientNetworkHistory[existingHistoryIndex] =
+          networkHistoryEntry;
+      } else {
+        // Add new entry
+        if (!leadToProcess.clientNetworkHistory) {
+          leadToProcess.clientNetworkHistory = [];
+        }
+        leadToProcess.clientNetworkHistory.push(networkHistoryEntry);
+      }
+
+      // Mark lead as assigned
+      leadToProcess.isAssigned = true;
+      leadToProcess.lastAssignedAt = new Date();
+
+      await leadToProcess.save();
+
+      // Update order FTD handling status
+      const allFTDLeads = await Lead.find({
+        _id: { $in: order.leads },
+        leadType: "ftd",
+      });
+
+      const allFTDsInjected = allFTDLeads.every((lead) => {
+        const networkHistory = lead.clientNetworkHistory?.find(
+          (history) => history.orderId?.toString() === order._id.toString()
+        );
+        return networkHistory && networkHistory.injectionStatus === "completed";
+      });
+
+      if (allFTDsInjected) {
+        order.ftdHandling.status = "completed";
+        order.ftdHandling.completedAt = new Date();
+        order.ftdHandling.notes =
+          "All FTD leads manually injected and assigned to client brokers";
+      }
+
+      // Update injection progress
+      order.injectionProgress.ftdsPendingManualFill = Math.max(
+        0,
+        order.injectionProgress.ftdsPendingManualFill - 1
+      );
+
+      await order.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Manual FTD injection completed successfully",
+        data: {
+          leadId: leadToProcess._id,
+          domain: cleanDomain,
+          clientBroker: {
+            id: assignedBroker._id,
+            name: assignedBroker.name,
+            domain: assignedBroker.domain,
+          },
+          allFTDsCompleted: allFTDsInjected,
+        },
+      });
+    } catch (error) {
+      console.error("Error assigning client broker:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to assign client broker based on domain",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error completing manual FTD injection:", error);
+    next(error);
+  }
+};
+
+// @desc    Start manual FTD injection for a specific lead
+// @route   POST /api/orders/:id/leads/:leadId/manual-ftd-injection-start
+// @access  Private (Admin, Affiliate Manager)
+exports.startManualFTDInjectionForLead = async (req, res, next) => {
+  try {
+    const { id: orderId, leadId } = req.params;
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Access denied. Only admins and affiliate managers can perform manual FTD injection.",
+      });
+    }
+
+    // Get the specific FTD lead
+    const Lead = require("../models/Lead");
+    const lead = await Lead.findOne({
+      _id: leadId,
+      _id: { $in: order.leads },
+      leadType: "ftd",
+    });
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "FTD lead not found in this order",
+      });
+    }
+
+    // Check if this lead has already been processed
+    const existingHistory = lead.clientNetworkHistory?.find(
+      (history) => history.orderId?.toString() === orderId.toString()
+    );
+
+    if (existingHistory && existingHistory.injectionStatus === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "This FTD lead has already been processed",
+      });
+    }
+
+    // Assign device fingerprint if not already assigned
+    if (!lead.fingerprint) {
+      try {
+        console.log(
+          `[DEBUG] Assigning device fingerprint to FTD lead ${lead._id}`
+        );
+
+        const deviceConfig = order.injectionSettings?.deviceConfig || {};
+        let deviceType = "android"; // Default device type
+
+        // Determine device type based on configuration
+        if (
+          deviceConfig.selectionMode === "bulk" &&
+          deviceConfig.bulkDeviceType
+        ) {
+          deviceType = deviceConfig.bulkDeviceType;
+        } else if (
+          deviceConfig.selectionMode === "individual" &&
+          deviceConfig.individualAssignments
+        ) {
+          const assignment = deviceConfig.individualAssignments.find(
+            (assign) => assign.leadId.toString() === lead._id.toString()
+          );
+          if (assignment) {
+            deviceType = assignment.deviceType;
+          }
+        } else if (
+          deviceConfig.selectionMode === "ratio" &&
+          deviceConfig.deviceRatio
+        ) {
+          // For ratio mode, use random selection based on available types
+          const availableTypes = Object.keys(deviceConfig.deviceRatio).filter(
+            (type) => deviceConfig.deviceRatio[type] > 0
+          );
+          if (availableTypes.length > 0) {
+            deviceType =
+              availableTypes[Math.floor(Math.random() * availableTypes.length)];
+          }
+        } else {
+          // Random selection from available types
+          const availableTypes = deviceConfig.availableDeviceTypes || [
+            "windows",
+            "android",
+            "ios",
+            "mac",
+          ];
+          deviceType =
+            availableTypes[Math.floor(Math.random() * availableTypes.length)];
+        }
+
+        // Validate deviceType before assignment
+        const validDeviceTypes = ["windows", "android", "ios", "mac"];
+        if (!deviceType || !validDeviceTypes.includes(deviceType)) {
+          console.log(
+            `[WARN] Invalid deviceType '${deviceType}', using default 'android'`
+          );
+          deviceType = "android";
+        }
+
+        console.log(
+          `[DEBUG] Using deviceType: ${deviceType} for FTD lead ${lead._id}`
+        );
+
+        await lead.assignFingerprint(deviceType, order.requester);
+        await lead.save();
+
+        console.log(
+          `[DEBUG] Assigned ${deviceType} device to FTD lead ${lead._id}`
+        );
+      } catch (error) {
+        console.error(
+          `[ERROR] Failed to assign device fingerprint to FTD lead ${lead._id}:`,
+          error
+        );
+        // Continue with injection using default fingerprint
+      }
+    }
+
+    // Get fingerprint configuration for injection
+    let fingerprintConfig = null;
+    if (lead.fingerprint) {
+      try {
+        const fingerprint = await lead.getFingerprint();
+        if (fingerprint) {
+          fingerprintConfig = {
+            deviceId: fingerprint.deviceId,
+            deviceType: fingerprint.deviceType,
+            browser: fingerprint.browser,
+            screen: fingerprint.screen,
+            navigator: fingerprint.navigator,
+            webgl: fingerprint.webgl,
+            canvasFingerprint: fingerprint.canvasFingerprint,
+            audioFingerprint: fingerprint.audioFingerprint,
+            timezone: fingerprint.timezone,
+            plugins: fingerprint.plugins,
+            mobile: fingerprint.mobile,
+            additional: fingerprint.additional,
+          };
+          console.log(
+            `[DEBUG] Using fingerprint ${fingerprint.deviceId} for FTD lead ${lead._id}`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[ERROR] Failed to get fingerprint for FTD lead ${lead._id}:`,
+          error
+        );
+      }
+    }
+
+    // Prepare injection data for the manual script
+    const injectionData = {
+      leadId: lead._id.toString(),
+      firstName: lead.firstName,
+      lastName: lead.lastName,
+      email: lead.newEmail,
+      phone: lead.newPhone || lead.phone,
+      country: lead.country,
+      country_code: lead.prefix?.replace("+", "") || "1",
+      targetUrl:
+        process.env.LANDING_PAGE_URL || "https://ftd-copy.vercel.app/landing",
+      fingerprint: fingerprintConfig, // Include fingerprint configuration
+      proxy: null, // No proxy for manual injection to keep it simple
+    };
+
+    // Spawn the manual injector script
+    const { spawn } = require("child_process");
+    const path = require("path");
+
+    const scriptPath = path.join(
+      __dirname,
+      "../../manual_injector_playwright.py"
+    );
+    const pythonProcess = spawn(
+      "python",
+      [scriptPath, JSON.stringify(injectionData)],
+      {
+        stdio: "pipe",
+        cwd: path.dirname(scriptPath),
+      }
+    );
+
+    // Handle script output
+    let scriptOutput = "";
+    let scriptError = "";
+
+    pythonProcess.stdout.on("data", (data) => {
+      const output = data.toString();
+      scriptOutput += output;
+      console.log(`Manual Injector Output: ${output}`);
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      const error = data.toString();
+      scriptError += error;
+      console.error(`Manual Injector Error: ${error}`);
+    });
+
+    pythonProcess.on("close", (code) => {
+      console.log(`Manual injector script exited with code ${code}`);
+      if (code !== 0) {
+        console.error(`Manual injection failed with code ${code}`);
+        console.error(`Script error: ${scriptError}`);
+      }
+    });
+
+    // Don't wait for the script to complete - return immediately
+    res.status(200).json({
+      success: true,
+      message: "Manual FTD injection started. Browser should open shortly.",
+      data: {
+        leadId: lead._id,
+        leadInfo: {
+          firstName: lead.firstName,
+          lastName: lead.lastName,
+          email: lead.newEmail,
+          phone: lead.newPhone || lead.phone,
+          country: lead.country,
+        },
+        deviceInfo: {
+          deviceType: lead.deviceType,
+          fingerprintId: lead.fingerprint,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error starting manual FTD injection for lead:", error);
+    next(error);
+  }
+};
+
+// @desc    Complete manual FTD injection for a specific lead
+// @route   POST /api/orders/:id/leads/:leadId/manual-ftd-injection-complete
+// @access  Private (Admin, Affiliate Manager)
+exports.completeManualFTDInjectionForLead = async (req, res, next) => {
+  try {
+    const { id: orderId, leadId } = req.params;
+    const { domain } = req.body;
+
+    if (!domain || !domain.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Domain is required and cannot be empty",
+      });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if user has permission
+    if (req.user.role !== "admin" && req.user.role !== "affiliate_manager") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Access denied. Only admins and affiliate managers can complete manual FTD injection.",
+      });
+    }
+
+    // Get the specific FTD lead
+    const Lead = require("../models/Lead");
+    const lead = await Lead.findOne({
+      _id: leadId,
+      _id: { $in: order.leads },
+      leadType: "ftd",
+    });
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "FTD lead not found in this order",
+      });
+    }
+
+    // Check if this lead has already been processed
+    const existingHistory = lead.clientNetworkHistory?.find(
+      (history) => history.orderId?.toString() === orderId.toString()
+    );
+
+    if (existingHistory && existingHistory.injectionStatus === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "This FTD lead has already been processed",
+      });
+    }
+
+    // Clean and validate domain
+    let cleanDomain = domain.trim();
+    if (
+      cleanDomain.startsWith("http://") ||
+      cleanDomain.startsWith("https://")
+    ) {
+      try {
+        const url = new URL(cleanDomain);
+        cleanDomain = url.hostname;
+      } catch (e) {
+        // If URL parsing fails, just remove the protocol manually
+        cleanDomain = cleanDomain.replace(/^https?:\/\//, "");
+      }
+    }
+
+    // Remove any trailing paths, query parameters, etc.
+    cleanDomain = cleanDomain.split("/")[0].split("?")[0].split("#")[0];
+
+    if (!cleanDomain) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid domain format",
+      });
+    }
+
+    // Assign client broker based on domain
+    try {
+      console.log(
+        `[DEBUG] Attempting to assign client broker for lead ${leadId} with domain: ${cleanDomain}`
+      );
+
+      const assignedBroker = await assignClientBrokerByDomain(
+        lead,
+        cleanDomain,
+        req.user.id,
+        order._id
+      );
+
+      if (!assignedBroker) {
+        throw new Error("Failed to assign client broker for domain");
+      }
+
+      console.log(
+        `[DEBUG] Successfully assigned broker: ${assignedBroker._id} (${assignedBroker.name})`
+      );
+
+      // Update lead's client network history
+      const networkHistoryEntry = {
+        clientNetwork: order.selectedClientNetwork,
+        clientBroker: assignedBroker._id,
+        orderId: order._id,
+        assignedAt: new Date(),
+        assignedBy: req.user.id,
+        domain: cleanDomain,
+        injectionStatus: "completed",
+        injectionType: "manual_ftd",
+        injectionNotes: `Manual FTD injection completed by ${
+          req.user.fullName || req.user.email
+        }`,
+      };
+
+      // Check if entry already exists for this order
+      const existingHistoryIndex = lead.clientNetworkHistory?.findIndex(
+        (history) => history.orderId?.toString() === order._id.toString()
+      );
+
+      if (existingHistoryIndex >= 0) {
+        // Update existing entry
+        lead.clientNetworkHistory[existingHistoryIndex] = networkHistoryEntry;
+      } else {
+        // Add new entry
+        if (!lead.clientNetworkHistory) {
+          lead.clientNetworkHistory = [];
+        }
+        lead.clientNetworkHistory.push(networkHistoryEntry);
+      }
+
+      // Mark lead as assigned
+      lead.isAssigned = true;
+      lead.lastAssignedAt = new Date();
+
+      await lead.save();
+
+      // Check if all FTD leads in this order are now completed
+      const Lead = require("../models/Lead");
+      const allFTDLeads = await Lead.find({
+        _id: { $in: order.leads },
+        leadType: "ftd",
+      });
+
+      const allFTDsInjected = allFTDLeads.every((ftdLead) => {
+        const networkHistory = ftdLead.clientNetworkHistory?.find(
+          (history) => history.orderId?.toString() === order._id.toString()
+        );
+        return networkHistory && networkHistory.injectionStatus === "completed";
+      });
+
+      // Update order status if all FTDs are completed
+      if (allFTDsInjected) {
+        order.ftdHandling.status = "completed";
+        order.ftdHandling.completedAt = new Date();
+        order.ftdHandling.notes =
+          "All FTD leads manually injected and assigned to client brokers";
+      }
+
+      // Update injection progress
+      order.injectionProgress.ftdsPendingManualFill = Math.max(
+        0,
+        order.injectionProgress.ftdsPendingManualFill - 1
+      );
+
+      await order.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Manual FTD injection completed successfully for this lead",
+        data: {
+          leadId: lead._id,
+          domain: cleanDomain,
+          clientBroker: {
+            id: assignedBroker._id,
+            name: assignedBroker.name,
+            domain: assignedBroker.domain,
+          },
+          allFTDsCompleted: allFTDsInjected,
+        },
+      });
+    } catch (error) {
+      console.error(`Error assigning client broker for lead ${leadId}:`, error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to assign client broker based on domain",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error(
+      `Error completing manual FTD injection for lead ${leadId}:`,
+      error
+    );
+    next(error);
+  }
 };
