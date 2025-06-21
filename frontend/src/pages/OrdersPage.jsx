@@ -46,6 +46,8 @@ import {
   Stop as StopIcon,
   SkipNext as SkipNextIcon,
   Send as SendIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -54,6 +56,8 @@ import api from '../services/api';
 import { selectUser } from '../store/slices/authSlice';
 import { getSortedCountries } from '../constants/countries';
 import LeadDetailCard from '../components/LeadDetailCard';
+import SessionAccessButton from '../components/SessionAccessButton';
+import SessionStatusChip from '../components/SessionStatusChip';
 
 // --- Best Practice: Define constants and schemas outside the component ---
 // This prevents them from being recreated on every render.
@@ -69,13 +73,19 @@ const createOrderSchema = (userRole) => {
     countryFilter: yup.string().required('Country filter is required').min(2, 'Country must be at least 2 characters'),
     genderFilter: yup.string().oneOf(['', 'male', 'female']).default(''),
     notes: yup.string().default(''),
-    selectedClientNetwork: userRole === 'affiliate_manager' 
+    selectedClientNetwork: userRole === 'affiliate_manager'
       ? yup.string().required('Client network selection is required')
       : yup.string().default(''),
+    selectedCampaign: yup.string().required('Campaign selection is mandatory for all orders'),
     // Injection settings
     injectionMode: yup.string().oneOf(['bulk', 'scheduled']).default('bulk'),
     injectionStartTime: yup.string().default(''),
     injectionEndTime: yup.string().default(''),
+    minInterval: yup.number().min(10, 'Minimum interval must be at least 10 seconds').max(1800, 'Maximum interval cannot exceed 30 minutes').default(30),
+    maxInterval: yup.number().min(30, 'Maximum interval must be at least 30 seconds').max(3600, 'Maximum interval cannot exceed 1 hour').default(300).test('min-max', 'Maximum interval must be greater than minimum interval', function(value) {
+      const { minInterval } = this.parent;
+      return !minInterval || !value || value > minInterval;
+    }),
     // Device configuration fields
     deviceSelectionMode: yup.string().oneOf(['individual', 'bulk', 'ratio', 'random']).default('random'),
     bulkDeviceType: yup.string().oneOf(['windows', 'android', 'ios', 'mac']).default('android'),
@@ -177,6 +187,10 @@ const OrdersPage = () => {
   // Client networks state
   const [clientNetworks, setClientNetworks] = useState([]);
   const [loadingClientNetworks, setLoadingClientNetworks] = useState(false);
+
+  // Campaigns state
+  const [campaigns, setCampaigns] = useState([]);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
 
   // Pagination and filtering
   const [page, setPage] = useState(0);
@@ -283,6 +297,28 @@ const OrdersPage = () => {
     }
   }, [user?.role]);
 
+  // Fetch campaigns for all users (mandatory for order creation)
+  const fetchCampaigns = useCallback(async () => {
+    setLoadingCampaigns(true);
+    try {
+      // Use different endpoint based on user role
+      const endpoint = user?.role === 'affiliate_manager'
+        ? '/campaigns/my-campaigns'
+        : '/campaigns?isActive=true&status=active';
+
+      const response = await api.get(endpoint);
+      setCampaigns(response.data.data || []);
+    } catch (err) {
+      console.error('Failed to fetch campaigns:', err);
+      setNotification({
+        message: 'Failed to load campaigns',
+        severity: 'warning',
+      });
+    } finally {
+      setLoadingCampaigns(false);
+    }
+  }, [user?.role]);
+
   const onSubmitOrder = useCallback(async (data) => {
     try {
       // Transform availableDeviceTypes from object to array
@@ -302,10 +338,13 @@ const OrdersPage = () => {
         gender: data.genderFilter,
         notes: data.notes,
         selectedClientNetwork: data.selectedClientNetwork,
+        selectedCampaign: data.selectedCampaign,
         // Injection settings - automatically inject all non-FTD lead types
         injectionMode: data.injectionMode,
         injectionStartTime: data.injectionStartTime,
         injectionEndTime: data.injectionEndTime,
+        minInterval: data.minInterval,
+        maxInterval: data.maxInterval,
         injectFiller: data.filler > 0, // Auto-inject if filler leads requested
         injectCold: data.cold > 0,     // Auto-inject if cold leads requested
         injectLive: data.live > 0,     // Auto-inject if live leads requested
@@ -459,7 +498,8 @@ const OrdersPage = () => {
   const handleOpenCreateDialog = useCallback(() => {
     setCreateDialogOpen(true);
     fetchClientNetworks();
-  }, [fetchClientNetworks]);
+    fetchCampaigns();
+  }, [fetchClientNetworks, fetchCampaigns]);
 
   // Injection handlers
   const handleStartInjection = useCallback(async (orderId) => {
@@ -500,6 +540,18 @@ const OrdersPage = () => {
       setNotification({ message: err.response?.data?.message || 'Failed to stop injection', severity: 'error' });
     }
   }, [fetchOrders]);
+
+  // Manual FTD domain validation function
+  const isValidDomain = useCallback((domain) => {
+    if (!domain || !domain.trim()) return false;
+
+    const trimmedDomain = domain.trim();
+    // Check for basic domain patterns
+    const domainPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i;
+    const ipPattern = /^(https?:\/\/)?((\d{1,3}\.){3}\d{1,3})(:\d+)?(\/.*)?$/;
+
+    return domainPattern.test(trimmedDomain) || ipPattern.test(trimmedDomain);
+  }, []);
 
   // Manual FTD injection handlers
   const handleOpenManualFTDInjection = useCallback((order, lead) => {
@@ -1069,6 +1121,53 @@ const OrdersPage = () => {
                   />
                 </Grid>
               )}
+
+              {/* Campaign Selection - Mandatory for all users */}
+              <Grid item xs={12}>
+                <Controller
+                  name="selectedCampaign"
+                  control={control}
+                  render={({ field }) => (
+                                    <FormControl fullWidth size="small" error={!!errors.selectedCampaign}>
+                  <InputLabel>Campaign *</InputLabel>
+                  <Select
+                    {...field}
+                    label="Campaign *"
+                    value={field.value || ''}
+                    disabled={loadingCampaigns}
+                  >
+                    <MenuItem value="" disabled>
+                      <em>Select a Campaign</em>
+                    </MenuItem>
+                    {campaigns.map((campaign) => (
+                      <MenuItem key={campaign._id} value={campaign._id}>
+                        {campaign.name}
+                        {campaign.description && (
+                          <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                            {campaign.description}
+                          </Typography>
+                        )}
+                      </MenuItem>
+                    ))}
+                      </Select>
+                      {errors.selectedCampaign?.message && (
+                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+                          {errors.selectedCampaign.message}
+                        </Typography>
+                      )}
+                      {!errors.selectedCampaign?.message && (
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
+                          {loadingCampaigns
+                            ? 'Loading campaigns...'
+                            : `${campaigns.length} campaign(s) available`
+                          }
+                        </Typography>
+                      )}
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+
               <Grid item xs={12}>
                 <Controller name="notes" control={control} render={({ field }) => <TextField {...field} fullWidth label="Notes" multiline rows={3} error={!!errors.notes} helperText={errors.notes?.message} size="small" />} />
               </Grid>
@@ -1144,6 +1243,42 @@ const OrdersPage = () => {
                               size="small"
                               error={!!errors.injectionEndTime}
                               helperText={errors.injectionEndTime?.message}
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={3}>
+                        <Controller
+                          name="minInterval"
+                          control={control}
+                          render={({ field: intervalField }) => (
+                            <TextField
+                              {...intervalField}
+                              fullWidth
+                              label="Min Interval (seconds)"
+                              type="number"
+                              inputProps={{ min: 10, max: 1800, step: 5 }}
+                              size="small"
+                              error={!!errors.minInterval}
+                              helperText={errors.minInterval?.message || "Minimum time between injections"}
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={3}>
+                        <Controller
+                          name="maxInterval"
+                          control={control}
+                          render={({ field: intervalField }) => (
+                            <TextField
+                              {...intervalField}
+                              fullWidth
+                              label="Max Interval (seconds)"
+                              type="number"
+                              inputProps={{ min: 30, max: 3600, step: 5 }}
+                              size="small"
+                              error={!!errors.maxInterval}
+                              helperText={errors.maxInterval?.message || "Maximum time between injections"}
                             />
                           )}
                         />
@@ -1380,6 +1515,75 @@ const OrdersPage = () => {
 
               <Grid item xs={12}><Typography variant="subtitle2">Notes</Typography><Typography variant="body2">{selectedOrder.notes || 'N/A'}</Typography></Grid>
               <Grid item xs={12}><Typography variant="subtitle2">Created</Typography><Typography variant="body2">{new Date(selectedOrder.createdAt).toLocaleString()}</Typography></Grid>
+              
+              {/* Session Statistics for FTD leads */}
+              {selectedOrder.leads?.some(lead => lead.leadType === 'ftd') && (
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" gutterBottom>Session Statistics</Typography>
+                  <Box sx={{ 
+                    bgcolor: 'action.hover', 
+                    p: 2, 
+                    borderRadius: 1,
+                    border: '1px solid',
+                    borderColor: 'divider'
+                  }}>
+                    {(() => {
+                      const ftdLeads = selectedOrder.leads.filter(lead => lead.leadType === 'ftd');
+                      const leadsWithSessions = ftdLeads.filter(lead => 
+                        lead.browserSession && lead.browserSession.sessionId
+                      );
+                      const activeSessions = leadsWithSessions.filter(lead => 
+                        lead.browserSession.isActive
+                      );
+                      const expiredSessions = leadsWithSessions.filter(lead => {
+                        const createdAt = new Date(lead.browserSession.createdAt);
+                        const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+                        return createdAt < thirtyDaysAgo;
+                      });
+                      const expiringSessions = leadsWithSessions.filter(lead => {
+                        const createdAt = new Date(lead.browserSession.createdAt);
+                        const expirationDate = new Date(createdAt.getTime() + (30 * 24 * 60 * 60 * 1000));
+                        const sevenDaysFromNow = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000));
+                        const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+                        return createdAt >= thirtyDaysAgo && expirationDate < sevenDaysFromNow;
+                      });
+
+                      return (
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Typography variant="body2" color="text.secondary">
+                              Total FTD Leads: <strong>{ftdLeads.length}</strong>
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Typography variant="body2" color="success.main">
+                              With Sessions: <strong>{leadsWithSessions.length}</strong>
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Typography variant="body2" color="primary.main">
+                              Active: <strong>{activeSessions.length}</strong>
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12} sm={6} md={3}>
+                            <Typography variant="body2" color="error.main">
+                              Expired: <strong>{expiredSessions.length}</strong>
+                            </Typography>
+                          </Grid>
+                          {expiringSessions.length > 0 && (
+                            <Grid item xs={12}>
+                              <Typography variant="body2" color="warning.main" sx={{ fontWeight: 'bold' }}>
+                                ⚠️ {expiringSessions.length} session(s) expiring within 7 days
+                              </Typography>
+                            </Grid>
+                          )}
+                        </Grid>
+                      );
+                    })()}
+                  </Box>
+                </Grid>
+              )}
+              
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                   <Typography variant="subtitle2">Assigned Leads ({selectedOrder.leads?.length || 0})</Typography>
@@ -1409,7 +1613,8 @@ const OrdersPage = () => {
                       <TableCell>Type</TableCell><TableCell>Name</TableCell>
                       <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Country</TableCell>
                       <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Email</TableCell>
-                      <TableCell>Details</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Session</TableCell>
+                      <TableCell>Actions</TableCell>
                     </TableRow></TableHead>
                     <TableBody>
                       {selectedOrder.leads.map((lead) => (
@@ -1419,54 +1624,85 @@ const OrdersPage = () => {
                             <TableCell>{lead.firstName} {lead.lastName}</TableCell>
                             <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{lead.country}</TableCell>
                             <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{lead.newEmail}</TableCell>
+                            <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                              {lead.leadType === 'ftd' && lead.browserSession && lead.browserSession.sessionId ? (
+                                <SessionStatusChip sessionData={lead.browserSession} />
+                              ) : (
+                                lead.leadType === 'ftd' ? (
+                                  <Typography variant="caption" color="text.secondary">
+                                    No Session
+                                  </Typography>
+                                ) : (
+                                  <Typography variant="caption" color="text.secondary">
+                                    N/A
+                                  </Typography>
+                                )
+                              )}
+                            </TableCell>
                             <TableCell>
-                              <IconButton
-                                size="small"
-                                onClick={() => toggleLeadExpansion(lead._id)}
-                                aria-label={expandedLeads[lead._id] ? 'collapse' : 'expand'}
-                              >
-                                {expandedLeads[lead._id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                              </IconButton>
+                              <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => toggleLeadExpansion(lead._id)}
+                                  aria-label={expandedLeads[lead._id] ? 'collapse' : 'expand'}
+                                >
+                                  {expandedLeads[lead._id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                </IconButton>
 
-                              {/* Individual Manual FTD Injection Button */}
-                              {lead.leadType === 'ftd' && (user?.role === 'admin' || user?.role === 'affiliate_manager') && (() => {
-                                // Check if this lead has been processed
-                                const networkHistory = lead.clientNetworkHistory?.find(
-                                  (history) => history.orderId?.toString() === selectedOrder._id.toString()
-                                );
-                                const isCompleted = networkHistory && networkHistory.injectionStatus === "completed";
-                                const isProcessing = processingLeads[lead._id];
-
-                                // Only show button if not completed
-                                if (!isCompleted) {
-                                  return (
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleOpenManualFTDInjection(selectedOrder, lead)}
-                                      title={`Manual FTD Injection for ${lead.firstName} ${lead.lastName}`}
-                                      color="primary"
-                                      disabled={isProcessing}
-                                    >
-                                      {isProcessing ? <CircularProgress size={16} /> : <SendIcon fontSize="small" />}
-                                    </IconButton>
+                                {/* Individual Manual FTD Injection Button */}
+                                {lead.leadType === 'ftd' && (user?.role === 'admin' || user?.role === 'affiliate_manager') && (() => {
+                                  // Check if this lead has been processed
+                                  const networkHistory = lead.clientNetworkHistory?.find(
+                                    (history) => history.orderId?.toString() === selectedOrder._id.toString()
                                   );
-                                }
+                                  const isCompleted = networkHistory && networkHistory.injectionStatus === "completed";
+                                  const isProcessing = processingLeads[lead._id];
 
-                                // Show completed status
-                                return (
-                                  <Chip
-                                    label="Injected"
+                                  // Only show button if not completed
+                                  if (!isCompleted) {
+                                    return (
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleOpenManualFTDInjection(selectedOrder, lead)}
+                                        title={`Manual FTD Injection for ${lead.firstName} ${lead.lastName}`}
+                                        color="primary"
+                                        disabled={isProcessing}
+                                      >
+                                        {isProcessing ? <CircularProgress size={16} /> : <SendIcon fontSize="small" />}
+                                      </IconButton>
+                                    );
+                                  }
+
+                                  // Show completed status
+                                  return (
+                                    <Chip
+                                      label="Injected"
+                                      size="small"
+                                      color="success"
+                                      variant="outlined"
+                                    />
+                                  );
+                                })()}
+
+                                {/* Session Access Button - Only for FTD leads with active sessions */}
+                                {lead.leadType === 'ftd' && lead.browserSession && lead.browserSession.sessionId && (
+                                  <SessionAccessButton
+                                    lead={lead}
+                                    user={user}
                                     size="small"
-                                    color="success"
-                                    variant="outlined"
+                                    variant="icon"
+                                    onSessionAccess={(lead, response) => {
+                                      console.log('Session access initiated for lead:', lead._id, response);
+                                      // You could add additional logic here, like refreshing the lead data
+                                    }}
                                   />
-                                );
-                              })()}
+                                )}
+                              </Box>
                             </TableCell>
                           </TableRow>
                           {expandedLeads[lead._id] && (
                             <TableRow>
-                              <TableCell colSpan={5} sx={{ py: 0, border: 0 }}>
+                              <TableCell colSpan={6} sx={{ py: 0, border: 0 }}>
                                 <Collapse in={expandedLeads[lead._id]} timeout="auto" unmountOnExit>
                                   <Box sx={{ p: 2 }}>
                                     <LeadDetailCard lead={lead} />
@@ -1556,31 +1792,61 @@ const OrdersPage = () => {
             </Box>
           )}
 
-          {manualFTDDialog.step === 'domain_input' && (
-            <>
-              <Typography variant="body1" sx={{ mb: 2 }}>
-                Please enter the final domain/URL that you copied from the browser:
-              </Typography>
-              <TextField
-                fullWidth
-                label="Final Domain/URL *"
-                placeholder="e.g., https://example.com or example.com"
-                value={manualFTDDomain}
-                onChange={(e) => setManualFTDDomain(e.target.value)}
-                sx={{ mb: 2 }}
-                autoFocus
-                required
-                error={!manualFTDDomain.trim()}
-                helperText={!manualFTDDomain.trim() ? "This field is mandatory" : "Enter the final domain where the form redirected to (not the original form URL)"}
-              />
-              <Alert severity="warning" sx={{ mb: 2 }}>
-                Make sure this is the final domain after all redirects, not the original form URL.
-              </Alert>
-              <Alert severity="error">
-                <strong>Important:</strong> This dialog cannot be closed until you enter the broker domain. This field is mandatory for completing the FTD injection.
-              </Alert>
-            </>
-          )}
+          {manualFTDDialog.step === 'domain_input' && (() => {
+            const isDomainValid = isValidDomain(manualFTDDomain);
+            const domainTrimmed = manualFTDDomain.trim();
+
+            return (
+              <>
+                <Typography variant="body1" sx={{ mb: 2 }}>
+                  Please enter the final domain/URL that you copied from the browser:
+                </Typography>
+                <TextField
+                  fullWidth
+                  label="Final Domain/URL *"
+                  placeholder="e.g., https://example.com or example.com"
+                  value={manualFTDDomain}
+                  onChange={(e) => setManualFTDDomain(e.target.value)}
+                  sx={{ mb: 2 }}
+                  autoFocus
+                  required
+                  error={domainTrimmed && !isDomainValid}
+                  helperText={
+                    !domainTrimmed
+                      ? "This field is mandatory"
+                      : isDomainValid
+                        ? "✓ Valid domain format detected"
+                        : "⚠️ Please enter a valid domain or URL"
+                  }
+                  InputLabelProps={{
+                    style: {
+                      color: isDomainValid ? '#4caf50' : undefined
+                    }
+                  }}
+                  InputProps={{
+                    style: {
+                      borderColor: isDomainValid ? '#4caf50' : undefined
+                    },
+                    endAdornment: domainTrimmed ? (
+                      <Box sx={{ mr: 1 }}>
+                        {isDomainValid ? (
+                          <CheckCircleIcon color="success" fontSize="small" />
+                        ) : (
+                          <ErrorIcon color="error" fontSize="small" />
+                        )}
+                      </Box>
+                    ) : null
+                  }}
+                />
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  Make sure this is the final domain after all redirects, not the original form URL.
+                </Alert>
+                <Alert severity="error">
+                  <strong>Important:</strong> This dialog cannot be closed until you enter the broker domain. This field is mandatory for completing the FTD injection.
+                </Alert>
+              </>
+            );
+          })()}
         </DialogContent>
 
         <DialogActions>
@@ -1599,17 +1865,42 @@ const OrdersPage = () => {
             </>
           )}
 
-          {manualFTDDialog.step === 'domain_input' && (
-            <Button
-              onClick={handleSubmitManualFTDDomain}
-              variant="contained"
-              disabled={!manualFTDDomain.trim()}
-              startIcon={<SendIcon />}
-              fullWidth
-            >
-              Complete Injection
-            </Button>
-          )}
+          {manualFTDDialog.step === 'domain_input' && (() => {
+            const isDomainValid = isValidDomain(manualFTDDomain);
+            const domainTrimmed = manualFTDDomain.trim();
+            const isDisabled = !domainTrimmed || !isDomainValid;
+
+            return (
+              <Button
+                onClick={handleSubmitManualFTDDomain}
+                variant="contained"
+                disabled={isDisabled}
+                startIcon={
+                  isDomainValid ? (
+                    <CheckCircleIcon />
+                  ) : domainTrimmed ? (
+                    <ErrorIcon />
+                  ) : (
+                    <SendIcon />
+                  )
+                }
+                fullWidth
+                color={isDomainValid ? 'success' : 'primary'}
+                sx={{
+                  bgcolor: isDomainValid ? '#4caf50' : isDisabled ? undefined : '#1976d2',
+                  '&:hover': {
+                    bgcolor: isDomainValid ? '#45a049' : isDisabled ? undefined : '#1565c0',
+                  },
+                  '&:disabled': {
+                    bgcolor: '#cccccc',
+                    color: '#666666'
+                  }
+                }}
+              >
+                {isDomainValid ? 'Complete Injection ✓' : domainTrimmed ? 'Invalid Domain ⚠️' : 'Complete Injection'}
+              </Button>
+            );
+          })()}
         </DialogActions>
       </Dialog>
     </Box>

@@ -77,24 +77,34 @@ router.post(
       .optional({ nullable: true })
       .isIn(["male", "female", "not_defined", null, ""])
       .withMessage("Gender must be male, female, not_defined, or empty"),
-    body("selectedClientNetwork")
-      .custom((value, { req }) => {
-        // For affiliate managers, client network selection is required
-        if (req.user && req.user.role === "affiliate_manager") {
-          if (!value || value === "") {
-            throw new Error("Client network selection is required for affiliate managers");
-          }
-          if (!mongoose.Types.ObjectId.isValid(value)) {
-            throw new Error("selectedClientNetwork must be a valid MongoDB ObjectId");
-          }
-        } else {
-          // For other roles, it's optional but must be valid if provided
-          if (value && value !== "" && !mongoose.Types.ObjectId.isValid(value)) {
-            throw new Error("selectedClientNetwork must be a valid MongoDB ObjectId");
-          }
+    body("selectedClientNetwork").custom((value, { req }) => {
+      // For affiliate managers, client network selection is required
+      if (req.user && req.user.role === "affiliate_manager") {
+        if (!value || value === "") {
+          throw new Error(
+            "Client network selection is required for affiliate managers"
+          );
         }
-        return true;
-      }),
+        if (!mongoose.Types.ObjectId.isValid(value)) {
+          throw new Error(
+            "selectedClientNetwork must be a valid MongoDB ObjectId"
+          );
+        }
+      } else {
+        // For other roles, it's optional but must be valid if provided
+        if (value && value !== "" && !mongoose.Types.ObjectId.isValid(value)) {
+          throw new Error(
+            "selectedClientNetwork must be a valid MongoDB ObjectId"
+          );
+        }
+      }
+      return true;
+    }),
+    body("selectedCampaign")
+      .notEmpty()
+      .withMessage("Campaign selection is mandatory for all orders")
+      .isMongoId()
+      .withMessage("Selected campaign must be a valid MongoDB ObjectId"),
     body("injectionSettings")
       .optional()
       .isObject()
