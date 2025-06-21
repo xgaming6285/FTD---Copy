@@ -61,7 +61,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Ukraine": "380",
     "Belarus": "375",
     "Russia": "7",
-    
+
     # Asia-Pacific
     "China": "86",
     "Japan": "81",
@@ -95,7 +95,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Bhutan": "975",
     "Maldives": "960",
     "New Zealand": "64",
-    
+
     # Middle East
     "Turkey": "90",
     "Israel": "972",
@@ -117,7 +117,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Georgia": "995",
     "Armenia": "374",
     "Azerbaijan": "994",
-    
+
     # Africa
     "Egypt": "20",
     "Libya": "218",
@@ -144,7 +144,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Madagascar": "261",
     "Mauritius": "230",
     "Seychelles": "248",
-    
+
     # Americas
     "Mexico": "52",
     "Guatemala": "502",
@@ -213,7 +213,7 @@ COUNTRY_TO_ISO_CODE = {
     "Ukraine": "ua",
     "Belarus": "by",
     "Russia": "ru",
-    
+
     # Asia-Pacific
     "China": "cn",
     "Japan": "jp",
@@ -262,7 +262,7 @@ COUNTRY_TO_ISO_CODE = {
     "Guam": "gu",
     "American Samoa": "as",
     "Northern Mariana Islands": "mp",
-    
+
     # Middle East
     "Turkey": "tr",
     "Israel": "il",
@@ -284,7 +284,7 @@ COUNTRY_TO_ISO_CODE = {
     "Georgia": "ge",
     "Armenia": "am",
     "Azerbaijan": "az",
-    
+
     # Africa
     "Egypt": "eg",
     "Libya": "ly",
@@ -346,7 +346,7 @@ COUNTRY_TO_ISO_CODE = {
     "Lesotho": "ls",
     "Swaziland": "sz",
     "Eswatini": "sz",
-    
+
     # Americas
     "Mexico": "mx",
     "Guatemala": "gt",
@@ -405,7 +405,7 @@ COUNTRY_TO_ISO_CODE = {
     "Falkland Islands": "fk",
     "Falkland Islands (Malvinas)": "fk",
     "South Georgia and the South Sandwich Islands": "gs",
-    
+
     # Oceania territories
     "Cook Islands": "ck",
     "Niue": "nu",
@@ -418,7 +418,7 @@ COUNTRY_TO_ISO_CODE = {
     "Cocos (Keeling) Islands": "cc",
     "Heard Island and McDonald Islands": "hm",
     "Australian Antarctic Territory": "aq",
-    
+
     # Other territories
     "Antarctica": "aq",
     "Antarctica (the territory South of 60 deg S)": "aq",
@@ -484,7 +484,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Ukraine": "380",
     "Belarus": "375",
     "Russia": "7",
-    
+
     # Asia-Pacific
     "China": "86",
     "Japan": "81",
@@ -533,7 +533,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Guam": "1",
     "American Samoa": "1",
     "Northern Mariana Islands": "1",
-    
+
     # Middle East
     "Turkey": "90",
     "Israel": "972",
@@ -555,7 +555,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Georgia": "995",
     "Armenia": "374",
     "Azerbaijan": "994",
-    
+
     # Africa
     "Egypt": "20",
     "Libya": "218",
@@ -617,7 +617,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Lesotho": "266",
     "Swaziland": "268",
     "Eswatini": "268",
-    
+
     # Americas
     "Mexico": "52",
     "Guatemala": "502",
@@ -675,7 +675,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Ecuador": "593",
     "Falkland Islands": "500",
     "Falkland Islands (Malvinas)": "500",
-    
+
     # Oceania territories
     "Cook Islands": "682",
     "Niue": "683",
@@ -686,7 +686,7 @@ COUNTRY_TO_PHONE_CODE = {
     "Norfolk Island": "672",
     "Christmas Island": "61",
     "Cocos (Keeling) Islands": "61",
-    
+
     # Other territories
     "Gibraltar": "350",
     "Isle of Man": "44",
@@ -705,15 +705,15 @@ RETRY_DELAY = 2
 
 class LeadInjector:
     """Handles the lead injection process using Playwright."""
-    
+
     def __init__(self, proxy_config=None):
         self.proxy_config = proxy_config
         self.screenshot_dir = Path("./screenshots")
-        
+
         # Create screenshots directory if it doesn't exist
         if not self.screenshot_dir.exists():
             self.screenshot_dir.mkdir(parents=True, exist_ok=True)
-        
+
     def _take_screenshot(self, page, name):
         """Take a screenshot for debugging purposes."""
         try:
@@ -723,7 +723,7 @@ class LeadInjector:
             print(f"INFO: Screenshot saved to {filename}")
         except Exception as e:
             print(f"WARNING: Failed to take screenshot: {str(e)}")
-            
+
     def _setup_browser_config(self):
         """Set up browser configuration with proxy and device settings."""
         browser_config = {
@@ -737,25 +737,41 @@ class LeadInjector:
                 "--window-size=428,926"  # Match the viewport size
             ]
         }
-        
+
         # Add proxy configuration if provided
         if self.proxy_config:
             server = self.proxy_config.get("server", "")
-            
+            username = self.proxy_config.get("username", "")
+            password = self.proxy_config.get("password", "")
+
             browser_config["proxy"] = {
                 "server": server,
-                "username": self.proxy_config.get("username"),
-                "password": self.proxy_config.get("password")
+                "username": username,
+                "password": password
             }
             print(f"INFO: Using proxy configuration: {server}")
-            
+            print(f"DEBUG: Proxy username: {username}")
+            print(f"DEBUG: Proxy country: {self.proxy_config.get('country', 'Unknown')}")
+
+        else:
+            print("WARNING: No proxy configuration provided to browser setup")
+
         return browser_config
+
+    def _setup_context_config(self):
+        """Set up context configuration (proxy now handled at browser level)."""
+        context_config = {}
+
+        # Proxy is now handled at browser level, so no proxy config needed here
+        print("INFO: Context config setup (proxy handled at browser level)")
+
+        return context_config
 
     def _human_like_typing(self, element, text):
         """Simulate human-like typing with random delays."""
         for char in text:
             element.type(char, delay=random.uniform(100, 300))
-            
+
     def _verify_proxy_and_device(self, page):
         """Verify if proxy and device simulation are working correctly."""
         try:
@@ -763,7 +779,7 @@ class LeadInjector:
             print("\nINFO: Verifying proxy and device simulation...")
             page.goto("https://api.ipify.org", wait_until="networkidle", timeout=30000)
             actual_ip = page.locator('pre').inner_text()
-            
+
             # Double check with another IP service
             page.goto("https://ip.oxylabs.io/location", wait_until="networkidle", timeout=30000)
             try:
@@ -788,7 +804,7 @@ class LeadInjector:
                     availHeight: window.screen.availHeight,
                     colorDepth: window.screen.colorDepth,
                     pixelDepth: window.screen.pixelDepth,
-                    
+
                     // From navigator object
                     userAgent: navigator.userAgent,
                     platform: navigator.platform,
@@ -799,7 +815,7 @@ class LeadInjector:
                     onLine: navigator.onLine,
                     hardwareConcurrency: navigator.hardwareConcurrency,
                     deviceMemory: navigator.deviceMemory,
-                    
+
                     // Derived
                     isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
                 }
@@ -814,7 +830,7 @@ class LeadInjector:
             print(f"Available Screen: {device_info.get('availWidth')}x{device_info.get('availHeight')}")
             print(f"Color Depth: {device_info.get('colorDepth')}")
             print(f"Mobile Device: {'Yes' if device_info.get('isMobile') else 'No'}")
-            
+
             if 'hardwareConcurrency' in device_info and device_info['hardwareConcurrency']:
                 print(f"CPU Cores: {device_info.get('hardwareConcurrency')}")
             if 'deviceMemory' in device_info and device_info['deviceMemory']:
@@ -829,7 +845,7 @@ class LeadInjector:
                     print("INFO: Successfully verified proxy connection")
                 else:
                     print("WARNING: Could not verify proxy IP address")
-                    
+
             # Verify device simulation
             if "iPhone" in device_info.get('userAgent', '') and device_info.get('screenWidth') == 428:
                 print("INFO: Successfully verified iPhone 14 Pro Max simulation")
@@ -849,16 +865,16 @@ class LeadInjector:
         try:
             # Store target URL for proxy configuration
             self.target_url = target_url
-            
+
             # Get proxy configuration
             if not self.proxy_config:
                 print("WARNING: No proxy configuration available. Proceeding without proxy for testing.")
-            
+
             with sync_playwright() as p:
                 # Launch browser with configuration
                 print("INFO: Launching browser...")
                 browser = p.chromium.launch(**self._setup_browser_config())
-                
+
                 # Create a new context with iPhone 14 Pro Max settings
                 iphone_14_pro_max = {
                     'screen': {
@@ -874,16 +890,18 @@ class LeadInjector:
                     'has_touch': True,
                     'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/605.1 NAVER(inapp; search; 2000; 12.12.50; 14PROMAX)',
                 }
-                
+
                 # Add additional context options to ensure proper rendering
+                context_config = self._setup_context_config()
                 context = browser.new_context(
                     **iphone_14_pro_max,
-                    locale="en-US"
+                    locale="en-US",
+                    **context_config
                 )
-                
+
                 # Create a new page
                 page = context.new_page()
-                
+
                 # Set content size to ensure proper rendering
                 page.evaluate("""() => {
                     const meta = document.createElement('meta');
@@ -917,7 +935,7 @@ class LeadInjector:
                 print("INFO: Taking a short break...")
                 time.sleep(3)
                 print("\nINFO: Break finished, continuing with form filling...")
-                
+
                 try:
                     # Check if the form is visible
                     form_visible = page.is_visible('form[id="landingForm"], form[data-testid="landingForm"]')
@@ -1006,20 +1024,20 @@ class LeadInjector:
                         phone_number = lead_data['phone']
                         phone = page.wait_for_selector('#phone', timeout=30000)
                         self._human_like_typing(phone, phone_number)
-                    
+
                         # Take a screenshot before submission
                         self._take_screenshot(page, "before_submission")
-                        
+
                         # Set injection mode flag
                         page.evaluate("window.localStorage.setItem('isInjectionMode', 'true')")
-                        
+
                         # Random delay before submission
                         time.sleep(random.uniform(1, 2))
-                        
+
                         # Submit form
                         submit_button = page.wait_for_selector('#submitBtn', timeout=30000)
                         submit_button.click()
-                        
+
                         # Wait for success indication - the Thank You message appears when form is submitted
                         try:
                             # Wait for the success message to appear
@@ -1027,37 +1045,37 @@ class LeadInjector:
                             if success_message:
                                 print("SUCCESS: Form submitted successfully")
                                 self._take_screenshot(page, "success")
-                                
+
                                 # Wait 20 seconds for the final redirect to complete
                                 print("INFO: Waiting 20 seconds for final redirect...")
-                                
+
                                 # Take periodic screenshots during the wait to monitor redirects
                                 for i in range(4):  # 4 checks over 20 seconds (every 5 seconds)
                                     time.sleep(5)
                                     current_url = page.url
                                     print(f"INFO: URL after {(i+1)*5} seconds: {current_url}")
                                     self._take_screenshot(page, f"redirect_check_{i+1}")
-                                
+
                                 # Get the final domain after all redirects
                                 final_url = page.url
                                 print(f"INFO: Final URL after 20 seconds: {final_url}")
-                                
+
                                 # Extract domain from URL
                                 parsed_url = urlparse(final_url)
                                 final_domain = parsed_url.netloc
-                                
+
                                 # Validate domain
                                 if not final_domain or final_domain == "ftd-copy.vercel.app":
                                     print(f"WARNING: Final domain appears to be the original form domain: {final_domain}")
                                     print("INFO: This might indicate no redirect occurred or redirect failed")
-                                
+
                                 print(f"SUCCESS: Final domain captured: {final_domain}")
                                 self._take_screenshot(page, "final_redirect")
-                                
+
                                 # Store the final domain in a way the backend can access it
                                 # We'll output it in a specific format the backend can parse
                                 print(f"FINAL_DOMAIN:{final_domain}")
-                                
+
                                 # Verify proxy and device simulation
                                 if self.proxy_config:
                                     verification_result = self._verify_proxy_and_device(page)
@@ -1065,7 +1083,7 @@ class LeadInjector:
                                         print("INFO: Proxy and device verification completed")
                                     else:
                                         print("WARNING: Proxy and device verification failed")
-                                
+
                                 return True
                             else:
                                 # Check for error message
@@ -1082,19 +1100,19 @@ class LeadInjector:
                             print(f"WARNING: Could not verify successful submission - {str(e)}")
                             self._take_screenshot(page, "verification_error")
                             return False
-                    
+
                     except Exception as e:
                         print(f"ERROR: Form filling failed - {str(e)}")
                         self._take_screenshot(page, "form_filling_error")
                         traceback.print_exc()
                         return False
-                        
+
                 except Exception as e:
                     print(f"ERROR: Form interaction failed - {str(e)}")
                     self._take_screenshot(page, "form_interaction_error")
                     traceback.print_exc()
                     return False
-                
+
         except Exception as e:
             if "proxy" in str(e).lower():
                 print(f"ERROR: Proxy-related error during injection: {str(e)}")
@@ -1133,7 +1151,7 @@ class LeadInjector:
         screen = fingerprint.get('screen', {})
         navigator = fingerprint.get('navigator', {})
         mobile = fingerprint.get('mobile', {})
-        
+
         return {
             'screen': {
                 'width': screen.get('width', 428),
@@ -1155,25 +1173,25 @@ class LeadInjector:
             # Set injection mode flag first (most important)
             page.evaluate("() => { localStorage.setItem('isInjectionMode', 'true'); }")
             print("INFO: Set injection mode flag for the landing page")
-            
+
             # Try to apply fingerprint properties (non-critical if it fails)
             navigator = fingerprint.get('navigator', {})
             screen = fingerprint.get('screen', {})
-            
+
             # Simple approach - just set the essential properties
             platform = json.dumps(navigator.get('platform', 'Win32'))
             user_agent = json.dumps(navigator.get('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'))
-            
+
             page.evaluate(f"""() => {{
                 try {{
                     // Set basic navigator properties
                     Object.defineProperty(navigator, 'platform', {{
                         get: () => {platform}
                     }});
-                    
+
                     // Set injection mode flag (redundant but important)
                     localStorage.setItem('isInjectionMode', 'true');
-                    
+
                     console.log('Fingerprint properties applied successfully');
                 }} catch (error) {{
                     console.error('Error applying fingerprint:', error);
@@ -1181,9 +1199,9 @@ class LeadInjector:
                     localStorage.setItem('isInjectionMode', 'true');
                 }}
             }};""")
-            
+
             print(f"INFO: Applied basic fingerprint properties for device: {fingerprint.get('deviceId', 'unknown')}")
-            
+
         except Exception as e:
             print(f"WARNING: Failed to apply fingerprint properties: {str(e)}")
             # Always ensure injection mode is set
@@ -1198,15 +1216,15 @@ class LeadInjector:
         try:
             if not self.proxy_config:
                 return False
-            
+
             # Quick health check with a lightweight request
             import requests
             proxy_url = f"http://{self.proxy_config['username']}:{self.proxy_config['password']}@{self.proxy_config['host']}:{self.proxy_config['port']}"
             proxies = {'http': proxy_url, 'https': proxy_url}
-            
+
             response = requests.get('https://api.ipify.org', proxies=proxies, timeout=10)
             return response.status_code == 200
-            
+
         except Exception as e:
             print(f"WARNING: Proxy health check failed: {str(e)}")
             return False
@@ -1240,7 +1258,7 @@ def get_proxy_config(country_name):
         # Test the proxy
         proxy_url = f"http://{proxy_info['username']}:{proxy_info['password']}@{proxy_info['host']}:{proxy_info['port']}"
         proxies = {'http': proxy_url, 'https': proxy_url}
-        
+
         try:
             response = requests.get('https://api.ipify.org', proxies=proxies, timeout=30)
             response.raise_for_status()
@@ -1269,9 +1287,19 @@ def main():
         injection_data_str = sys.argv[1]
         injection_data = json.loads(injection_data_str)
         print(f"INFO: Processing injection data for lead {injection_data.get('leadId', 'unknown')}")
-        
+
         # Extract proxy configuration from injection data
         proxy_config = injection_data.get('proxy')
+        if proxy_config:
+            print(f"DEBUG: Proxy configuration received from backend:")
+            print(f"  - Server: {proxy_config.get('server', 'Not set')}")
+            print(f"  - Username: {proxy_config.get('username', 'Not set')}")
+            print(f"  - Host: {proxy_config.get('host', 'Not set')}")
+            print(f"  - Port: {proxy_config.get('port', 'Not set')}")
+            print(f"  - Country: {proxy_config.get('country', 'Not set')}")
+        else:
+            print("DEBUG: No proxy configuration received from backend")
+
         if not proxy_config:
             # Check if this is a test run (no proxy intended)
             if injection_data.get('leadId', '').startswith('test_'):
@@ -1281,7 +1309,7 @@ def main():
                 print("WARNING: No proxy configuration provided. Attempting to get fallback proxy.")
                 country_name = injection_data.get("country", "United States")
                 proxy_config = get_proxy_config(country_name)
-                
+
                 if not proxy_config:
                     print("WARNING: Could not obtain proxy configuration. Proceeding without proxy for testing.")
                     proxy_config = None
@@ -1314,4 +1342,4 @@ def main():
         return False
 
 if __name__ == "__main__":
-    main() 
+    main()
