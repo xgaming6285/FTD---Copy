@@ -2058,7 +2058,12 @@ const startBulkInjection = async (order) => {
 
 const startScheduledInjection = async (order) => {
   try {
-    console.log(`Starting scheduled injection for order ${order._id}`);
+    console.log(`📅 Starting scheduled injection for order ${order._id}`);
+    console.log(`📋 Order contains ${order.leads.length} total leads`);
+    console.log(
+      `🎯 Injectable lead types:`,
+      getInjectableLeadTypes(order.injectionSettings.includeTypes)
+    );
 
     // Get leads that should be injected
     const Lead = require("../models/Lead");
@@ -2069,6 +2074,22 @@ const startScheduledInjection = async (order) => {
       },
     });
 
+    console.log(`🔍 Found ${leadsToInject.length} leads to inject:`);
+    leadsToInject.forEach((lead, index) => {
+      console.log(
+        `   ${index + 1}. ${lead.firstName} ${lead.lastName} (${lead.leadType})`
+      );
+    });
+
+    if (leadsToInject.length === 0) {
+      console.log(`⚠️  No injectable leads found for order ${order._id}`);
+      await Order.findByIdAndUpdate(order._id, {
+        "injectionSettings.status": "completed",
+        "injectionProgress.completedAt": new Date(),
+      });
+      return;
+    }
+
     // Schedule injections at random intervals within the specified time window
     scheduleRandomInjections(leadsToInject, order);
   } catch (error) {
@@ -2076,6 +2097,7 @@ const startScheduledInjection = async (order) => {
       `Error in scheduled injection for order ${order._id}:`,
       error
     );
+    console.error("Error stack:", error.stack);
     await Order.findByIdAndUpdate(order._id, {
       "injectionSettings.status": "failed",
     });
@@ -2859,8 +2881,22 @@ const scheduleRandomInjections = (leads, order) => {
 
     setTimeout(async () => {
       try {
+        console.log(
+          `⏰ TIMEOUT TRIGGERED for lead ${index + 1}/${leads.length}: ${
+            lead.firstName
+          } ${lead.lastName}`
+        );
+
         // Check if injection is still active before proceeding
         const currentOrder = await Order.findById(order._id);
+        console.log(
+          `📊 Order status check: ${
+            currentOrder
+              ? currentOrder.injectionSettings.status
+              : "ORDER NOT FOUND"
+          }`
+        );
+
         if (
           currentOrder &&
           currentOrder.injectionSettings.status === "in_progress"
@@ -2870,10 +2906,19 @@ const scheduleRandomInjections = (leads, order) => {
               leads.length
             }: ${lead.firstName} ${lead.lastName}`
           );
-          await injectSingleLead(lead, order._id);
+
+          const injectionResult = await injectSingleLead(lead, order._id);
+          console.log(
+            `✅ Injection completed for ${lead.firstName} ${lead.lastName}:`,
+            injectionResult
+          );
         } else {
           console.log(
-            `⏸️  Skipping injection for lead ${lead.firstName} ${lead.lastName} - injection no longer active`
+            `⏸️  Skipping injection for lead ${lead.firstName} ${
+              lead.lastName
+            } - injection status: ${
+              currentOrder?.injectionSettings?.status || "UNKNOWN"
+            }`
           );
         }
       } catch (error) {
@@ -2881,6 +2926,7 @@ const scheduleRandomInjections = (leads, order) => {
           `❌ Error in scheduled injection for lead ${lead.firstName} ${lead.lastName}:`,
           error
         );
+        console.error("Error stack:", error.stack);
       }
     }, currentDelay);
   });
