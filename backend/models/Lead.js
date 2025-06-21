@@ -95,7 +95,7 @@ const leadSchema = new mongoose.Schema(
         injectionStatus: {
           type: String,
           enum: ["pending", "successful", "failed"],
-          default: "pending"
+          default: "pending",
         },
         // Track which client network was used as intermediary (for session tracking only)
         intermediaryClientNetwork: {
@@ -105,7 +105,7 @@ const leadSchema = new mongoose.Schema(
         domain: {
           type: String,
           trim: true,
-        }
+        },
       },
     ],
     // History of client network assignments
@@ -138,7 +138,7 @@ const leadSchema = new mongoose.Schema(
         injectionStatus: {
           type: String,
           enum: ["pending", "completed", "failed"],
-          default: "pending"
+          default: "pending",
         },
         injectionType: {
           type: String,
@@ -151,6 +151,47 @@ const leadSchema = new mongoose.Schema(
         injectionNotes: {
           type: String,
           trim: true,
+        },
+      },
+    ],
+    // History of campaign assignments
+    campaignHistory: [
+      {
+        campaign: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Campaign",
+          required: true,
+        },
+        assignedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        assignedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        orderId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Order",
+        },
+        // Campaign performance tracking for this lead
+        performance: {
+          status: {
+            type: String,
+            enum: ["active", "contacted", "converted", "inactive"],
+            default: "active",
+          },
+          contactedAt: {
+            type: Date,
+          },
+          convertedAt: {
+            type: Date,
+          },
+          notes: {
+            type: String,
+            trim: true,
+          },
         },
       },
     ],
@@ -243,14 +284,14 @@ const leadSchema = new mongoose.Schema(
     brokerAvailabilityStatus: {
       type: String,
       enum: ["available", "sleep", "not_available_brokers"],
-      default: "available"
+      default: "available",
     },
 
     // Track when lead was put to sleep due to no available brokers
     sleepDetails: {
       putToSleepAt: { type: Date },
       reason: { type: String },
-      lastCheckedAt: { type: Date }
+      lastCheckedAt: { type: Date },
     },
 
     // Device fingerprint association (one-to-one)
@@ -258,7 +299,7 @@ const leadSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Fingerprint",
       sparse: true,
-      index: true
+      index: true,
     },
 
     // Device type for this lead (cached from fingerprint for quick access)
@@ -266,34 +307,36 @@ const leadSchema = new mongoose.Schema(
       type: String,
       enum: ["windows", "android", "ios", "mac"],
       sparse: true,
-      index: true
+      index: true,
     },
 
     // Proxy tracking for this lead
-    proxyAssignments: [{
-      proxy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Proxy",
-        required: true
+    proxyAssignments: [
+      {
+        proxy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Proxy",
+          required: true,
+        },
+        orderId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Order",
+          required: true,
+        },
+        assignedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        status: {
+          type: String,
+          enum: ["active", "completed", "failed"],
+          default: "active",
+        },
+        completedAt: {
+          type: Date,
+        },
       },
-      orderId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Order",
-        required: true
-      },
-      assignedAt: {
-        type: Date,
-        default: Date.now
-      },
-      status: {
-        type: String,
-        enum: ["active", "completed", "failed"],
-        default: "active"
-      },
-      completedAt: {
-        type: Date
-      }
-    }],
+    ],
   },
   {
     timestamps: true,
@@ -321,14 +364,29 @@ leadSchema.index({ updatedAt: -1 }); // Track updates efficiently
 // Client broker history indexes for better performance
 leadSchema.index({ "clientBrokerHistory.clientBroker": 1 });
 leadSchema.index({ "clientBrokerHistory.orderId": 1 });
-leadSchema.index({ "clientBrokerHistory.clientBroker": 1, "clientBrokerHistory.orderId": 1 });
+leadSchema.index({
+  "clientBrokerHistory.clientBroker": 1,
+  "clientBrokerHistory.orderId": 1,
+});
 leadSchema.index({ "clientBrokerHistory.assignedAt": -1 });
 
 // Client network history indexes for better performance
 leadSchema.index({ "clientNetworkHistory.clientNetwork": 1 });
 leadSchema.index({ "clientNetworkHistory.orderId": 1 });
-leadSchema.index({ "clientNetworkHistory.clientNetwork": 1, "clientNetworkHistory.orderId": 1 });
+leadSchema.index({
+  "clientNetworkHistory.clientNetwork": 1,
+  "clientNetworkHistory.orderId": 1,
+});
 leadSchema.index({ "clientNetworkHistory.assignedAt": -1 });
+
+// Campaign history indexes for better performance
+leadSchema.index({ "campaignHistory.campaign": 1 });
+leadSchema.index({ "campaignHistory.orderId": 1 });
+leadSchema.index({
+  "campaignHistory.campaign": 1,
+  "campaignHistory.orderId": 1,
+});
+leadSchema.index({ "campaignHistory.assignedAt": -1 });
 
 // Compound indexes for common query patterns
 leadSchema.index({ leadType: 1, isAssigned: 1, status: 1 }); // Common filtering pattern
@@ -423,12 +481,18 @@ leadSchema.statics.getLeadStats = function () {
 // Check if lead is already assigned to a specific client broker
 leadSchema.methods.isAssignedToClientBroker = function (clientBrokerId) {
   return this.assignedClientBrokers.some(
-    brokerId => brokerId.toString() === clientBrokerId.toString()
+    (brokerId) => brokerId.toString() === clientBrokerId.toString()
   );
 };
 
 // Assign a client broker to this lead
-leadSchema.methods.assignClientBroker = function (clientBrokerId, assignedBy, orderId, intermediaryClientNetwork = null, domain = null) {
+leadSchema.methods.assignClientBroker = function (
+  clientBrokerId,
+  assignedBy,
+  orderId,
+  intermediaryClientNetwork = null,
+  domain = null
+) {
   // Add to current assignments if not already assigned
   if (!this.isAssignedToClientBroker(clientBrokerId)) {
     this.assignedClientBrokers.push(clientBrokerId);
@@ -441,14 +505,14 @@ leadSchema.methods.assignClientBroker = function (clientBrokerId, assignedBy, or
     orderId: orderId,
     intermediaryClientNetwork: intermediaryClientNetwork,
     domain: domain,
-    injectionStatus: "pending"
+    injectionStatus: "pending",
   });
 };
 
 // Unassign a client broker from this lead
 leadSchema.methods.unassignClientBroker = function (clientBrokerId) {
   const index = this.assignedClientBrokers.findIndex(
-    brokerId => brokerId.toString() === clientBrokerId.toString()
+    (brokerId) => brokerId.toString() === clientBrokerId.toString()
   );
   if (index > -1) {
     this.assignedClientBrokers.splice(index, 1);
@@ -456,9 +520,14 @@ leadSchema.methods.unassignClientBroker = function (clientBrokerId) {
 };
 
 // Update injection status for a specific assignment
-leadSchema.methods.updateInjectionStatus = function (orderId, status, domain = null) {
+leadSchema.methods.updateInjectionStatus = function (
+  orderId,
+  status,
+  domain = null
+) {
   const assignment = this.clientBrokerHistory.find(
-    history => history.orderId && history.orderId.toString() === orderId.toString()
+    (history) =>
+      history.orderId && history.orderId.toString() === orderId.toString()
   );
 
   if (assignment) {
@@ -471,7 +540,7 @@ leadSchema.methods.updateInjectionStatus = function (orderId, status, domain = n
 
 // Get all client brokers this lead has been assigned to (returns ObjectIds)
 leadSchema.methods.getAssignedClientBrokers = function () {
-  return this.assignedClientBrokers.map(id => id.toString());
+  return this.assignedClientBrokers.map((id) => id.toString());
 };
 
 // Get client broker assignment history
@@ -481,19 +550,21 @@ leadSchema.methods.getClientBrokerHistory = function () {
 
 // Check if lead can be assigned to a client broker (not already assigned)
 leadSchema.statics.canAssignToClientBroker = function (leadId, clientBrokerId) {
-  return this.findById(leadId).then(lead => {
+  return this.findById(leadId).then((lead) => {
     if (!lead) return false;
     return !lead.isAssignedToClientBroker(clientBrokerId);
   });
 };
 
 // Put lead to sleep when no available brokers
-leadSchema.methods.putToSleep = function (reason = "No available client brokers") {
+leadSchema.methods.putToSleep = function (
+  reason = "No available client brokers"
+) {
   this.brokerAvailabilityStatus = "sleep";
   this.sleepDetails = {
     putToSleepAt: new Date(),
     reason: reason,
-    lastCheckedAt: new Date()
+    lastCheckedAt: new Date(),
   };
 };
 
@@ -506,35 +577,47 @@ leadSchema.methods.wakeUp = function () {
 // Static method to find leads that need to be woken up when new brokers are added
 leadSchema.statics.findSleepingLeads = function () {
   return this.find({
-    brokerAvailabilityStatus: { $in: ["sleep", "not_available_brokers"] }
+    brokerAvailabilityStatus: { $in: ["sleep", "not_available_brokers"] },
   });
 };
 
 // Check if lead is already assigned to a specific client network in a specific order
-leadSchema.methods.isAssignedToClientNetwork = function (clientNetworkId, orderId = null) {
-  return this.clientNetworkHistory.some(
-    history => {
-      const networkMatch = history.clientNetwork.toString() === clientNetworkId.toString();
-      if (orderId) {
-        return networkMatch && history.orderId && history.orderId.toString() === orderId.toString();
-      }
-      return networkMatch;
+leadSchema.methods.isAssignedToClientNetwork = function (
+  clientNetworkId,
+  orderId = null
+) {
+  return this.clientNetworkHistory.some((history) => {
+    const networkMatch =
+      history.clientNetwork.toString() === clientNetworkId.toString();
+    if (orderId) {
+      return (
+        networkMatch &&
+        history.orderId &&
+        history.orderId.toString() === orderId.toString()
+      );
     }
-  );
+    return networkMatch;
+  });
 };
 
 // Add client network assignment to history
-leadSchema.methods.addClientNetworkAssignment = function (clientNetworkId, assignedBy, orderId) {
+leadSchema.methods.addClientNetworkAssignment = function (
+  clientNetworkId,
+  assignedBy,
+  orderId
+) {
   // Check if already assigned to this network in this order
   if (this.isAssignedToClientNetwork(clientNetworkId, orderId)) {
-    throw new Error('Lead is already assigned to this client network in this order');
+    throw new Error(
+      "Lead is already assigned to this client network in this order"
+    );
   }
 
   // Add to history
   this.clientNetworkHistory.push({
     clientNetwork: clientNetworkId,
     assignedBy: assignedBy,
-    orderId: orderId
+    orderId: orderId,
   });
 };
 
@@ -545,39 +628,124 @@ leadSchema.methods.getClientNetworkHistory = function () {
 
 // Get all client networks this lead has been assigned to
 leadSchema.methods.getAssignedClientNetworks = function () {
-  return [...new Set(this.clientNetworkHistory.map(history => history.clientNetwork.toString()))];
+  return [
+    ...new Set(
+      this.clientNetworkHistory.map((history) =>
+        history.clientNetwork.toString()
+      )
+    ),
+  ];
+};
+
+// Check if lead is already assigned to a specific campaign in a specific order
+leadSchema.methods.isAssignedToCampaign = function (
+  campaignId,
+  orderId = null
+) {
+  return this.campaignHistory.some((history) => {
+    const campaignMatch = history.campaign.toString() === campaignId.toString();
+    if (orderId) {
+      return (
+        campaignMatch &&
+        history.orderId &&
+        history.orderId.toString() === orderId.toString()
+      );
+    }
+    return campaignMatch;
+  });
+};
+
+// Add campaign assignment to history
+leadSchema.methods.addCampaignAssignment = function (
+  campaignId,
+  assignedBy,
+  orderId
+) {
+  // Check if already assigned to this campaign in this order
+  if (this.isAssignedToCampaign(campaignId, orderId)) {
+    throw new Error("Lead is already assigned to this campaign in this order");
+  }
+
+  // Add to history
+  this.campaignHistory.push({
+    campaign: campaignId,
+    assignedBy: assignedBy,
+    orderId: orderId,
+  });
+};
+
+// Get campaign assignment history
+leadSchema.methods.getCampaignHistory = function () {
+  return this.campaignHistory;
+};
+
+// Get all campaigns this lead has been assigned to
+leadSchema.methods.getAssignedCampaigns = function () {
+  return [
+    ...new Set(
+      this.campaignHistory.map((history) => history.campaign.toString())
+    ),
+  ];
+};
+
+// Update campaign performance for a specific assignment
+leadSchema.methods.updateCampaignPerformance = function (
+  campaignId,
+  orderId,
+  performanceData
+) {
+  const assignment = this.campaignHistory.find(
+    (history) =>
+      history.campaign.toString() === campaignId.toString() &&
+      history.orderId &&
+      history.orderId.toString() === orderId.toString()
+  );
+
+  if (assignment) {
+    Object.assign(assignment.performance, performanceData);
+  } else {
+    throw new Error("Campaign assignment not found for this lead and order");
+  }
 };
 
 // Device and Fingerprint Management Methods
 
 // Assign a device fingerprint to this lead
 leadSchema.methods.assignFingerprint = async function (deviceType, createdBy) {
-  const Fingerprint = require('./Fingerprint');
+  const Fingerprint = require("./Fingerprint");
 
   // Validate parameters
   if (!deviceType) {
-    throw new Error('deviceType is required for fingerprint assignment');
+    throw new Error("deviceType is required for fingerprint assignment");
   }
   if (!createdBy) {
-    throw new Error('createdBy is required for fingerprint assignment');
+    throw new Error("createdBy is required for fingerprint assignment");
   }
 
   // Check if lead already has a fingerprint
   if (this.fingerprint) {
-    throw new Error('Lead already has a fingerprint assigned');
+    throw new Error("Lead already has a fingerprint assigned");
   }
 
   try {
-    console.log(`[DEBUG] Creating fingerprint for lead ${this._id} with deviceType: ${deviceType}`);
+    console.log(
+      `[DEBUG] Creating fingerprint for lead ${this._id} with deviceType: ${deviceType}`
+    );
 
     // Create new fingerprint for this lead
-    const fingerprint = await Fingerprint.createForLead(this._id, deviceType, createdBy);
+    const fingerprint = await Fingerprint.createForLead(
+      this._id,
+      deviceType,
+      createdBy
+    );
 
     // Update lead with fingerprint reference and device type
     this.fingerprint = fingerprint._id;
     this.deviceType = deviceType;
 
-    console.log(`[DEBUG] Successfully assigned fingerprint ${fingerprint.deviceId} to lead ${this._id}`);
+    console.log(
+      `[DEBUG] Successfully assigned fingerprint ${fingerprint.deviceId} to lead ${this._id}`
+    );
 
     return fingerprint;
   } catch (error) {
@@ -592,13 +760,16 @@ leadSchema.methods.getFingerprint = async function () {
     return null;
   }
 
-  const Fingerprint = require('./Fingerprint');
+  const Fingerprint = require("./Fingerprint");
   return await Fingerprint.findById(this.fingerprint);
 };
 
 // Update device type and create new fingerprint if needed
-leadSchema.methods.updateDeviceType = async function (newDeviceType, createdBy) {
-  const Fingerprint = require('./Fingerprint');
+leadSchema.methods.updateDeviceType = async function (
+  newDeviceType,
+  createdBy
+) {
+  const Fingerprint = require("./Fingerprint");
 
   // If device type is the same, no need to update
   if (this.deviceType === newDeviceType) {
@@ -611,7 +782,11 @@ leadSchema.methods.updateDeviceType = async function (newDeviceType, createdBy) 
   }
 
   // Create new fingerprint with new device type
-  const fingerprint = await Fingerprint.createForLead(this._id, newDeviceType, createdBy);
+  const fingerprint = await Fingerprint.createForLead(
+    this._id,
+    newDeviceType,
+    createdBy
+  );
 
   // Update lead
   this.fingerprint = fingerprint._id;
@@ -626,8 +801,9 @@ leadSchema.methods.updateDeviceType = async function (newDeviceType, createdBy) 
 leadSchema.methods.assignProxy = function (proxyId, orderId) {
   // Check if lead already has an active proxy for this order
   const existingAssignment = this.proxyAssignments.find(
-    assignment => assignment.orderId.toString() === orderId.toString() &&
-      assignment.status === 'active'
+    (assignment) =>
+      assignment.orderId.toString() === orderId.toString() &&
+      assignment.status === "active"
   );
 
   if (existingAssignment) {
@@ -639,7 +815,7 @@ leadSchema.methods.assignProxy = function (proxyId, orderId) {
     proxy: proxyId,
     orderId: orderId,
     assignedAt: new Date(),
-    status: 'active'
+    status: "active",
   });
 
   return true;
@@ -648,18 +824,23 @@ leadSchema.methods.assignProxy = function (proxyId, orderId) {
 // Get active proxy for a specific order
 leadSchema.methods.getActiveProxy = function (orderId) {
   const assignment = this.proxyAssignments.find(
-    assignment => assignment.orderId.toString() === orderId.toString() &&
-      assignment.status === 'active'
+    (assignment) =>
+      assignment.orderId.toString() === orderId.toString() &&
+      assignment.status === "active"
   );
 
   return assignment ? assignment.proxy : null;
 };
 
 // Complete proxy assignment (mark as completed)
-leadSchema.methods.completeProxyAssignment = function (orderId, status = 'completed') {
+leadSchema.methods.completeProxyAssignment = function (
+  orderId,
+  status = "completed"
+) {
   const assignment = this.proxyAssignments.find(
-    assignment => assignment.orderId.toString() === orderId.toString() &&
-      assignment.status === 'active'
+    (assignment) =>
+      assignment.orderId.toString() === orderId.toString() &&
+      assignment.status === "active"
   );
 
   if (assignment) {
@@ -678,7 +859,9 @@ leadSchema.methods.getProxyAssignments = function () {
 
 // Check if lead has active proxy assignments
 leadSchema.methods.hasActiveProxyAssignments = function () {
-  return this.proxyAssignments.some(assignment => assignment.status === 'active');
+  return this.proxyAssignments.some(
+    (assignment) => assignment.status === "active"
+  );
 };
 
 // Static method to find leads by device type
@@ -708,10 +891,10 @@ leadSchema.statics.getDeviceTypeStats = function () {
       $group: {
         _id: {
           deviceType: "$deviceType",
-          leadType: "$leadType"
+          leadType: "$leadType",
         },
-        count: { $sum: 1 }
-      }
+        count: { $sum: 1 },
+      },
     },
     {
       $group: {
@@ -720,11 +903,11 @@ leadSchema.statics.getDeviceTypeStats = function () {
         byLeadType: {
           $push: {
             leadType: "$_id.leadType",
-            count: "$count"
-          }
-        }
-      }
-    }
+            count: "$count",
+          },
+        },
+      },
+    },
   ]);
 };
 

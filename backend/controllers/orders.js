@@ -4,6 +4,7 @@ const Order = require("../models/Order");
 const Lead = require("../models/Lead");
 const ClientNetwork = require("../models/ClientNetwork");
 const ClientBroker = require("../models/ClientBroker");
+const Campaign = require("../models/Campaign");
 const { spawn } = require("child_process");
 const path = require("path");
 
@@ -540,6 +541,7 @@ exports.createOrder = async (req, res, next) => {
         includeTypes: { filler: true, cold: true, live: true },
       },
       selectedClientNetwork,
+      selectedCampaign,
     } = req.body;
 
     const { ftd = 0, filler = 0, cold = 0, live = 0 } = requests || {};
@@ -564,6 +566,46 @@ exports.createOrder = async (req, res, next) => {
           success: false,
           message:
             "Access denied - client network not assigned to you or inactive",
+        });
+      }
+    }
+
+    // Validate that campaign is mandatory and exists
+    if (!selectedCampaign) {
+      return res.status(400).json({
+        success: false,
+        message: "Campaign selection is mandatory for all orders",
+      });
+    }
+
+    // Validate campaign exists and is active
+    const Campaign = require("../models/Campaign");
+    const campaign = await Campaign.findById(selectedCampaign);
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: "Selected campaign not found",
+      });
+    }
+
+    if (!campaign.isActive || campaign.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cannot use inactive campaign - only active campaigns are allowed",
+      });
+    }
+
+    // Validate campaign access for affiliate managers
+    if (req.user.role === "affiliate_manager") {
+      const isAssigned = campaign.assignedAffiliateManagers.some(
+        (managerId) => managerId.toString() === req.user._id.toString()
+      );
+
+      if (!isAssigned) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - campaign not assigned to you",
         });
       }
     }
@@ -776,6 +818,7 @@ exports.createOrder = async (req, res, next) => {
       countryFilter: country || null,
       genderFilter: gender || null,
       selectedClientNetwork: selectedClientNetwork || null,
+      selectedCampaign: selectedCampaign || null,
 
       // Add injection settings - always enabled
       injectionSettings: {
@@ -824,6 +867,17 @@ exports.createOrder = async (req, res, next) => {
         } catch (error) {
           console.warn(
             `Could not assign client network to lead ${lead._id}: ${error.message}`
+          );
+        }
+      }
+
+      // Add campaign assignment to history if specified
+      if (selectedCampaign) {
+        try {
+          lead.addCampaignAssignment(selectedCampaign, req.user._id, order._id);
+        } catch (error) {
+          console.warn(
+            `Could not assign campaign to lead ${lead._id}: ${error.message}`
           );
         }
       }

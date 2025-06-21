@@ -28,6 +28,7 @@ const {
   bulkDeleteLeads,
   wakeUpSleepingLeads,
   assignClientBrokerToLead,
+  assignCampaignToLead,
   getLeadAssignmentHistory,
   getClientBrokerAnalytics,
 } = require("../controllers/leads");
@@ -193,18 +194,35 @@ router.put(
     body("clientBrokerId")
       .isMongoId()
       .withMessage("Valid client broker ID is required"),
-    body("client")
-      .optional()
-      .trim(),
+    body("client").optional().trim(),
     body("intermediaryClientNetwork")
       .optional()
       .isMongoId()
       .withMessage("Client network ID must be valid"),
-    body("domain")
-      .optional()
-      .trim(),
+    body("domain").optional().trim(),
   ],
   assignClientBrokerToLead
+);
+
+// @route   PUT /api/leads/:id/assign-campaign
+// @desc    Assign campaign to individual lead
+// @access  Private (Admin, Affiliate Manager)
+router.put(
+  "/:id/assign-campaign",
+  [
+    protect,
+    authorize("admin", "affiliate_manager"),
+    body("campaignId")
+      .notEmpty()
+      .withMessage("Campaign ID is required")
+      .isMongoId()
+      .withMessage("Valid campaign ID is required"),
+    body("orderId")
+      .optional()
+      .isMongoId()
+      .withMessage("Order ID must be valid"),
+  ],
+  assignCampaignToLead
 );
 
 // @route   GET /api/leads/:id/assignment-history
@@ -323,19 +341,23 @@ router.put("/:id", [protect, authorize("admin", "lead_manager")], updateLead);
 // @route   DELETE /api/leads/bulk-delete
 // @desc    Delete multiple leads with filtering
 // @access  Private (Admin only)
-router.delete("/bulk-delete", [
-  (req, res, next) => {
-    console.log("Bulk delete route hit:", {
-      method: req.method,
-      path: req.path,
-      body: req.body,
-      user: req.user ? { id: req.user.id, role: req.user.role } : null
-    });
-    next();
-  },
-  protect,
-  isAdmin
-], bulkDeleteLeads);
+router.delete(
+  "/bulk-delete",
+  [
+    (req, res, next) => {
+      console.log("Bulk delete route hit:", {
+        method: req.method,
+        path: req.path,
+        body: req.body,
+        user: req.user ? { id: req.user.id, role: req.user.role } : null,
+      });
+      next();
+    },
+    protect,
+    isAdmin,
+  ],
+  bulkDeleteLeads
+);
 
 // @route   DELETE /api/leads/:id
 // @desc    Delete a single lead

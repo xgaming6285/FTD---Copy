@@ -53,6 +53,13 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Selected campaign for this order (for tracking and analytics)
+    selectedCampaign: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Campaign",
+      required: [true, "Campaign selection is mandatory for all orders"],
+    },
+
     // Fulfillment tracking
     fulfilled: {
       ftd: { type: Number, default: 0 },

@@ -8,6 +8,7 @@ const { spawn } = require("child_process");
 const express = require("express");
 const ClientNetwork = require("../models/ClientNetwork");
 const ClientBroker = require("../models/ClientBroker");
+const Campaign = require("../models/Campaign");
 
 // @desc    Get all leads with filtering and pagination
 // @route   GET /api/leads
@@ -621,10 +622,10 @@ exports.assignLeads = async (req, res, next) => {
         isAssigned: lead.isAssigned,
         assignedTo: lead.assignedTo
           ? {
-            id: lead.assignedTo._id,
-            fullName: lead.assignedTo.fullName,
-            fourDigitCode: lead.assignedTo.fourDigitCode,
-          }
+              id: lead.assignedTo._id,
+              fullName: lead.assignedTo.fullName,
+              fourDigitCode: lead.assignedTo.fourDigitCode,
+            }
           : null,
       }))
     );
@@ -710,12 +711,13 @@ exports.assignClientBrokerToLead = async (req, res, next) => {
     }
 
     const leadId = req.params.id;
-    const { clientBrokerId, client, intermediaryClientNetwork, domain } = req.body;
+    const { clientBrokerId, client, intermediaryClientNetwork, domain } =
+      req.body;
 
     // Find the lead and client broker
     const [lead, clientBroker] = await Promise.all([
       Lead.findById(leadId),
-      ClientBroker.findById(clientBrokerId)
+      ClientBroker.findById(clientBrokerId),
     ]);
 
     if (!lead) {
@@ -733,10 +735,11 @@ exports.assignClientBrokerToLead = async (req, res, next) => {
     }
 
     // Check if user has permission to assign client brokers
-    if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
+    if (!["admin", "affiliate_manager"].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can assign client brokers.",
+        message:
+          "Access denied. Only admins and affiliate managers can assign client brokers.",
       });
     }
 
@@ -756,7 +759,7 @@ exports.assignClientBrokerToLead = async (req, res, next) => {
           leadId: lead._id,
           leadName: `${lead.firstName} ${lead.lastName}`,
           clientBroker: clientBroker.name,
-        }
+        },
       });
     }
 
@@ -782,8 +785,8 @@ exports.assignClientBrokerToLead = async (req, res, next) => {
 
     // Populate the response
     const updatedLead = await Lead.findById(leadId)
-      .populate('assignedTo', 'fullName fourDigitCode email')
-      .populate('assignedClientBrokers', 'name domain');
+      .populate("assignedTo", "fullName fourDigitCode email")
+      .populate("assignedClientBrokers", "name domain");
 
     res.status(200).json({
       success: true,
@@ -804,11 +807,14 @@ exports.getLeadAssignmentHistory = async (req, res, next) => {
     const leadId = req.params.id;
 
     const lead = await Lead.findById(leadId)
-      .populate('clientBrokerHistory.assignedBy', 'fullName fourDigitCode email')
-      .populate('clientBrokerHistory.orderId', 'status createdAt')
-      .populate('clientBrokerHistory.clientBroker', 'name domain')
-      .populate('clientBrokerHistory.intermediaryClientNetwork', 'name')
-      .populate('assignedClientBrokers', 'name domain');
+      .populate(
+        "clientBrokerHistory.assignedBy",
+        "fullName fourDigitCode email"
+      )
+      .populate("clientBrokerHistory.orderId", "status createdAt")
+      .populate("clientBrokerHistory.clientBroker", "name domain")
+      .populate("clientBrokerHistory.intermediaryClientNetwork", "name")
+      .populate("assignedClientBrokers", "name domain");
 
     if (!lead) {
       return res.status(404).json({
@@ -818,10 +824,11 @@ exports.getLeadAssignmentHistory = async (req, res, next) => {
     }
 
     // Check if user has permission to view assignment history
-    if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
+    if (!["admin", "affiliate_manager"].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can view assignment history.",
+        message:
+          "Access denied. Only admins and affiliate managers can view assignment history.",
       });
     }
 
@@ -831,32 +838,34 @@ exports.getLeadAssignmentHistory = async (req, res, next) => {
         leadId: lead._id,
         leadName: `${lead.firstName} ${lead.lastName}`,
         currentAssignments: {
-          clientBrokers: lead.assignedClientBrokers.map(broker => ({
+          clientBrokers: lead.assignedClientBrokers.map((broker) => ({
             id: broker._id,
             name: broker.name,
-            domain: broker.domain
+            domain: broker.domain,
           })),
-          client: lead.client
+          client: lead.client,
         },
-        assignmentHistory: lead.clientBrokerHistory.map(history => ({
+        assignmentHistory: lead.clientBrokerHistory.map((history) => ({
           clientBroker: {
             id: history.clientBroker._id,
             name: history.clientBroker.name,
-            domain: history.clientBroker.domain
+            domain: history.clientBroker.domain,
           },
-          intermediaryClientNetwork: history.intermediaryClientNetwork ? {
-            id: history.intermediaryClientNetwork._id,
-            name: history.intermediaryClientNetwork.name
-          } : null,
+          intermediaryClientNetwork: history.intermediaryClientNetwork
+            ? {
+                id: history.intermediaryClientNetwork._id,
+                name: history.intermediaryClientNetwork.name,
+              }
+            : null,
           assignedAt: history.assignedAt,
           assignedBy: history.assignedBy,
           orderId: history.orderId,
           orderStatus: history.orderId ? history.orderId.status : null,
           orderCreatedAt: history.orderId ? history.orderId.createdAt : null,
           injectionStatus: history.injectionStatus,
-          domain: history.domain
-        }))
-      }
+          domain: history.domain,
+        })),
+      },
     });
   } catch (error) {
     console.error("Get lead assignment history error:", error);
@@ -872,10 +881,11 @@ exports.getClientBrokerAnalytics = async (req, res, next) => {
     const { orderId } = req.query;
 
     // Check if user has permission
-    if (!['admin', 'affiliate_manager'].includes(req.user.role)) {
+    if (!["admin", "affiliate_manager"].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Only admins and affiliate managers can view analytics.",
+        message:
+          "Access denied. Only admins and affiliate managers can view analytics.",
       });
     }
 
@@ -893,21 +903,26 @@ exports.getClientBrokerAnalytics = async (req, res, next) => {
     // Aggregate client broker assignment data
     const analytics = await Lead.aggregate([
       { $match: matchStage },
-      { $unwind: { path: "$clientBrokerHistory", preserveNullAndEmptyArrays: true } },
+      {
+        $unwind: {
+          path: "$clientBrokerHistory",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
       {
         $lookup: {
           from: "clientbrokers",
           localField: "clientBrokerHistory.clientBroker",
           foreignField: "_id",
-          as: "brokerDetails"
-        }
+          as: "brokerDetails",
+        },
       },
       { $unwind: { path: "$brokerDetails", preserveNullAndEmptyArrays: true } },
       {
         $group: {
           _id: {
             clientBroker: "$clientBrokerHistory.clientBroker",
-            orderId: "$clientBrokerHistory.orderId"
+            orderId: "$clientBrokerHistory.orderId",
           },
           brokerName: { $first: "$brokerDetails.name" },
           brokerDomain: { $first: "$brokerDetails.domain" },
@@ -915,8 +930,10 @@ exports.getClientBrokerAnalytics = async (req, res, next) => {
           uniqueLeads: { $addToSet: "$_id" },
           firstAssignment: { $min: "$clientBrokerHistory.assignedAt" },
           lastAssignment: { $max: "$clientBrokerHistory.assignedAt" },
-          injectionStatuses: { $addToSet: "$clientBrokerHistory.injectionStatus" }
-        }
+          injectionStatuses: {
+            $addToSet: "$clientBrokerHistory.injectionStatus",
+          },
+        },
       },
       {
         $group: {
@@ -932,10 +949,10 @@ exports.getClientBrokerAnalytics = async (req, res, next) => {
               uniqueLeads: { $size: "$uniqueLeads" },
               firstAssignment: "$firstAssignment",
               lastAssignment: "$lastAssignment",
-              injectionStatuses: "$injectionStatuses"
-            }
-          }
-        }
+              injectionStatuses: "$injectionStatuses",
+            },
+          },
+        },
       },
       {
         $project: {
@@ -945,10 +962,10 @@ exports.getClientBrokerAnalytics = async (req, res, next) => {
           totalAssignments: 1,
           totalUniqueLeads: 1,
           orderBreakdown: 1,
-          _id: 0
-        }
+          _id: 0,
+        },
       },
-      { $sort: { totalAssignments: -1 } }
+      { $sort: { totalAssignments: -1 } },
     ]);
 
     res.status(200).json({
@@ -956,9 +973,15 @@ exports.getClientBrokerAnalytics = async (req, res, next) => {
       data: {
         analytics,
         totalClientBrokers: analytics.length,
-        totalAssignments: analytics.reduce((sum, item) => sum + item.totalAssignments, 0),
-        totalUniqueLeads: analytics.reduce((sum, item) => sum + item.totalUniqueLeads, 0)
-      }
+        totalAssignments: analytics.reduce(
+          (sum, item) => sum + item.totalAssignments,
+          0
+        ),
+        totalUniqueLeads: analytics.reduce(
+          (sum, item) => sum + item.totalUniqueLeads,
+          0
+        ),
+      },
     });
   } catch (error) {
     console.error("Get client broker analytics error:", error);
@@ -1580,7 +1603,9 @@ exports.injectLead = async (req, res) => {
     const lead = await Lead.findById(req.params.id);
 
     if (!lead) {
-      return res.status(404).json({ success: false, message: "Lead not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Lead not found" });
     }
 
     const landingPage = req.body.landingPage;
@@ -1602,22 +1627,24 @@ exports.injectLead = async (req, res) => {
       password: "TPvBwkO8", // This should be stored securely
     };
 
-    console.log('Starting Python script with lead data:', leadData);
+    console.log("Starting Python script with lead data:", leadData);
 
     // Use path.join for cross-platform compatibility
-    const path = require('path');
-    const scriptPath = path.resolve(path.join(__dirname, '..', '..', 'injector_playwright.py'));
+    const path = require("path");
+    const scriptPath = path.resolve(
+      path.join(__dirname, "..", "..", "injector_playwright.py")
+    );
 
-    console.log('Python script path:', scriptPath);
+    console.log("Python script path:", scriptPath);
 
     // Check if the script exists
-    const fs = require('fs');
+    const fs = require("fs");
     if (!fs.existsSync(scriptPath)) {
-      console.error('Python script not found at:', scriptPath);
+      console.error("Python script not found at:", scriptPath);
       return res.status(500).json({
         success: false,
         message: "Injection script not found",
-        details: `Script not found at ${scriptPath}`
+        details: `Script not found at ${scriptPath}`,
       });
     }
 
@@ -1625,25 +1652,25 @@ exports.injectLead = async (req, res) => {
     try {
       const pythonCheck = spawn("python", ["--version"]);
       pythonCheck.on("error", (error) => {
-        console.error('Python not found:', error);
+        console.error("Python not found:", error);
         return res.status(500).json({
           success: false,
           message: "Python not installed or not in PATH",
-          error: error.message
+          error: error.message,
         });
       });
     } catch (error) {
-      console.error('Failed to check Python:', error);
+      console.error("Failed to check Python:", error);
     }
 
     // Launch the Python script with properly encoded JSON
     const pythonProcess = spawn("python", [
       scriptPath,
-      JSON.stringify(leadData)
+      JSON.stringify(leadData),
     ]);
 
-    let stdoutData = '';
-    let stderrData = '';
+    let stdoutData = "";
+    let stderrData = "";
 
     pythonProcess.stdout.on("data", (data) => {
       const output = data.toString();
@@ -1658,11 +1685,11 @@ exports.injectLead = async (req, res) => {
     });
 
     pythonProcess.on("error", (error) => {
-      console.error('Failed to start Python process:', error);
+      console.error("Failed to start Python process:", error);
       return res.status(500).json({
         success: false,
         message: "Failed to start injection process",
-        error: error.message
+        error: error.message,
       });
     });
 
@@ -1672,25 +1699,24 @@ exports.injectLead = async (req, res) => {
         res.status(200).json({
           success: true,
           message: "Injection process completed successfully.",
-          output: stdoutData
+          output: stdoutData,
         });
       } else {
         res.status(500).json({
           success: false,
           message: `Injection process failed with exit code ${code}`,
           error: stderrData,
-          output: stdoutData
+          output: stdoutData,
         });
       }
     });
-
   } catch (error) {
-    console.error('Server error during injection:', error);
+    console.error("Server error during injection:", error);
     res.status(500).json({
       success: false,
       message: "Server error during injection.",
       error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 };
@@ -1737,7 +1763,7 @@ exports.bulkDeleteLeads = async (req, res, next) => {
         { newEmail: new RegExp(search, "i") },
         { oldEmail: new RegExp(search, "i") },
         { newPhone: new RegExp(search, "i") },
-        { oldPhone: new RegExp(search, "i") }
+        { oldPhone: new RegExp(search, "i") },
       ];
     }
 
@@ -1777,11 +1803,13 @@ exports.wakeUpSleepingLeads = async (req, res, next) => {
         for (const network of clientNetworks) {
           if (network.clientBrokers && network.clientBrokers.length > 0) {
             const availableBrokers = network.clientBrokers
-              .filter(broker => broker.isActive)
-              .map(broker => broker.domain || broker.name);
+              .filter((broker) => broker.isActive)
+              .map((broker) => broker.domain || broker.name);
 
             const assignedBrokers = lead.getAssignedClientBrokers();
-            const hasNewBrokers = availableBrokers.some(broker => !assignedBrokers.includes(broker));
+            const hasNewBrokers = availableBrokers.some(
+              (broker) => !assignedBrokers.includes(broker)
+            );
 
             if (hasNewBrokers) {
               hasAvailableBrokers = true;
@@ -1803,8 +1831,151 @@ exports.wakeUpSleepingLeads = async (req, res, next) => {
       message: `Checked ${sleepingLeads.length} sleeping leads and woke up ${wokeUpCount}`,
       data: {
         totalSleepingLeads: sleepingLeads.length,
-        wokeUpCount: wokeUpCount
+        wokeUpCount: wokeUpCount,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Assign campaign to individual lead
+// @route   PUT /api/leads/:id/assign-campaign
+// @access  Private (Admin, Affiliate Manager)
+exports.assignCampaignToLead = async (req, res, next) => {
+  try {
+    const { campaignId, orderId } = req.body;
+    const leadId = req.params.id;
+
+    // Mandatory validation - campaign is required
+    if (!campaignId) {
+      return res.status(400).json({
+        success: false,
+        message: "Campaign ID is required - campaign assignment is mandatory",
+      });
+    }
+
+    // Validate lead exists
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found",
+      });
+    }
+
+    // Validate campaign exists
+    const Campaign = require("../models/Campaign");
+    const campaign = await Campaign.findById(campaignId);
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: "Campaign not found",
+      });
+    }
+
+    // Check if campaign is active (mandatory requirement)
+    if (!campaign.isActive || campaign.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cannot assign inactive campaign - only active campaigns can be assigned",
+      });
+    }
+
+    // Check if affiliate manager has access to this campaign
+    if (req.user.role === "affiliate_manager") {
+      const isAssigned = campaign.assignedAffiliateManagers.some(
+        (managerId) => managerId.toString() === req.user._id.toString()
+      );
+      if (!isAssigned) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied - campaign not assigned to you",
+        });
       }
+    }
+
+    // Validate order if provided
+    let order = null;
+    if (orderId) {
+      const Order = require("../models/Order");
+      order = await Order.findById(orderId);
+      if (!order) {
+        return res.status(404).json({
+          success: false,
+          message: "Order not found",
+        });
+      }
+    }
+
+    // Add campaign to lead's campaign history
+    const campaignAssignment = {
+      campaign: campaignId,
+      assignedBy: req.user._id,
+      assignedAt: new Date(),
+      order: orderId || null,
+      performance: {
+        status: "assigned",
+        assignedAt: new Date(),
+      },
+    };
+
+    // Initialize campaignHistory if it doesn't exist
+    if (!lead.campaignHistory) {
+      lead.campaignHistory = [];
+    }
+
+    // Check if campaign is already assigned
+    const existingAssignment = lead.campaignHistory.find(
+      (history) => history.campaign.toString() === campaignId.toString()
+    );
+
+    if (existingAssignment) {
+      // Update existing assignment
+      existingAssignment.assignedBy = req.user._id;
+      existingAssignment.assignedAt = new Date();
+      if (orderId) {
+        existingAssignment.order = orderId;
+      }
+      existingAssignment.performance.status = "reassigned";
+      existingAssignment.performance.assignedAt = new Date();
+    } else {
+      // Add new assignment
+      lead.campaignHistory.push(campaignAssignment);
+    }
+
+    await lead.save();
+
+    // Update campaign metrics
+    await campaign.updateMetrics();
+
+    // Populate the response
+    await lead.populate([
+      {
+        path: "campaignHistory.campaign",
+        select: "name status",
+      },
+      {
+        path: "campaignHistory.assignedBy",
+        select: "fullName email",
+      },
+      {
+        path: "campaignHistory.order",
+        select: "orderNumber status",
+      },
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: "Campaign assigned to lead successfully",
+      data: {
+        lead: {
+          _id: lead._id,
+          fullName: `${lead.firstName} ${lead.lastName}`,
+          campaignHistory: lead.campaignHistory,
+        },
+      },
     });
   } catch (error) {
     next(error);

@@ -46,6 +46,8 @@ import {
   Stop as StopIcon,
   SkipNext as SkipNextIcon,
   Send as SendIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -69,9 +71,10 @@ const createOrderSchema = (userRole) => {
     countryFilter: yup.string().required('Country filter is required').min(2, 'Country must be at least 2 characters'),
     genderFilter: yup.string().oneOf(['', 'male', 'female']).default(''),
     notes: yup.string().default(''),
-    selectedClientNetwork: userRole === 'affiliate_manager' 
+    selectedClientNetwork: userRole === 'affiliate_manager'
       ? yup.string().required('Client network selection is required')
       : yup.string().default(''),
+    selectedCampaign: yup.string().required('Campaign selection is mandatory for all orders'),
     // Injection settings
     injectionMode: yup.string().oneOf(['bulk', 'scheduled']).default('bulk'),
     injectionStartTime: yup.string().default(''),
@@ -178,6 +181,10 @@ const OrdersPage = () => {
   const [clientNetworks, setClientNetworks] = useState([]);
   const [loadingClientNetworks, setLoadingClientNetworks] = useState(false);
 
+  // Campaigns state
+  const [campaigns, setCampaigns] = useState([]);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
+
   // Pagination and filtering
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -283,6 +290,28 @@ const OrdersPage = () => {
     }
   }, [user?.role]);
 
+  // Fetch campaigns for all users (mandatory for order creation)
+  const fetchCampaigns = useCallback(async () => {
+    setLoadingCampaigns(true);
+    try {
+      // Use different endpoint based on user role
+      const endpoint = user?.role === 'affiliate_manager'
+        ? '/campaigns/my-campaigns'
+        : '/campaigns?isActive=true&status=active';
+
+      const response = await api.get(endpoint);
+      setCampaigns(response.data.data || []);
+    } catch (err) {
+      console.error('Failed to fetch campaigns:', err);
+      setNotification({
+        message: 'Failed to load campaigns',
+        severity: 'warning',
+      });
+    } finally {
+      setLoadingCampaigns(false);
+    }
+  }, [user?.role]);
+
   const onSubmitOrder = useCallback(async (data) => {
     try {
       // Transform availableDeviceTypes from object to array
@@ -302,6 +331,7 @@ const OrdersPage = () => {
         gender: data.genderFilter,
         notes: data.notes,
         selectedClientNetwork: data.selectedClientNetwork,
+        selectedCampaign: data.selectedCampaign,
         // Injection settings - automatically inject all non-FTD lead types
         injectionMode: data.injectionMode,
         injectionStartTime: data.injectionStartTime,
@@ -459,7 +489,8 @@ const OrdersPage = () => {
   const handleOpenCreateDialog = useCallback(() => {
     setCreateDialogOpen(true);
     fetchClientNetworks();
-  }, [fetchClientNetworks]);
+    fetchCampaigns();
+  }, [fetchClientNetworks, fetchCampaigns]);
 
   // Injection handlers
   const handleStartInjection = useCallback(async (orderId) => {
@@ -500,6 +531,18 @@ const OrdersPage = () => {
       setNotification({ message: err.response?.data?.message || 'Failed to stop injection', severity: 'error' });
     }
   }, [fetchOrders]);
+
+  // Manual FTD domain validation function
+  const isValidDomain = useCallback((domain) => {
+    if (!domain || !domain.trim()) return false;
+
+    const trimmedDomain = domain.trim();
+    // Check for basic domain patterns
+    const domainPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i;
+    const ipPattern = /^(https?:\/\/)?((\d{1,3}\.){3}\d{1,3})(:\d+)?(\/.*)?$/;
+
+    return domainPattern.test(trimmedDomain) || ipPattern.test(trimmedDomain);
+  }, []);
 
   // Manual FTD injection handlers
   const handleOpenManualFTDInjection = useCallback((order, lead) => {
@@ -1069,6 +1112,53 @@ const OrdersPage = () => {
                   />
                 </Grid>
               )}
+
+              {/* Campaign Selection - Mandatory for all users */}
+              <Grid item xs={12}>
+                <Controller
+                  name="selectedCampaign"
+                  control={control}
+                  render={({ field }) => (
+                                    <FormControl fullWidth size="small" error={!!errors.selectedCampaign}>
+                  <InputLabel>Campaign *</InputLabel>
+                  <Select
+                    {...field}
+                    label="Campaign *"
+                    value={field.value || ''}
+                    disabled={loadingCampaigns}
+                  >
+                    <MenuItem value="" disabled>
+                      <em>Select a Campaign</em>
+                    </MenuItem>
+                    {campaigns.map((campaign) => (
+                      <MenuItem key={campaign._id} value={campaign._id}>
+                        {campaign.name}
+                        {campaign.description && (
+                          <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                            {campaign.description}
+                          </Typography>
+                        )}
+                      </MenuItem>
+                    ))}
+                      </Select>
+                      {errors.selectedCampaign?.message && (
+                        <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.5 }}>
+                          {errors.selectedCampaign.message}
+                        </Typography>
+                      )}
+                      {!errors.selectedCampaign?.message && (
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
+                          {loadingCampaigns
+                            ? 'Loading campaigns...'
+                            : `${campaigns.length} campaign(s) available`
+                          }
+                        </Typography>
+                      )}
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+
               <Grid item xs={12}>
                 <Controller name="notes" control={control} render={({ field }) => <TextField {...field} fullWidth label="Notes" multiline rows={3} error={!!errors.notes} helperText={errors.notes?.message} size="small" />} />
               </Grid>
@@ -1556,31 +1646,61 @@ const OrdersPage = () => {
             </Box>
           )}
 
-          {manualFTDDialog.step === 'domain_input' && (
-            <>
-              <Typography variant="body1" sx={{ mb: 2 }}>
-                Please enter the final domain/URL that you copied from the browser:
-              </Typography>
-              <TextField
-                fullWidth
-                label="Final Domain/URL *"
-                placeholder="e.g., https://example.com or example.com"
-                value={manualFTDDomain}
-                onChange={(e) => setManualFTDDomain(e.target.value)}
-                sx={{ mb: 2 }}
-                autoFocus
-                required
-                error={!manualFTDDomain.trim()}
-                helperText={!manualFTDDomain.trim() ? "This field is mandatory" : "Enter the final domain where the form redirected to (not the original form URL)"}
-              />
-              <Alert severity="warning" sx={{ mb: 2 }}>
-                Make sure this is the final domain after all redirects, not the original form URL.
-              </Alert>
-              <Alert severity="error">
-                <strong>Important:</strong> This dialog cannot be closed until you enter the broker domain. This field is mandatory for completing the FTD injection.
-              </Alert>
-            </>
-          )}
+          {manualFTDDialog.step === 'domain_input' && (() => {
+            const isDomainValid = isValidDomain(manualFTDDomain);
+            const domainTrimmed = manualFTDDomain.trim();
+
+            return (
+              <>
+                <Typography variant="body1" sx={{ mb: 2 }}>
+                  Please enter the final domain/URL that you copied from the browser:
+                </Typography>
+                <TextField
+                  fullWidth
+                  label="Final Domain/URL *"
+                  placeholder="e.g., https://example.com or example.com"
+                  value={manualFTDDomain}
+                  onChange={(e) => setManualFTDDomain(e.target.value)}
+                  sx={{ mb: 2 }}
+                  autoFocus
+                  required
+                  error={domainTrimmed && !isDomainValid}
+                  helperText={
+                    !domainTrimmed
+                      ? "This field is mandatory"
+                      : isDomainValid
+                        ? "✓ Valid domain format detected"
+                        : "⚠️ Please enter a valid domain or URL"
+                  }
+                  InputLabelProps={{
+                    style: {
+                      color: isDomainValid ? '#4caf50' : undefined
+                    }
+                  }}
+                  InputProps={{
+                    style: {
+                      borderColor: isDomainValid ? '#4caf50' : undefined
+                    },
+                    endAdornment: domainTrimmed ? (
+                      <Box sx={{ mr: 1 }}>
+                        {isDomainValid ? (
+                          <CheckCircleIcon color="success" fontSize="small" />
+                        ) : (
+                          <ErrorIcon color="error" fontSize="small" />
+                        )}
+                      </Box>
+                    ) : null
+                  }}
+                />
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  Make sure this is the final domain after all redirects, not the original form URL.
+                </Alert>
+                <Alert severity="error">
+                  <strong>Important:</strong> This dialog cannot be closed until you enter the broker domain. This field is mandatory for completing the FTD injection.
+                </Alert>
+              </>
+            );
+          })()}
         </DialogContent>
 
         <DialogActions>
@@ -1599,17 +1719,42 @@ const OrdersPage = () => {
             </>
           )}
 
-          {manualFTDDialog.step === 'domain_input' && (
-            <Button
-              onClick={handleSubmitManualFTDDomain}
-              variant="contained"
-              disabled={!manualFTDDomain.trim()}
-              startIcon={<SendIcon />}
-              fullWidth
-            >
-              Complete Injection
-            </Button>
-          )}
+          {manualFTDDialog.step === 'domain_input' && (() => {
+            const isDomainValid = isValidDomain(manualFTDDomain);
+            const domainTrimmed = manualFTDDomain.trim();
+            const isDisabled = !domainTrimmed || !isDomainValid;
+
+            return (
+              <Button
+                onClick={handleSubmitManualFTDDomain}
+                variant="contained"
+                disabled={isDisabled}
+                startIcon={
+                  isDomainValid ? (
+                    <CheckCircleIcon />
+                  ) : domainTrimmed ? (
+                    <ErrorIcon />
+                  ) : (
+                    <SendIcon />
+                  )
+                }
+                fullWidth
+                color={isDomainValid ? 'success' : 'primary'}
+                sx={{
+                  bgcolor: isDomainValid ? '#4caf50' : isDisabled ? undefined : '#1976d2',
+                  '&:hover': {
+                    bgcolor: isDomainValid ? '#45a049' : isDisabled ? undefined : '#1565c0',
+                  },
+                  '&:disabled': {
+                    bgcolor: '#cccccc',
+                    color: '#666666'
+                  }
+                }}
+              >
+                {isDomainValid ? 'Complete Injection ✓' : domainTrimmed ? 'Invalid Domain ⚠️' : 'Complete Injection'}
+              </Button>
+            );
+          })()}
         </DialogActions>
       </Dialog>
     </Box>
